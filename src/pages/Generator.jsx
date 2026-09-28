@@ -194,9 +194,11 @@ function getFriendlyGenerationError(error) {
     lowerMessage.includes("expected pattern") ||
     lowerMessage.includes("function_payload_too_large") ||
     lowerMessage.includes("payload too large") ||
-    lowerMessage.includes("413")
+    lowerMessage.includes("413") ||
+    lowerMessage.includes("cannot read the uploaded file") ||
+    lowerMessage.includes("cannot read the file")
   ) {
-    return "That file is too large to send to the AI after browser encoding. Compress or split the PDF, or paste the important notes into Extra Notes.";
+    return "That file is too large to send to the AI after browser encoding, or the AI cannot read the file format. Paste the study material as text (e.g., .txt, .doc) or extract text from the PDF and try again.";
   }
 
   return message || "Could not generate a reviewer.";

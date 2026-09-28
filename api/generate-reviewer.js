@@ -514,7 +514,25 @@ async function requestReviewerFromGemini({ apiKey, model, parts }) {
     error.rawText = text;
     throw error;
   }
-}
+
+  function getProviderModel(provider) {
+    return process.env[provider.modelEnv] || provider.defaultModel;
+  }
+
+  function getConfiguredProviders() {
+    return AI_PROVIDERS.filter((provider) => Boolean(process.env[provider.apiKeyEnv]));
+  }
+
+  function extractTextFromBase64(data) {
+    try {
+      const decoded = String(data).replace(/[^ -~]/g, "");
+      return decoded.length > 8000 ? decoded.substring(0, 8000) : decoded;
+    } catch (error) {
+      throw new Error("Failed to decode base64 text");
+    }
+  }
+
+  async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId }) {
 
 function getProviderModel(provider) {
   return process.env[provider.modelEnv] || provider.defaultModel;
