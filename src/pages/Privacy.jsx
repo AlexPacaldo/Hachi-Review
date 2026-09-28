@@ -4,7 +4,7 @@ export default function Privacy() {
   return (
     <div className="page narrow">
       <section className="legal-panel">
-        <p className="eyebrow">Privacy</h1>
+        <p className="eyebrow">Privacy</p>
         <h1>Privacy Policy</h1>
         <p>This privacy policy describes how we handle data for our website and advertising services.</h1>
         <p>Hachi stores reviewer data on this device for offline use and, when you sign in, can sync your reviewers to your Supabase account.</p>
