@@ -179,9 +179,20 @@ main {
   align-items: center;
   gap: 0;
   padding: 4px;
-  background: color-mix(in srgb, var(--surface) 84%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
+}
+
+/* The frosted layer lives on a pseudo-element so that .app-top-actions does not
+   become the containing block for the position: fixed notification popover, which
+   would otherwise collapse it to the width of this pill. */
+.app-top-actions::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  border-radius: calc(var(--radius-pill) - 1px);
   backdrop-filter: saturate(180%) blur(18px);
   -webkit-backdrop-filter: saturate(180%) blur(18px);
 }
