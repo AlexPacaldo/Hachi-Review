@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { History, Home, Hourglass, Library, Menu, Moon, PlayCircle, Sparkles, Sun, Users, WifiOff } from "lucide-react";
+import { History, Home, Hourglass, Library, Menu, Moon, PlayCircle, Sparkles, Sun, Shield, Users, WifiOff } from "lucide-react";
 import appLogo from "../assets/Icon.png";
 import { REVIEWER_DATA_CHANGED_EVENT, getAllProgress, getAttemptHistory } from "../utils/storageUtils.js";
 import { getAllReviewers } from "../data/reviewerRegistry.js";
@@ -193,6 +193,12 @@ export default function Navbar({ theme, onToggleTheme }) {
           <NavLink to="/friends" onClick={closeMenu}>
             <Users size={17} aria-hidden="true" />
             Friends
+          </NavLink>
+          <NavLink to="/privacy" onClick={closeMenu}>
+            <span aria-hidden="true">
+              <Shield size={17} />
+              Privacy Policy
+            </span>
           </NavLink>
         </nav>
 
