@@ -202,6 +202,10 @@ function getFriendlyGenerationError(error) {
   return message || "Could not generate a reviewer.";
 }
 
+function getAiProviderNote(provider) {
+  return provider && provider !== "Gemini" ? ` (served by ${provider} fallback)` : "";
+}
+
 function checkAiRateLimit(userId = "") {
   const now = Date.now();
   const key = `${AI_RATE_LIMIT_KEY}:${userId || "guest"}`;
@@ -716,7 +720,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       });
       setGenerationMessage(data.warning
         ? `${data.warning} ${getSaveMessage(saveMode)}`
-        : `Reviewer generated with ${reviewer.questions.length} questions. ${getSaveMessage(saveMode)}`);
+        : `Reviewer generated with ${reviewer.questions.length} questions.${getAiProviderNote(data.provider)} ${getSaveMessage(saveMode)}`);
       setProgressStep("Done");
     } catch (error) {
       logClientError("generate-reviewer", error, {
@@ -821,7 +825,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       });
       setGenerationMessage(data.warning
         ? `${data.warning} ${getSaveMessage(saveMode)}`
-        : `Added ${data.addedQuestionCount || moreQuestionCount} questions. ${getSaveMessage(saveMode)}`);
+        : `Added ${data.addedQuestionCount || moreQuestionCount} questions.${getAiProviderNote(data.provider)} ${getSaveMessage(saveMode)}`);
       setProgressStep("Done");
     } catch (error) {
       logClientError("extend-reviewer", error, {

@@ -1,7 +1,39 @@
 import { createClient } from "@supabase/supabase-js";
 
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
-const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+const AI_PROVIDERS = [
+  {
+    name: "Gemini",
+    kind: "gemini",
+    endpoint: GEMINI_ENDPOINT,
+    apiKeyEnv: "GEMINI_API_KEY",
+    modelEnv: "GEMINI_MODEL",
+    defaultModel: DEFAULT_GEMINI_MODEL
+  },
+  {
+    name: "Groq",
+    kind: "openai",
+    endpoint: "https://api.groq.com/openai/v1/chat/completions",
+    apiKeyEnv: "GROQ_API_KEY",
+    modelEnv: "GROQ_MODEL",
+    defaultModel: "llama-3.3-70b-versatile",
+    supportsVision: false,
+    supportsJsonMode: true,
+    maxTokens: 8192
+  },
+  {
+    name: "OpenRouter",
+    kind: "openai",
+    endpoint: "https://openrouter.ai/api/v1/chat/completions",
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    modelEnv: "OPENROUTER_MODEL",
+    defaultModel: "meta-llama/llama-3.3-70b-instruct:free",
+    supportsVision: false,
+    supportsJsonMode: false,
+    maxTokens: 16384
+  }
+];
 const MAX_SOURCE_LENGTH = 45000;
 const MAX_FILE_BASE64_LENGTH = 4200000;
 const MAX_COMPLETION_ATTEMPTS = 3;
@@ -484,6 +516,145 @@ async function requestReviewerFromGemini({ apiKey, model, parts }) {
   }
 }
 
+function getProviderModel(provider) {
+  return process.env[provider.modelEnv] || provider.defaultModel;
+}
+
+function getConfiguredProviders() {
+  return AI_PROVIDERS.filter((provider) => Boolean(process.env[provider.apiKeyEnv]));
+}
+
+function extractJsonFromText(text) {
+  const trimmed = String(text).trim();
+  let candidate = trimmed;
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
+  if (fenced) candidate = fenced[1].trim();
+  const firstBrace = candidate.indexOf("{");
+  const lastBrace = candidate.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidate = candidate.slice(firstBrace, lastBrace + 1);
+  }
+  return JSON.parse(candidate);
+}
+
+async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasReadableMaterial }) {
+  const content = [];
+
+  for (const part of parts || []) {
+    if (part?.text) {
+      content.push({ type: "text", text: part.text });
+      continue;
+    }
+
+    if (part?.inline_data) {
+      const mimeType = String(part.inline_data.mime_type || "");
+      if (provider.supportsVision && mimeType.startsWith("image/")) {
+        content.push({
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${part.inline_data.data}` }
+        });
+      } else if (!hasReadableMaterial) {
+        const error = new Error(
+          `${provider.name} cannot read the uploaded file and there is no pasted text to fall back on. Paste the study material as text or try again when the primary AI is available.`
+        );
+        error.statusCode = 422;
+        throw error;
+      } else {
+        content.push({
+          type: "text",
+          text: `[The source also includes an attached file (${mimeType || "file"}) that could not be sent to this provider directly. Generate only from the study material and notes already provided.]`
+        });
+      }
+    }
+  }
+
+  const body = {
+    model,
+    messages: [
+      {
+        role: "system",
+        content: "You are a strict JSON generator. Respond with exactly one JSON object that follows the requested schema. Do not include markdown fences, prose, or any text outside the JSON object."
+      },
+      { role: "user", content }
+    ],
+    temperature: 0.35,
+    max_tokens: provider.maxTokens || 8192
+  };
+  if (provider.supportsJsonMode) {
+    body.response_format = { type: "json_object" };
+  }
+
+  let aiResponse;
+  try {
+    aiResponse = await fetch(provider.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    const wrapped = new Error(`${provider.name} request failed: ${error?.message || "network error"}`);
+    wrapped.statusCode = 502;
+    throw wrapped;
+  }
+
+  const data = await aiResponse.json().catch(() => ({}));
+
+  if (!aiResponse.ok) {
+    const message = data?.error?.message || `${provider.name} could not generate a reviewer.`;
+    const error = new Error(message);
+    error.statusCode = aiResponse.status;
+    throw error;
+  }
+
+  const text = data?.choices?.[0]?.message?.content || "";
+  if (!String(text).trim()) {
+    const error = new Error(`${provider.name} returned an empty response.`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  try {
+    return extractJsonFromText(text);
+  } catch {
+    const error = new Error(`${provider.name} returned invalid JSON.`);
+    error.statusCode = 502;
+    error.rawText = text;
+    throw error;
+  }
+}
+
+async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId }) {
+  const providers = getConfiguredProviders();
+
+  if (!providers.length) {
+    const error = new Error("No AI provider is configured. Add GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  let lastError = null;
+
+  for (const provider of providers) {
+    try {
+      const apiKey = process.env[provider.apiKeyEnv];
+      const model = getProviderModel(provider);
+      const reviewer = provider.kind === "gemini"
+        ? await requestReviewerFromGemini({ apiKey, model, parts })
+        : await requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasReadableMaterial });
+
+      return { reviewer, provider: provider.name };
+    } catch (error) {
+      lastError = error;
+      console.warn(`[${requestId}] ${provider.name} failed (${error?.statusCode || "unknown"}): ${error?.message || "Unknown error"}`);
+    }
+  }
+
+  throw lastError;
+}
+
 export default async function handler(request, response) {
   const requestId = getRequestId();
   response.setHeader("X-Request-Id", requestId);
@@ -508,10 +679,9 @@ export default async function handler(request, response) {
     });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error(`[${requestId}] GEMINI_API_KEY is not configured.`);
-    return sendJson(response, 500, { error: "GEMINI_API_KEY is not configured.", requestId });
+  if (!getConfiguredProviders().length) {
+    console.error(`[${requestId}] No AI provider is configured.`);
+    return sendJson(response, 500, { error: "No AI provider is configured. Add GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.", requestId });
   }
 
   const approximateBodyLength = JSON.stringify(request.body || {}).length;
@@ -552,7 +722,6 @@ export default async function handler(request, response) {
   }
 
   const safeSourceText = trimmedSourceText.slice(0, MAX_SOURCE_LENGTH);
-  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
   const parsedAdditionalCount = Math.max(1, Math.min(75, Number(additionalCount) || 20));
   const parsedQuestionCount = questionCount === "comprehensive"
     ? "comprehensive"
@@ -595,11 +764,12 @@ export default async function handler(request, response) {
     }
 
     try {
-      const additionalReviewer = normalizeGeneratedReviewer(await requestReviewerFromGemini({
-        apiKey,
-        model,
-        parts
-      }), {
+      const { reviewer: rawAdditionalReviewer, provider: servedProvider } = await requestReviewerWithFallback({
+        parts,
+        hasReadableMaterial: true,
+        requestId
+      });
+      const additionalReviewer = normalizeGeneratedReviewer(rawAdditionalReviewer, {
         title: baseReviewer.title,
         subject: baseReviewer.subject,
         instructions: baseReviewer.instructions,
@@ -612,11 +782,12 @@ export default async function handler(request, response) {
 
       return sendJson(response, 200, {
         reviewer,
+        provider: servedProvider,
         requestedQuestionCount: requestedCount,
         generatedQuestionCount: reviewer.questions.length,
         addedQuestionCount: Math.max(0, reviewer.questions.length - baseReviewer.questions.length),
         warning: reviewer.questions.length < requestedCount
-          ? `Gemini added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - baseReviewer.questions.length} requested new questions.`
+          ? `${servedProvider} added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - baseReviewer.questions.length} requested new questions.`
           : null
       });
     } catch (error) {
@@ -654,11 +825,13 @@ export default async function handler(request, response) {
   }
 
   try {
-    let reviewer = normalizeGeneratedReviewer(await requestReviewerFromGemini({
-      apiKey,
-      model,
-      parts
-    }), {
+    const firstAttempt = await requestReviewerWithFallback({
+      parts,
+      hasReadableMaterial: trimmedSourceText.length > 0,
+      requestId
+    });
+    let servedProvider = firstAttempt.provider;
+    let reviewer = normalizeGeneratedReviewer(firstAttempt.reviewer, {
       title: String(title).trim(),
       subject: String(subject).trim(),
       instructions: String(instructions).trim()
@@ -693,11 +866,13 @@ export default async function handler(request, response) {
         });
       }
 
-      const additionalReviewer = normalizeGeneratedReviewer(await requestReviewerFromGemini({
-        apiKey,
-        model,
-        parts: completionParts
-      }), {
+      const completionAttempt = await requestReviewerWithFallback({
+        parts: completionParts,
+        hasReadableMaterial: trimmedSourceText.length > 0,
+        requestId
+      });
+      servedProvider = completionAttempt.provider;
+      const additionalReviewer = normalizeGeneratedReviewer(completionAttempt.reviewer, {
         title: reviewer.title,
         subject: reviewer.subject,
         instructions: reviewer.instructions
@@ -708,11 +883,12 @@ export default async function handler(request, response) {
     }
 
     const warning = requestedCount && reviewer.questions.length < requestedCount
-      ? `Gemini generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
+      ? `${servedProvider} generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
       : null;
 
     return sendJson(response, 200, {
       reviewer,
+      provider: servedProvider,
       requestedQuestionCount: requestedCount || "comprehensive",
       generatedQuestionCount: reviewer.questions.length,
       warning
