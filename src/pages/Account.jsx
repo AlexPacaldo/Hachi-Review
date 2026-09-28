@@ -145,7 +145,7 @@ export default function Account() {
             </form>
 
             <section className="account-danger-zone">
-              <h2>Data Controls</h2>
+              <h2>Data Management</h2>
               <div className="account-data-actions">
                 <button className="button subtle" type="button" onClick={() => setConfirmAction("delete-device-data")}>
                   <HardDrive size={17} aria-hidden="true" />
@@ -182,7 +182,7 @@ export default function Account() {
             ? "You can sign in again anytime."
             : confirmAction === "delete-cloud-data"
               ? "This deletes your cloud reviewers, profile row, friendships, and reviewer shares. Your Google/Supabase login account may still exist."
-              : "This clears saved reviewers, attempts, progress, drafts, cached cloud data, and theme settings from this browser."
+              : "This clears your local study data, generated reviewers, progress, drafts, cached data, and theme preferences from this browser."
         }
         confirmLabel={confirmAction === "sign-out" ? "Sign Out" : "Delete"}
         onCancel={() => setConfirmAction(null)}

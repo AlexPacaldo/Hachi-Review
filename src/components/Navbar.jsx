@@ -194,12 +194,7 @@ export default function Navbar({ theme, onToggleTheme }) {
             <Users size={17} aria-hidden="true" />
             Friends
           </NavLink>
-          <NavLink to="/privacy" onClick={closeMenu}>
-            <span aria-hidden="true">
-              <Shield size={17} />
-              Privacy Policy
-            </span>
-          </NavLink>
+          
         </nav>
 
         <div className="sidebar-decks" aria-label="Recently studied">

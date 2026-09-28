@@ -3263,6 +3263,11 @@ legend {
     display: none;
   }
 
+  .navbar:is(.menu-open, .menu-closing) .theme-toggle {
+    align-self: center;
+    flex-shrink: 0;
+  }
+
   .navbar:is(.menu-open, .menu-closing) .brand {
     display: inline-flex;
     grid-column: 1;
