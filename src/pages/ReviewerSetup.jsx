@@ -8,6 +8,7 @@ import ReviewerMenu from "../components/ReviewerMenu.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { createQuizSession, getQuestionTypeOptions, getStoredQuestionTypes } from "../utils/quizUtils.js";
 import { clearQuizProgress, getLatestAttempt, loadQuizProgress, saveQuizProgress } from "../utils/storageUtils.js";
+import { pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
 import hachiDogCurious from "../assets/hachi-dog-curious.png";
 import hachiDogExcited from "../assets/hachi-dog-excited.png";
 import hachiDogFocused from "../assets/hachi-dog-focused.png";
@@ -104,6 +105,7 @@ export default function ReviewerSetup() {
     const nextSettings = { ...settings, ...overrides };
     const session = createQuizSession(reviewer, nextSettings, retryIds);
     saveQuizProgress(session);
+    scheduleProgressSync(session);
     navigate(`/quiz/${reviewer.reviewerId}`);
   };
 
@@ -490,6 +492,7 @@ export default function ReviewerSetup() {
         onCancel={() => setShowStartOver(false)}
         onConfirm={() => {
           clearQuizProgress(reviewer.reviewerId);
+          pushRemovedProgressToCloud(reviewer.reviewerId);
           setShowStartOver(false);
           startQuiz();
         }}

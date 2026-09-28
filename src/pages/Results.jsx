@@ -4,6 +4,7 @@ import EmptyState from "../components/EmptyState.jsx";
 import { getReviewerById } from "../data/reviewerRegistry.js";
 import { createQuizSession } from "../utils/quizUtils.js";
 import { getAttemptById, getLatestAttempt, saveQuizProgress } from "../utils/storageUtils.js";
+import { scheduleProgressSync } from "../services/syncEngine.js";
 
 export default function Results() {
   const { reviewerId } = useParams();
@@ -30,6 +31,7 @@ export default function Results() {
       attempt.incorrectQuestionIds
     );
     saveQuizProgress(session);
+    scheduleProgressSync(session);
     navigate(`/quiz/${reviewerId}`);
   }
 
@@ -49,6 +51,7 @@ export default function Results() {
       weakQuestionIds
     );
     saveQuizProgress(session);
+    scheduleProgressSync(session);
     navigate(`/quiz/${reviewerId}`);
   }
 

@@ -8,6 +8,7 @@ import QuestionNavigator from "../components/QuestionNavigator.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import { getReviewerById } from "../data/reviewerRegistry.js";
 import { clearQuizProgress, loadQuizProgress, saveAttempt, saveQuizProgress } from "../utils/storageUtils.js";
+import { cancelProgressSync, pushAttemptToCloud, pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
 import { createAttemptFromSession, formatDuration, getQuestionResult, isTypedQuestion } from "../utils/quizUtils.js";
 
 function isTypingTarget(target) {
@@ -39,7 +40,9 @@ export default function Quiz() {
 
   useEffect(() => {
     if (!session) return;
-    saveQuizProgress({ ...session, updatedAt: Date.now() });
+    const nextSession = { ...session, updatedAt: Date.now() };
+    saveQuizProgress(nextSession);
+    scheduleProgressSync(nextSession);
   }, [session]);
 
   useEffect(() => {
@@ -174,6 +177,9 @@ export default function Quiz() {
     const attempt = createAttemptFromSession(finalSession);
     saveAttempt(attempt);
     clearQuizProgress(session.reviewerId);
+    cancelProgressSync(session.reviewerId);
+    pushAttemptToCloud(attempt);
+    pushRemovedProgressToCloud(session.reviewerId);
     navigate(`/results/${session.reviewerId}?attempt=${attempt.attemptId}`);
   }
 

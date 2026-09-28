@@ -4,6 +4,7 @@ import EmptyState from "../components/EmptyState.jsx";
 import { getReviewerById } from "../data/reviewerRegistry.js";
 import { createQuizSession, getQuestionResult } from "../utils/quizUtils.js";
 import { getAttemptById, getLatestAttempt, saveQuizProgress } from "../utils/storageUtils.js";
+import { scheduleProgressSync } from "../services/syncEngine.js";
 
 export default function ReviewAnswers() {
   const { reviewerId } = useParams();
@@ -51,6 +52,7 @@ export default function ReviewAnswers() {
       attempt.incorrectQuestionIds
     );
     saveQuizProgress(session);
+    scheduleProgressSync(session);
     navigate(`/quiz/${reviewerId}`);
   }
 

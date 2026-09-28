@@ -19,6 +19,7 @@ import {
 } from "../services/cloudReviewers.js";
 import ConfirmModal from "./ConfirmModal.jsx";
 import { deleteReviewerSharesForOwner, listFriendships } from "../services/social.js";
+import { pushRemovedProgressToCloud, saveReviewerToAccount } from "../services/syncEngine.js";
 import {
   deleteLocalReviewer,
   getCloudReviewerCache,
@@ -231,9 +232,18 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     });
   }
 
-  function saveOffline() {
+  async function saveOffline() {
     saveLocalReviewer(reviewer);
-    onMessage({ type: "success", text: "Saved offline on this device." });
+
+    if (user && isOwner) {
+      const { error } = await saveReviewerToAccount(user.id, reviewer);
+      onMessage(error
+        ? { type: "warning", text: `Saved on this device. Cloud save failed: ${error.message}` }
+        : { type: "success", text: "Saved to your account and this device." });
+    } else {
+      onMessage({ type: "success", text: "Saved offline on this device." });
+    }
+
     onChanged();
   }
 
@@ -247,6 +257,7 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
 
     if (target === "local" || target === "both") {
       deleteLocalReviewer(reviewer.reviewerId);
+      pushRemovedProgressToCloud(reviewer.reviewerId);
     }
 
     if ((target === "cloud" || target === "both") && user) {

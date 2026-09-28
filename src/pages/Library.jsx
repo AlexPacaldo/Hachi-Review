@@ -20,13 +20,14 @@ import {
   getLocalReviewers,
   getSyncQueue,
   queueReviewerForCloudSync,
-  removeReviewerFromSyncQueue,
+  REVIEWER_DATA_CHANGED_EVENT,
   restoreLocalDataSnapshot,
   saveCloudReviewerCache,
   saveLocalReviewer,
   SOCIAL_DATA_CHANGED_EVENT
 } from "../utils/storageUtils.js";
 import { logClientError } from "../utils/errorLogger.js";
+import { flushSyncQueue, pushClearedHistoryToCloud, pushClearedProgressToCloud, pushRemovedProgressToCloud } from "../services/syncEngine.js";
 
 const MAX_BACKUP_RESTORE_SIZE = 8 * 1024 * 1024;
 const CLOUD_POLL_INTERVAL_MS = 60000;
@@ -69,7 +70,7 @@ export default function Library() {
   const [cloudMessage, setCloudMessage] = useState(null);
   const [syncAllLoading, setSyncAllLoading] = useState(false);
   const [offlineSaveStatus, setOfflineSaveStatus] = useState({});
-  const [syncQueue, setSyncQueue] = useState(getSyncQueue);
+  const [syncQueue, setSyncQueue] = useState(() => getSyncQueue(user?.id));
   const [storageInfo, setStorageInfo] = useState({
     supported: false,
     persisted: false,
@@ -88,6 +89,13 @@ export default function Library() {
       window.removeEventListener("offline", updateOnlineStatus);
     };
   }, []);
+
+  useEffect(() => {
+    const handleReviewerDataChange = () => refreshLocalData();
+
+    window.addEventListener(REVIEWER_DATA_CHANGED_EVENT, handleReviewerDataChange);
+    return () => window.removeEventListener(REVIEWER_DATA_CHANGED_EVENT, handleReviewerDataChange);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!isOnline || !configured || !user || !syncQueue.length) return;
@@ -140,7 +148,7 @@ export default function Library() {
     setProgress(getAllProgress());
     setHistory(getAttemptHistory());
     setGeneratorDraft(getGeneratorDraft());
-    setSyncQueue(getSyncQueue());
+    setSyncQueue(getSyncQueue(user?.id));
   }
 
   async function refreshStorageInfo() {
@@ -376,8 +384,8 @@ export default function Library() {
     }
 
     if (!isOnline) {
-      queueReviewerForCloudSync(reviewer);
-      setSyncQueue(getSyncQueue());
+      queueReviewerForCloudSync(user.id, reviewer);
+      setSyncQueue(getSyncQueue(user.id));
       setSyncStatus((current) => ({
         ...current,
         [reviewer.reviewerId]: { type: "pending", message: "Queued. It will sync when this device is online." }
@@ -405,39 +413,31 @@ export default function Library() {
   }
 
   async function processSyncQueue() {
-    const queuedItems = getSyncQueue();
+    const queuedItems = getSyncQueue(user?.id);
     if (!queuedItems.length || !user || !configured || !navigator.onLine) return;
 
-    setCloudMessage({ type: "pending", message: `Syncing ${queuedItems.length} queued reviewer${queuedItems.length === 1 ? "" : "s"}...` });
+    setCloudMessage({ type: "pending", message: `Syncing ${queuedItems.length} queued change${queuedItems.length === 1 ? "" : "s"}...` });
 
-    for (const item of queuedItems) {
-      if (item.type !== "upsert-reviewer" || !item.reviewer?.reviewerId) continue;
+    const { results } = await flushSyncQueue();
+    let failed = 0;
+
+    results.forEach(({ item, error }) => {
+      if (!item.reviewerId) return;
 
       setSyncStatus((current) => ({
         ...current,
-        [item.reviewer.reviewerId]: { type: "pending", message: "Syncing queued change..." }
+        [item.reviewerId]: error
+          ? { type: "error", message: error.message || "Queued sync failed." }
+          : { type: "success", message: "Queued sync complete." }
       }));
 
-      const { error } = await upsertCloudReviewer(user.id, item.reviewer);
+      if (error) failed += 1;
+    });
 
-      if (error) {
-        setSyncStatus((current) => ({
-          ...current,
-          [item.reviewer.reviewerId]: { type: "error", message: error.message || "Queued sync failed." }
-        }));
-      } else {
-        removeReviewerFromSyncQueue(item.reviewer.reviewerId);
-        setSyncStatus((current) => ({
-          ...current,
-          [item.reviewer.reviewerId]: { type: "success", message: "Queued sync complete." }
-        }));
-      }
-    }
-
-    setSyncQueue(getSyncQueue());
+    setSyncQueue(getSyncQueue(user.id));
     await loadCloudReviewers();
-    setCloudMessage(getSyncQueue().length
-      ? { type: "error", message: `${getSyncQueue().length} queued reviewer${getSyncQueue().length === 1 ? "" : "s"} still need sync.` }
+    setCloudMessage(failed
+      ? { type: "error", message: `${failed} queued change${failed === 1 ? "" : "s"} still need sync.` }
       : { type: "success", message: "Queued offline changes synced." });
   }
 
@@ -458,8 +458,8 @@ export default function Library() {
     }
 
     if (!isOnline) {
-      unsyncedLocalReviewers.forEach((reviewer) => queueReviewerForCloudSync(reviewer));
-      setSyncQueue(getSyncQueue());
+      unsyncedLocalReviewers.forEach((reviewer) => queueReviewerForCloudSync(user.id, reviewer));
+      setSyncQueue(getSyncQueue(user.id));
       setCloudMessage({ type: "pending", message: `${unsyncedLocalReviewers.length} offline reviewer${unsyncedLocalReviewers.length === 1 ? "" : "s"} queued for sync.` });
       setSyncStatus((current) => {
         const nextStatus = { ...current };
@@ -537,14 +537,17 @@ export default function Library() {
   async function runConfirmedAction() {
     if (confirmAction?.type === "clear-history") {
       clearAttemptHistory();
+      pushClearedHistoryToCloud();
     }
 
     if (confirmAction?.type === "clear-progress") {
       clearAllQuizProgress();
+      pushClearedProgressToCloud();
     }
 
     if (confirmAction?.type === "remove-reviewer") {
       deleteLocalReviewer(confirmAction.reviewerId);
+      pushRemovedProgressToCloud(confirmAction.reviewerId);
     }
 
     if (confirmAction?.type === "clear-local-reviewers") {
@@ -560,12 +563,14 @@ export default function Library() {
     }
 
     if (confirmAction?.type === "clear-sync-queue") {
-      clearSyncQueue();
+      clearSyncQueue(user?.id);
+      setSyncQueue(getSyncQueue(user?.id));
       setCloudMessage({ type: "success", message: "Queued sync actions cleared." });
     }
 
     setConfirmAction(null);
     refreshLocalData();
+    setSyncQueue(getSyncQueue(user?.id));
   }
 
   return (

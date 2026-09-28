@@ -77,6 +77,99 @@ using (auth.uid() = owner_id);
 create index if not exists reviewers_owner_updated_idx
 on public.reviewers(owner_id, updated_at desc);
 
+-- Quiz progress and attempt history are personal records, so they stay private
+-- to their owner: no friend or share policies here, unlike public.reviewers.
+create table if not exists public.reviewer_progress (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  reviewer_id text not null,
+  data jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (owner_id, reviewer_id)
+);
+
+alter table public.reviewer_progress enable row level security;
+
+grant select, insert, update, delete on public.reviewer_progress to authenticated;
+
+drop policy if exists "Users can read own progress" on public.reviewer_progress;
+create policy "Users can read own progress"
+on public.reviewer_progress
+for select
+to authenticated
+using (auth.uid() = owner_id);
+
+drop policy if exists "Users can insert own progress" on public.reviewer_progress;
+create policy "Users can insert own progress"
+on public.reviewer_progress
+for insert
+to authenticated
+with check (auth.uid() = owner_id);
+
+drop policy if exists "Users can update own progress" on public.reviewer_progress;
+create policy "Users can update own progress"
+on public.reviewer_progress
+for update
+to authenticated
+using (auth.uid() = owner_id)
+with check (auth.uid() = owner_id);
+
+drop policy if exists "Users can delete own progress" on public.reviewer_progress;
+create policy "Users can delete own progress"
+on public.reviewer_progress
+for delete
+to authenticated
+using (auth.uid() = owner_id);
+
+create table if not exists public.reviewer_attempts (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  attempt_id text not null,
+  reviewer_id text not null,
+  data jsonb not null,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique(owner_id, attempt_id)
+);
+
+alter table public.reviewer_attempts enable row level security;
+
+grant select, insert, update, delete on public.reviewer_attempts to authenticated;
+
+drop policy if exists "Users can read own attempts" on public.reviewer_attempts;
+create policy "Users can read own attempts"
+on public.reviewer_attempts
+for select
+to authenticated
+using (auth.uid() = owner_id);
+
+drop policy if exists "Users can insert own attempts" on public.reviewer_attempts;
+create policy "Users can insert own attempts"
+on public.reviewer_attempts
+for insert
+to authenticated
+with check (auth.uid() = owner_id);
+
+drop policy if exists "Users can update own attempts" on public.reviewer_attempts;
+create policy "Users can update own attempts"
+on public.reviewer_attempts
+for update
+to authenticated
+using (auth.uid() = owner_id)
+with check (auth.uid() = owner_id);
+
+drop policy if exists "Users can delete own attempts" on public.reviewer_attempts;
+create policy "Users can delete own attempts"
+on public.reviewer_attempts
+for delete
+to authenticated
+using (auth.uid() = owner_id);
+
+create index if not exists reviewer_attempts_owner_completed_idx
+on public.reviewer_attempts(owner_id, completed_at desc);
+
+create index if not exists reviewer_attempts_owner_reviewer_idx
+on public.reviewer_attempts(owner_id, reviewer_id);
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique,

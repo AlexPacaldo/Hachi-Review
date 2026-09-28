@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import EmptyState from "../components/EmptyState.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import { clearAttemptHistory, getAttemptHistory } from "../utils/storageUtils.js";
+import { pushClearedHistoryToCloud } from "../services/syncEngine.js";
 import { formatDuration } from "../utils/quizUtils.js";
 
 export default function History() {
@@ -56,6 +57,7 @@ export default function History() {
         onCancel={() => setConfirmClear(false)}
         onConfirm={() => {
           clearAttemptHistory();
+          pushClearedHistoryToCloud();
           setHistory([]);
           setConfirmClear(false);
         }}

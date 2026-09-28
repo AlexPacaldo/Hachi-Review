@@ -58,6 +58,8 @@ export async function deleteMyCloudAppData(userId) {
   const operations = [
     supabase.from(SHARES_TABLE).delete().or(`owner_id.eq.${userId},recipient_id.eq.${userId}`),
     supabase.from(FRIENDSHIPS_TABLE).delete().or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+    supabase.from("reviewer_progress").delete().eq("owner_id", userId),
+    supabase.from("reviewer_attempts").delete().eq("owner_id", userId),
     supabase.from("reviewers").delete().eq("owner_id", userId),
     supabase.from(PROFILES_TABLE).delete().eq("id", userId)
   ];

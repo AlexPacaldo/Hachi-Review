@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { isSupabaseConfigured, supabase } from "../lib/supabaseClient.js";
 import { ensureMyProfile } from "../services/social.js";
+import { flushPendingProgress, hydrateFromCloud, setSyncUser, syncAccount } from "../services/syncEngine.js";
+
+const CLOUD_PULL_INTERVAL_MS = 60000;
 
 const AuthContext = createContext(null);
 
@@ -38,6 +41,55 @@ export function AuthProvider({ children }) {
       ensureMyProfile(session.user);
     }
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    const userId = session?.user?.id || null;
+    setSyncUser(userId);
+    if (userId) syncAccount();
+    return () => setSyncUser(null);
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user) return undefined;
+
+    const resumeSync = () => {
+      if (navigator.onLine) syncAccount();
+    };
+
+    window.addEventListener("online", resumeSync);
+    return () => window.removeEventListener("online", resumeSync);
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user) return undefined;
+
+    const pullFromCloud = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) hydrateFromCloud();
+    };
+
+    const interval = window.setInterval(pullFromCloud, CLOUD_PULL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", pullFromCloud);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", pullFromCloud);
+    };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    // Progress is debounced, so save whatever is still pending before the tab
+    // is backgrounded or closed instead of waiting out the timer.
+    const flushOnHide = () => {
+      if (document.visibilityState === "hidden") flushPendingProgress();
+    };
+
+    document.addEventListener("visibilitychange", flushOnHide);
+    window.addEventListener("pagehide", flushPendingProgress);
+    return () => {
+      document.removeEventListener("visibilitychange", flushOnHide);
+      window.removeEventListener("pagehide", flushPendingProgress);
+    };
+  }, []);
 
   const value = useMemo(() => ({
     configured: isSupabaseConfigured,
