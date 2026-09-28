@@ -18,7 +18,7 @@ export default function Privacy() {
         </ul>
         <p>You can opt-out of targeted advertising by visiting <a href="https://optout.aboutads.info/" target="_blank">About Ads Opt-out</a> or <a href="https://www.youronlinechoices.com/" target="_blank">Your Online Choices</a>.</p>
         
-        <h2>Cookies</h3>
+        <h3>Cookies</h3>
         <p>Our website uses cookies to enhance user experience. These cookies may be essential for the site to function, or may be used for analytics and advertising purposes. You can control cookie preferences through your browser settings.</p>
         
         <h2>Google Analytics</h2>
