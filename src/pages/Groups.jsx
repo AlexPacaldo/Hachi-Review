@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Layers, Plus, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
+import { Layers, Plus, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
@@ -227,11 +227,6 @@ export default function Groups() {
                       ) : null}
                     </ul>
                   </div>
-
-                  <p className="group-tile-open">
-                    Open group
-                    <ChevronRight size={15} aria-hidden="true" />
-                  </p>
                 </Link>
 
                 {role === "owner" ? (

@@ -180,7 +180,17 @@ export async function updateGroup(userId, groupId, { name, description } = {}) {
     .single();
 
   if (!error) announceSocialChange();
-  return { data, error };
+
+  // Row level security silently filters a non-owner update down to zero rows,
+  // and .single() turns that into a bare PGRST116 with no useful wording.
+  if (error?.code === "PGRST116") {
+    return {
+      data: null,
+      error: new Error("Only the group owner or an admin can change this group.")
+    };
+  }
+
+  return { data, error: friendlyGroupsError(error) };
 }
 
 export async function deleteGroup(groupId) {

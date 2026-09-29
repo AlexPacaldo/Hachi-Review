@@ -6,6 +6,7 @@ import {
   Cloud,
   Loader2,
   MoreVertical,
+  Pencil,
   Save,
   Trash2,
   UserPlus,
@@ -72,6 +73,10 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       : reviewer.source !== "built-in"
     : reviewer.source !== "cloud" && reviewer.source !== "built-in";
   const isBuiltIn = reviewer.source === "built-in";
+
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState(reviewer.title || "");
+  const [newSubject, setNewSubject] = useState(reviewer.subject || "");
 
   useEffect(() => {
     if (!open) {
@@ -183,6 +188,15 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     }
 
     onChanged();
+  }
+
+  function openRename() {
+    const newTitle = window.prompt("New title", reviewer.title || "");
+    if (newTitle == null || !newTitle.trim()) return;
+    const newSubject = window.prompt("New subject", reviewer.subject || "");
+    if (newSubject == null || !newSubject.trim()) return;
+    syncMetadata({ title: newTitle, subject: newSubject });
+    onMessage({ type: "success", text: "Reviewer renamed." });
   }
 
   async function changeVisibility(nextVisibility) {
@@ -537,6 +551,15 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
               <button className="reviewer-menu-item" type="button" onClick={saveOffline}>
                 <Save size={16} aria-hidden="true" />
                 Save offline on this device
+              </button>
+            </div>
+          ) : null}
+
+          {isOwner && hasCloud ? (
+            <div className="reviewer-menu-section">
+              <button className="reviewer-menu-item" type="button" onClick={openRename}>
+                <Pencil size={16} aria-hidden="true" />
+                Rename Reviewer
               </button>
             </div>
           ) : null}

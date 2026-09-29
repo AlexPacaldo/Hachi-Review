@@ -71,6 +71,11 @@ export default function GroupDetail() {
   const [busyAction, setBusyAction] = useState(null);
 
   const [pendingKick, setPendingKick] = useState(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState(null);
   const [pendingUnshare, setPendingUnshare] = useState(null);
   const [pendingLeave, setPendingLeave] = useState(false);
   const [pendingDeleteGroup, setPendingDeleteGroup] = useState(false);
@@ -368,6 +373,42 @@ export default function GroupDetail() {
     navigate("/groups");
   }
 
+  function openEditGroup() {
+    setEditName(group.name || "");
+    setEditDescription(group.description || "");
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  async function submitEditGroup(event) {
+    event.preventDefault();
+    if (editSaving) return;
+
+    if (!editName.trim()) {
+      setEditError("Give the group a name.");
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError(null);
+
+    const { error } = await updateGroup(user.id, groupId, {
+      name: editName,
+      description: editDescription
+    });
+
+    setEditSaving(false);
+
+    if (error) {
+      setEditError(error.message || "Could not save the group.");
+      return;
+    }
+
+    setEditOpen(false);
+    setMessage({ type: "success", text: "Group details updated." });
+    await loadGroup(true);
+  }
+
   async function confirmDeleteGroup() {
     setPendingDeleteGroup(false);
     const { error } = await deleteGroup(groupId);
@@ -594,6 +635,17 @@ export default function GroupDetail() {
               ) : null}
 
               <div className="group-menu-actions">
+                {canManage ? (
+                  <button
+                    className="button subtle"
+                    type="button"
+                    onClick={() => { setMenuOpen(false); setEditOpen(true); }}
+                  >
+                    <Pencil size={15} aria-hidden="true" />
+                    Edit group
+                  </button>
+                ) : null}
+
                 {myRole === "owner" ? (
                   <button
                     className="button subtle danger-text"
@@ -699,6 +751,67 @@ export default function GroupDetail() {
         <UsersRound size={14} aria-hidden="true" />
         Reviewers shared with a group are only visible to that group, not to your friends.
       </p>
+
+      {editOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setEditOpen(false)}>
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-group-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <h2 id="edit-group-title">Edit group</h2>
+                <p className="muted">Everyone in the group sees this name and description.</p>
+              </div>
+              <button
+                className="icon-button small"
+                type="button"
+                onClick={() => setEditOpen(false)}
+                aria-label="Close"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <form className="group-form" onSubmit={submitEditGroup}>
+              <label htmlFor="edit-group-name">Group name</label>
+              <input
+                id="edit-group-name"
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                placeholder="Biology revision crew"
+                maxLength={60}
+                autoFocus
+              />
+
+              <label htmlFor="edit-group-description">Description (optional)</label>
+              <textarea
+                id="edit-group-description"
+                value={editDescription}
+                onChange={(event) => setEditDescription(event.target.value)}
+                placeholder="What are you working through together?"
+                rows={3}
+                maxLength={240}
+              />
+
+              {editError ? <p className="sync-message error">{editError}</p> : null}
+
+              <div className="modal-actions">
+                <button className="button subtle" type="button" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </button>
+                <button className="button primary" type="submit" disabled={editSaving}>
+                  {editSaving ? <Loader2 className="spinner" size={16} aria-hidden="true" /> : <Pencil size={16} aria-hidden="true" />}
+                  {editSaving ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
 
       <ConfirmModal
         open={Boolean(pendingKick)}

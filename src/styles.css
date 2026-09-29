@@ -3013,19 +3013,6 @@ legend {
   overflow-wrap: anywhere;
 }
 
-.group-tile-open {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin: 16px 22px 0;
-  color: var(--accent);
-  font-weight: 800;
-}
-
-.group-tile:hover .group-tile-open {
-  text-decoration: underline;
-}
-
 .group-tile-remove {
   margin: 14px 22px 22px;
 }
