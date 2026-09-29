@@ -20,7 +20,21 @@ const AI_PROVIDERS = [
     defaultModel: "llama-3.3-70b-versatile",
     supportsVision: false,
     supportsJsonMode: true,
-    maxTokens: 8192
+    maxTokens: 8192,
+    timeoutMs: 60000
+  },
+  {
+    name: "Groq Vision",
+    kind: "openai",
+    endpoint: "https://api.groq.com/openai/v1/chat/completions",
+    apiKeyEnv: "GROQ_API_KEY",
+    modelEnv: "GROQ_VISION_MODEL",
+    defaultModel: "llama-3.2-90b-vision-instruct",
+    supportsVision: true,
+    supportsJsonMode: false,
+    visionOnly: true,
+    maxTokens: 8192,
+    timeoutMs: 90000
   },
   {
     name: "OpenRouter",
@@ -31,7 +45,8 @@ const AI_PROVIDERS = [
     defaultModel: "meta-llama/llama-3.3-70b-instruct:free",
     supportsVision: false,
     supportsJsonMode: false,
-    maxTokens: 16384
+    maxTokens: 16384,
+    timeoutMs: 90000
   }
 ];
 const MAX_SOURCE_LENGTH = 45000;
@@ -40,6 +55,7 @@ const MAX_COMPLETION_ATTEMPTS = 3;
 const MAX_REQUEST_BODY_LENGTH = 5200000;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 8;
+const DEFAULT_PROVIDER_TIMEOUT_MS = 90000;
 const rateLimitStore = globalThis.__hachiRateLimitStore || new Map();
 globalThis.__hachiRateLimitStore = rateLimitStore;
 const DIFFICULTY_INSTRUCTIONS = {
@@ -236,6 +252,27 @@ function getCandidateText(data) {
     ?.map((part) => part.text || "")
     .join("")
     .trim();
+}
+
+async function fetchWithTimeout(url, options, timeoutMs, providerName) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      const seconds = timeoutMs >= 10000
+        ? String(Math.round(timeoutMs / 1000))
+        : (timeoutMs / 1000).toFixed(1).replace(/\.0$/, "");
+      const timeoutError = new Error(`${providerName} did not respond within ${seconds}s. Trying the next AI provider.`);
+      timeoutError.statusCode = 504;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function getQuestionCountInstruction(questionCount) {
@@ -467,8 +504,8 @@ function mergeReviewers(baseReviewer, additionalReviewer, requestedCount) {
   };
 }
 
-async function requestReviewerFromGemini({ apiKey, model, parts }) {
-  const geminiResponse = await fetch(`${GEMINI_ENDPOINT}/${model}:generateContent`, {
+async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs }) {
+  const geminiResponse = await fetchWithTimeout(`${GEMINI_ENDPOINT}/${model}:generateContent`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -488,7 +525,7 @@ async function requestReviewerFromGemini({ apiKey, model, parts }) {
         response_schema: reviewerSchema
       }
     })
-  });
+  }, timeoutMs, "Gemini");
 
   const data = await geminiResponse.json();
 
@@ -520,8 +557,41 @@ function getProviderModel(provider) {
   return process.env[provider.modelEnv] || provider.defaultModel;
 }
 
-function getConfiguredProviders() {
-  return AI_PROVIDERS.filter((provider) => Boolean(process.env[provider.apiKeyEnv]));
+function getProviderTimeoutMs(provider) {
+  const override = Number(process.env.AI_PROVIDER_TIMEOUT_MS);
+  if (Number.isFinite(override) && override > 0) return override;
+  return provider.timeoutMs || DEFAULT_PROVIDER_TIMEOUT_MS;
+}
+
+function hasConfiguredProvider() {
+  return AI_PROVIDERS.some((provider) => Boolean(process.env[provider.apiKeyEnv]));
+}
+
+function getConfiguredProviders({ hasFileData = false, hasReadableMaterial = true } = {}) {
+  // Vision-only models are slower and usually weaker at strict JSON, so they are
+  // held back until a text provider has been tried. They are only reachable when
+  // the request actually depends on reading an attached file.
+  const needsVision = hasFileData && !hasReadableMaterial;
+
+  return AI_PROVIDERS.filter((provider) => {
+    if (!process.env[provider.apiKeyEnv]) return false;
+    if (provider.visionOnly && !needsVision) return false;
+    return true;
+  });
+}
+
+function getAttachedFileMimeType(parts) {
+  for (const part of parts || []) {
+    if (part?.inline_data?.mime_type) return String(part.inline_data.mime_type);
+  }
+  return "";
+}
+
+function describeFileType(mimeType) {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.includes("pdf")) return "PDF";
+  if (mimeType.startsWith("text/")) return "text file";
+  return "file";
 }
 
 function extractJsonFromText(text) {
@@ -537,7 +607,7 @@ function extractJsonFromText(text) {
   return JSON.parse(candidate);
 }
 
-async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasReadableMaterial }) {
+async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasReadableMaterial, timeoutMs }) {
   const content = [];
 
   for (const part of parts || []) {
@@ -558,6 +628,7 @@ async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasRe
           `${provider.name} cannot read the uploaded file and there is no pasted text to fall back on. Paste the study material as text or try again when the primary AI is available.`
         );
         error.statusCode = 422;
+        error.isUnreadableFile = true;
         throw error;
       } else {
         content.push({
@@ -586,15 +657,16 @@ async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasRe
 
   let aiResponse;
   try {
-    aiResponse = await fetch(provider.endpoint, {
+    aiResponse = await fetchWithTimeout(provider.endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify(body)
-    });
+    }, timeoutMs, provider.name);
   } catch (error) {
+    if (error?.statusCode) throw error;
     const wrapped = new Error(`${provider.name} request failed: ${error?.message || "network error"}`);
     wrapped.statusCode = 502;
     throw wrapped;
@@ -626,33 +698,69 @@ async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasRe
   }
 }
 
-async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId }) {
-  const providers = getConfiguredProviders();
+async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId, hasFileData = false }) {
+  const providers = getConfiguredProviders({ hasFileData, hasReadableMaterial });
 
   if (!providers.length) {
     const error = new Error("No AI provider is configured. Add GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.");
     error.statusCode = 500;
+    error.isNonRetryable = true;
     throw error;
   }
 
-  let lastError = null;
+  const attempts = [];
+  const attachedFileMimeType = getAttachedFileMimeType(parts);
+  const dependsOnFile = hasFileData && !hasReadableMaterial;
 
-  for (const provider of providers) {
+  for (const [index, provider] of providers.entries()) {
+    const timeoutMs = getProviderTimeoutMs(provider);
+
     try {
       const apiKey = process.env[provider.apiKeyEnv];
       const model = getProviderModel(provider);
       const reviewer = provider.kind === "gemini"
-        ? await requestReviewerFromGemini({ apiKey, model, parts })
-        : await requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasReadableMaterial });
+        ? await requestReviewerFromGemini({ apiKey, model, parts, timeoutMs })
+        : await requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasReadableMaterial, timeoutMs });
 
+      if (attempts.length) {
+        console.warn(`[${requestId}] Recovered with ${provider.name} after ${attempts.length} earlier failure(s).`);
+      }
       return { reviewer, provider: provider.name };
     } catch (error) {
-      lastError = error;
+      attempts.push({ provider: provider.name, error });
       console.warn(`[${requestId}] ${provider.name} failed (${error?.statusCode || "unknown"}): ${error?.message || "Unknown error"}`);
+
+      if (error?.isUnreadableFile) {
+        // Only give up once no remaining provider is able to read the attachment.
+        const rescuable = dependsOnFile
+          && attachedFileMimeType?.startsWith("image/")
+          && providers.slice(index + 1).some((next) => next.supportsVision);
+
+        if (!rescuable) {
+          const finalError = new Error(
+            dependsOnFile
+              ? `The AI providers that can read this ${describeFileType(attachedFileMimeType)} are unavailable, and the file has no readable text to fall back on. Paste the study material as text to keep going.`
+              : error.message
+          );
+          finalError.statusCode = 422;
+          finalError.providerAttempts = attempts;
+          throw finalError;
+        }
+      }
+
+      if (error?.isNonRetryable) {
+        error.providerAttempts = attempts;
+        throw error;
+      }
     }
   }
 
-  throw lastError;
+  // Report the primary provider's failure, which is the most representative, and
+  // carry the full attempt list so the server log shows where the chain stopped.
+  const primaryError = attempts[0]?.error;
+  const error = primaryError || new Error("Every AI provider failed to generate a reviewer.");
+  error.providerAttempts = attempts;
+  throw error;
 }
 
 export default async function handler(request, response) {
@@ -679,7 +787,7 @@ export default async function handler(request, response) {
     });
   }
 
-  if (!getConfiguredProviders().length) {
+  if (!hasConfiguredProvider()) {
     console.error(`[${requestId}] No AI provider is configured.`);
     return sendJson(response, 500, { error: "No AI provider is configured. Add GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.", requestId });
   }
@@ -767,6 +875,7 @@ export default async function handler(request, response) {
       const { reviewer: rawAdditionalReviewer, provider: servedProvider } = await requestReviewerWithFallback({
         parts,
         hasReadableMaterial: true,
+        hasFileData,
         requestId
       });
       const additionalReviewer = normalizeGeneratedReviewer(rawAdditionalReviewer, {
@@ -791,12 +900,13 @@ export default async function handler(request, response) {
           : null
       });
     } catch (error) {
-      console.error(`[${requestId}] Gemini extension failed:`, {
+      console.error(`[${requestId}] Reviewer extension failed:`, {
         statusCode: error?.statusCode || 500,
-        message: error?.message || "Unknown error"
+        message: error?.message || "Unknown error",
+        providerAttempts: (error?.providerAttempts || []).map((attempt) => `${attempt.provider}: ${attempt.error?.message}`)
       });
       return sendJson(response, error?.statusCode || 500, {
-        error: error?.message || "Could not reach Gemini.",
+        error: error?.message || "Could not reach any AI provider.",
         requestId,
         rawText: error?.rawText
       });
@@ -824,10 +934,13 @@ export default async function handler(request, response) {
     });
   }
 
+  const hasReadableMaterial = trimmedSourceText.length > 0;
+
   try {
     const firstAttempt = await requestReviewerWithFallback({
       parts,
-      hasReadableMaterial: trimmedSourceText.length > 0,
+      hasReadableMaterial,
+      hasFileData,
       requestId
     });
     let servedProvider = firstAttempt.provider;
@@ -866,11 +979,22 @@ export default async function handler(request, response) {
         });
       }
 
-      const completionAttempt = await requestReviewerWithFallback({
-        parts: completionParts,
-        hasReadableMaterial: trimmedSourceText.length > 0,
-        requestId
-      });
+      // Topping up is a bonus. If the completion call fails, keep the reviewer we
+      // already have rather than failing the whole request over a short result.
+      let completionAttempt;
+
+      try {
+        completionAttempt = await requestReviewerWithFallback({
+          parts: completionParts,
+          hasReadableMaterial,
+          hasFileData,
+          requestId
+        });
+      } catch (error) {
+        console.warn(`[${requestId}] Could not top up to ${requestedCount} questions: ${error?.message || "Unknown error"}`);
+        break;
+      }
+
       servedProvider = completionAttempt.provider;
       const additionalReviewer = normalizeGeneratedReviewer(completionAttempt.reviewer, {
         title: reviewer.title,
@@ -894,12 +1018,13 @@ export default async function handler(request, response) {
       warning
     });
   } catch (error) {
-    console.error(`[${requestId}] Gemini generation failed:`, {
+    console.error(`[${requestId}] Reviewer generation failed:`, {
       statusCode: error?.statusCode || 500,
-      message: error?.message || "Unknown error"
+      message: error?.message || "Unknown error",
+      providerAttempts: (error?.providerAttempts || []).map((attempt) => `${attempt.provider}: ${attempt.error?.message}`)
     });
     return sendJson(response, error?.statusCode || 500, {
-      error: error?.message || "Could not reach Gemini.",
+      error: error?.message || "Could not reach any AI provider.",
       requestId,
       rawText: error?.rawText
     });

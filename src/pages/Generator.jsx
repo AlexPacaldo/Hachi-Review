@@ -24,6 +24,7 @@ const emptyQuestion = {
 const TEXT_FILE_EXTENSIONS = [".txt", ".md", ".csv", ".json"];
 const MAX_UPLOAD_SIZE = 12 * 1024 * 1024;
 const MAX_AI_FILE_UPLOAD_SIZE = 3 * 1024 * 1024;
+const MIN_PDF_TEXT_LENGTH = 100;
 const MAX_AI_SOURCE_TEXT_LENGTH = 45000;
 const AI_RATE_LIMIT_KEY = "reviewer_ai_request_window";
 const AI_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -446,7 +447,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
 
     setErrors([]);
     setGenerationSteps([]);
-    setGenerationMessage(isPdfFile(file) && file.size > MAX_AI_FILE_UPLOAD_SIZE ? "Large PDF detected. Extracting text in your browser..." : "");
+    setGenerationMessage(isPdfFile(file) ? "Reading PDF text..." : "");
 
     try {
       if (isTextFile(file)) {
@@ -462,32 +463,62 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
         return;
       }
 
-      if (file.size > MAX_AI_FILE_UPLOAD_SIZE) {
-        if (!isPdfFile(file)) {
-          setStudyFile(null);
-          setErrors(["That file is too large for AI upload on Vercel. Use a smaller file or paste the important notes into Extra Notes."]);
+      if (isPdfFile(file)) {
+        setProgressStep("Extracting PDF text");
+
+        // A PDF with a text layer can be sent as text, which every AI provider
+        // understands. A scanned PDF with no text layer has to be sent as a file,
+        // which only providers that can read images can make sense of.
+        let extractedText = "";
+        try {
+          extractedText = await extractPdfText(file);
+        } catch {
+          extractedText = "";
+        }
+
+        const hasTextLayer = extractedText.length >= MIN_PDF_TEXT_LENGTH;
+
+        if (hasTextLayer && file.size > MAX_AI_FILE_UPLOAD_SIZE) {
+          setSourceText(extractedText);
+          setStudyFile({
+            name: `${file.name} (text extracted)`,
+            mimeType: "text/plain",
+            size: file.size,
+            data: null
+          });
+          setGenerationMessage(`Extracted text from ${file.name}. It is too large to upload, so the text version will be used.`);
+          setProgressStep("PDF text ready");
           return;
         }
 
-        setProgressStep("Extracting PDF text");
-        const extractedText = await extractPdfText(file);
+        if (hasTextLayer) {
+          // Send the text and the PDF together, so providers that can read the PDF
+          // get the original while the fallback providers still get usable text.
+          const [, base64Data = ""] = (await readFileAsDataUrl(file)).split(",");
+          setSourceText(extractedText);
+          setStudyFile({
+            name: file.name,
+            mimeType: file.type || "application/pdf",
+            size: file.size,
+            data: base64Data
+          });
+          setGenerationMessage(`Extracted text from ${file.name} and kept the PDF for the AI.`);
+          setProgressStep("PDF text ready");
+          return;
+        }
 
-        if (extractedText.length < 100) {
+        if (file.size > MAX_AI_FILE_UPLOAD_SIZE) {
           setStudyFile(null);
-          setErrors(["That PDF is too large to upload and the app could not extract enough readable text. It may be scanned images. Compress/split it, OCR it, or paste the important notes into Extra Notes."]);
+          setErrors(["That PDF has no readable text and is too large to upload. It may be scanned images. Compress/split it, OCR it, or paste the important notes into Extra Notes."]);
           setGenerationMessage("");
           return;
         }
+      }
 
-        setSourceText(extractedText);
-        setStudyFile({
-          name: `${file.name} (text extracted)`,
-          mimeType: "text/plain",
-          size: file.size,
-          data: null
-        });
-        setGenerationMessage(`Extracted text from ${file.name}. Gemini will use the text instead of uploading the large PDF.`);
-        setProgressStep("PDF text ready");
+      if (file.size > MAX_AI_FILE_UPLOAD_SIZE) {
+        setStudyFile(null);
+        setErrors(["That file is too large for AI upload. Use a smaller file or paste the important notes into Extra Notes."]);
+        setGenerationMessage("");
         return;
       }
 
@@ -499,7 +530,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
         size: file.size,
         data: base64Data
       });
-      setGenerationMessage("File ready for Gemini.");
+      setGenerationMessage("File ready for the AI.");
     } catch (error) {
       setStudyFile(null);
       setErrors([error?.message || "Could not read that file."]);
@@ -648,7 +679,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     const hasUploadedFile = Boolean(studyFile?.data);
 
     if (!isOnline) {
-      setErrors(["Connect to the internet before using Gemini generation."]);
+      setErrors(["Connect to the internet before using AI generation."]);
       return;
     }
 
@@ -669,10 +700,10 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     setSavedReviewer(null);
     setGenerationStats(null);
     setGenerationSteps(["Preparing study material"]);
-    setGenerationMessage(regenerate ? "Regenerating reviewer with Gemini..." : "Generating reviewer with Gemini...");
+    setGenerationMessage(regenerate ? "Regenerating reviewer..." : "Generating reviewer...");
 
     try {
-      setProgressStep("Sending material to Gemini");
+      setProgressStep("Sending material to the AI");
       const response = await fetch("/api/generate-reviewer", {
         method: "POST",
         headers: getAiRequestHeaders(),
@@ -693,18 +724,18 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
           questionType
         })
       });
-      setProgressStep("Reading Gemini response");
+      setProgressStep("Reading AI response");
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.requestId ? `${data?.error || "Gemini could not generate a reviewer."} Request ID: ${data.requestId}` : data?.error || "Gemini could not generate a reviewer.");
+        throw new Error(data?.requestId ? `${data?.error || "The AI could not generate a reviewer."} Request ID: ${data.requestId}` : data?.error || "The AI could not generate a reviewer.");
       }
 
       const reviewer = normalizeReviewerJson(data.reviewer, { questionType });
       const validation = validateReviewer(reviewer);
 
       if (!validation.isValid) {
-        throw new Error(validation.errors[0] || "Gemini generated an invalid reviewer.");
+        throw new Error(validation.errors[0] || "The AI generated an invalid reviewer.");
       }
 
       setProgressStep("Saving reviewer");
@@ -744,7 +775,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     const hasUploadedFile = Boolean(studyFile?.data);
 
     if (!isOnline) {
-      setErrors(["Connect to the internet before asking Gemini for more questions."]);
+      setErrors(["Connect to the internet before asking for more questions."]);
       return;
     }
 
@@ -775,7 +806,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     setIsAddingQuestions(true);
     setErrors([]);
     setGenerationSteps(["Preparing existing reviewer", "Sending request for more questions"]);
-    setGenerationMessage(`Making ${moreQuestionCount} more questions with Gemini...`);
+    setGenerationMessage(`Making ${moreQuestionCount} more questions...`);
 
     try {
       const response = await fetch("/api/generate-reviewer", {
@@ -804,14 +835,14 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.requestId ? `${data?.error || "Gemini could not make more questions."} Request ID: ${data.requestId}` : data?.error || "Gemini could not make more questions.");
+        throw new Error(data?.requestId ? `${data?.error || "The AI could not make more questions."} Request ID: ${data.requestId}` : data?.error || "The AI could not make more questions.");
       }
 
       const reviewer = normalizeReviewerJson(data.reviewer, { preserveReviewerId: true, questionType: currentReviewer.questionType || questionType });
       const validation = validateReviewer(reviewer);
 
       if (!validation.isValid) {
-        throw new Error(validation.errors[0] || "Gemini generated invalid additional questions.");
+        throw new Error(validation.errors[0] || "The AI generated invalid additional questions.");
       }
 
       setProgressStep("Saving expanded reviewer");
@@ -979,7 +1010,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
             ) : null}
             {isGenerating || isAddingQuestions ? (
               <p className="generation-hint">
-                Working for {generationElapsed}s{generationElapsed >= 30 ? " — Gemini can take a minute or two, especially for larger counts." : " — hang tight."}
+                Working for {generationElapsed}s{generationElapsed >= 30 ? " — AI generation can take a minute or two, especially for larger counts." : " — hang tight."}
               </p>
             ) : null}
           </div>
