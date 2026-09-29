@@ -412,6 +412,33 @@ export async function unshareReviewerFromGroup(userId, reviewerId, groupId) {
   return shareReviewerWithGroups(userId, reviewerId, remaining);
 }
 
+// Counts the reviewers shared into each of the given groups with a single
+// read, instead of one query per group on the groups list.
+export async function listGroupReviewerCounts(groupIds) {
+  if (!supabase || !groupIds?.length) return { data: {}, error: null };
+
+  const { data, error } = await supabase
+    .from(REVIEWERS_TABLE)
+    .select("id, shared_groups")
+    .eq("visibility", "group")
+    .not("shared_groups", "is", null);
+
+  if (error) return { data: {}, error: friendlyGroupsError(error) };
+
+  const counts = {};
+  groupIds.forEach((groupId) => {
+    counts[groupId] = 0;
+  });
+
+  (data || []).forEach((row) => {
+    normalizeGroupIds(row.shared_groups).forEach((groupId) => {
+      if (groupId in counts) counts[groupId] += 1;
+    });
+  });
+
+  return { data: counts, error: null };
+}
+
 export async function shareReviewerWithGroups(userId, reviewerId, groupIds) {
   if (!supabase || !userId) return NOT_CONFIGURED();
   if (!reviewerId) return { error: new Error("This reviewer is missing an ID.") };

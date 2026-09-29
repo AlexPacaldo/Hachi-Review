@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, RefreshCw, UsersRound, X } from "lucide-react";
+import { ChevronRight, Layers, Plus, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { createGroup, deleteGroup, listMyGroups } from "../services/groups.js";
+import hachiDogCurious from "../assets/hachi-dog-curious.png";
+import hachiDogFocused from "../assets/hachi-dog-focused.png";
+import hachiDogProud from "../assets/hachi-dog-proud.png";
+import { createGroup, deleteGroup, listGroupReviewerCounts, listMyGroups } from "../services/groups.js";
 import { SOCIAL_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
 
 const POLL_INTERVAL_MS = 30000;
@@ -15,9 +18,22 @@ const ROLE_LABELS = {
   member: "Member"
 };
 
+// A group borrows the reviewer card anatomy, so your role picks the same three
+// visual states the homepage uses for progress.
+const ROLE_STATES = {
+  owner: { state: "completed", label: "You own this", dog: hachiDogProud },
+  admin: { state: "in-progress", label: "You help run this", dog: hachiDogFocused },
+  member: { state: "not-started", label: "You are a member", dog: hachiDogCurious }
+};
+
+function pluralize(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export default function Groups() {
   const { configured, loading, user } = useAuth();
   const [groups, setGroups] = useState([]);
+  const [reviewerCounts, setReviewerCounts] = useState({});
   const [message, setMessage] = useState(null);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -38,7 +54,13 @@ export default function Groups() {
       return;
     }
 
-    setGroups(data || []);
+    const nextGroups = data || [];
+    setGroups(nextGroups);
+
+    // A missing count only costs a number on the card, so it never replaces the
+    // groups that already loaded.
+    const { data: counts } = await listGroupReviewerCounts(nextGroups.map((group) => group.id));
+    setReviewerCounts(counts || {});
   }, [user?.id]);
 
   useEffect(() => {
@@ -150,36 +172,81 @@ export default function Groups() {
       {message ? <p className={`sync-message ${message.type}`}>{message.text}</p> : null}
 
       {groups.length ? (
-        <div className="group-grid">
-          {groups.map((group) => (
-            <article className="group-card" key={group.id}>
-              <div className="group-card-head">
-                <span className="group-card-icon" aria-hidden="true">
-                  <UsersRound size={18} />
-                </span>
-                <div>
-                  <h2>{group.name}</h2>
-                  <p className="muted">
-                    {group.memberCount} member{group.memberCount === 1 ? "" : "s"}
+        <div className="reviewer-grid">
+          {groups.map((group) => {
+            const role = group.role || "member";
+            const roleState = ROLE_STATES[role] || ROLE_STATES.member;
+            const reviewerCount = reviewerCounts[group.id] || 0;
+            // Memberships predating the added_by column have nothing to name.
+            const addedByLabel = group.addedByName
+              ? group.addedByMe
+                ? "You started this group"
+                : `${group.addedByName} added you`
+              : role === "owner"
+                ? "You started this group"
+                : "Joined this group";
+
+            return (
+              <article className={`reviewer-card group-tile reviewer-card-${roleState.state}`} key={group.id}>
+                <Link className="reviewer-card-link" to={`/groups/${group.id}`}>
+                  <div className="reviewer-card-hero">
+                    <div className="card-topline">
+                      <span className="course-code">{ROLE_LABELS[role] || "Member"}</span>
+                      <span className="question-count">{pluralize(group.memberCount, "member")}</span>
+                      <span className={`reviewer-progress-badge ${roleState.state}`}>
+                        {roleState.label}
+                      </span>
+                    </div>
+
+                    <span className="reviewer-owner-note">
+                      <UserPlus size={13} aria-hidden="true" />
+                      {addedByLabel}
+                    </span>
+
+                    <h3>{group.name}</h3>
+                    <p>{group.description || "No description yet."}</p>
+                    <img
+                      className={`reviewer-card-dog ${roleState.state}`}
+                      src={roleState.dog}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  </div>
+
+                  <div className="coverage-block">
+                    <div className="coverage-title">
+                      <Layers size={16} aria-hidden="true" />
+                      At a glance
+                    </div>
+                    <ul>
+                      <li>{pluralize(group.memberCount, "member")}</li>
+                      <li>{reviewerCount ? pluralize(reviewerCount, "reviewer") : "No reviewers shared yet"}</li>
+                      <li>Your role: {ROLE_LABELS[role] || "Member"}</li>
+                      {group.created_at ? (
+                        <li>Created {new Date(group.created_at).toLocaleDateString()}</li>
+                      ) : null}
+                    </ul>
+                  </div>
+
+                  <p className="group-tile-open">
+                    Open group
+                    <ChevronRight size={15} aria-hidden="true" />
                   </p>
-                </div>
-                <span className={`group-role-badge ${group.role}`}>{ROLE_LABELS[group.role] || "Member"}</span>
-              </div>
-
-              {group.description ? <p className="group-card-description">{group.description}</p> : null}
-
-              <div className="button-row">
-                <Link className="button primary" to={`/groups/${group.id}`}>
-                  Open
                 </Link>
-                {group.role === "owner" ? (
-                  <button className="button subtle danger-text" type="button" onClick={() => setPendingDelete(group)}>
-                    Delete
+
+                {role === "owner" ? (
+                  <button
+                    className="button subtle icon-danger group-tile-remove"
+                    type="button"
+                    onClick={() => setPendingDelete(group)}
+                  >
+                    <Trash2 size={17} aria-hidden="true" />
+                    Delete group
                   </button>
                 ) : null}
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       ) : (
         <EmptyState

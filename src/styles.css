@@ -2975,60 +2975,6 @@ legend {
   gap: 18px;
 }
 
-.group-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.group-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-}
-
-.group-card-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.group-card-head h2 {
-  margin: 0;
-  font-size: 1.05rem;
-}
-
-.group-card-head p {
-  margin: 2px 0 0;
-  font-size: 0.85rem;
-}
-
-.group-card-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
-  color: var(--muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.group-card-description {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.group-card .button-row {
-  margin-top: auto;
-}
-
 .group-role-badge {
   display: inline-flex;
   align-items: center;
@@ -3057,6 +3003,31 @@ legend {
   margin: 0 0 6px;
   color: var(--muted);
   max-width: 62ch;
+}
+
+/* Group tiles reuse the reviewer card, so only the differences live here. */
+.group-tile .reviewer-owner-note {
+  max-width: 100%;
+  align-items: flex-start;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.group-tile-open {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 16px 22px 0;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.group-tile:hover .group-tile-open {
+  text-decoration: underline;
+}
+
+.group-tile-remove {
+  margin: 14px 22px 22px;
 }
 
 .group-detail-bar {
@@ -3728,7 +3699,6 @@ legend {
   .answer-comparison,
   .generator-layout,
   .friends-grid,
-  .group-grid,
   .share-form {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -3861,7 +3831,6 @@ legend {
   .answer-comparison,
   .generator-layout,
   .friends-grid,
-  .group-grid,
   .share-form {
     grid-template-columns: 1fr;
   }
