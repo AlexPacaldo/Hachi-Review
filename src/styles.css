@@ -3210,6 +3210,13 @@ legend {
   align-content: start;
 }
 
+.group-reviewer-card .reviewer-owner-note {
+  max-width: 100%;
+  align-items: flex-start;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .group-reviewer-actions {
   display: flex;
   flex-wrap: wrap;

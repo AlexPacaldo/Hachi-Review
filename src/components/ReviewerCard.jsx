@@ -29,7 +29,13 @@ function getDogState({ progress, hasCompleted }) {
   };
 }
 
-export default function ReviewerCard({ reviewer, progress, hasCompleted = false, onDelete }) {
+export default function ReviewerCard({
+  reviewer,
+  progress,
+  hasCompleted = false,
+  onDelete,
+  sharedByPrefix = "Shared by "
+}) {
   const code = reviewer.title.split(" ")[0];
   const statusLabels = {
     cloud: "Cloud only",
@@ -52,9 +58,10 @@ export default function ReviewerCard({ reviewer, progress, hasCompleted = false,
           {statusLabel ? <span className={`reviewer-source-badge ${statusClass}`}>{statusLabel}</span> : null}
 
           {reviewer.ownerName ? (
-            <span className="reviewer-owner-note" title={`Shared by ${reviewer.ownerName}`}>
+            <span className="reviewer-owner-note" title={`${sharedByPrefix}${reviewer.ownerName}`}>
               <Users size={13} aria-hidden="true" />
-              Shared by {reviewer.ownerName}
+              {sharedByPrefix}
+              {reviewer.ownerName}
             </span>
           ) : null}
 

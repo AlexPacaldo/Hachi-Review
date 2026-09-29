@@ -438,15 +438,19 @@ export default function GroupDetail() {
     const reviewerId = payload?.reviewerId || row.reviewer_id;
     const savedOffline = offlineIds.has(reviewerId);
     const isOwner = row.owner_id === user.id;
+    // Every card names the person who shared it into this group, including the
+    // reviewers you shared yourself.
+    const sharedBy = isOwner ? "You" : row.ownerName || "A member";
 
     return {
       row,
       reviewerId,
       isOwner,
       savedOffline,
+      sharedBy,
       card: {
         ...payload,
-        ownerName: isOwner ? null : row.ownerName,
+        ownerName: sharedBy,
         source: "cloud",
         storageStatus: savedOffline ? "both" : "cloud",
         validation: validateReviewer(payload)
@@ -639,6 +643,7 @@ export default function GroupDetail() {
                   reviewer={card}
                   progress={progress[reviewerId]}
                   hasCompleted={completedReviewerIds.has(reviewerId)}
+                  sharedByPrefix="Shared with this group by "
                 />
                 <div className="group-reviewer-actions">
                   <button
