@@ -18,7 +18,8 @@ import {
   checkReviewerSharingReady,
   deleteCloudReviewer,
   getMyCloudReviewer,
-  updateCloudReviewerVisibility
+  updateCloudReviewerVisibility,
+  upsertCloudReviewer
 } from "../services/cloudReviewers.js";
 import ConfirmModal from "./ConfirmModal.jsx";
 import { deleteReviewerSharesForOwner, listFriendships } from "../services/social.js";
@@ -190,11 +191,25 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     onChanged();
   }
 
-  function openRename() {
+  async function openRename() {
     const newTitle = window.prompt("New title", reviewer.title || "");
     if (newTitle == null || !newTitle.trim()) return;
     const newSubject = window.prompt("New subject", reviewer.subject || "");
     if (newSubject == null || !newSubject.trim()) return;
+
+    // Persist to cloud DB if this is a cloud reviewer
+    if (hasCloud && user && isOwner) {
+      const { error } = await upsertCloudReviewer(user.id, {
+        ...reviewer,
+        title: newTitle,
+        subject: newSubject
+      });
+      if (error) {
+        onMessage({ type: "error", text: error.message || "Could not save rename." });
+        return;
+      }
+    }
+
     syncMetadata({ title: newTitle, subject: newSubject });
     onMessage({ type: "success", text: "Reviewer renamed." });
   }

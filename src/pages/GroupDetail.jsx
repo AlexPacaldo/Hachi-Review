@@ -8,6 +8,7 @@ import {
   LogOut,
   MoreVertical,
   Search,
+  Pencil,
   Trash2,
   UserMinus,
   UserPlus,
