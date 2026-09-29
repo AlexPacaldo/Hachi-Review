@@ -16,10 +16,15 @@ create table if not exists public.group_members (
   group_id uuid not null references public.study_groups(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
   role text not null default 'member' check (role in ('owner', 'admin', 'member')),
+  added_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   unique(group_id, user_id),
   check (user_id is not null)
 );
+
+-- added_by records who put a member in a group, so the "you were added"
+-- notification can name them instead of saying "someone".
+alter table public.group_members add column if not exists added_by uuid references auth.users(id) on delete set null;
 
 alter table public.study_groups enable row level security;
 
@@ -133,17 +138,23 @@ on public.group_members
 for insert
 to authenticated
 with check (
-  (
-    user_id = auth.uid()
-    and role = 'owner'
-    and exists (
-      select 1
-      from public.study_groups
-      where study_groups.id = group_members.group_id
-        and study_groups.owner_id = auth.uid()
+  -- added_by must equal the session user, otherwise a member could be inserted
+  -- with a forged attribution and the "added you to a group" notification would
+  -- name the wrong person.
+  added_by = auth.uid()
+  and (
+    (
+      user_id = auth.uid()
+      and role = 'owner'
+      and exists (
+        select 1
+        from public.study_groups
+        where study_groups.id = group_members.group_id
+          and study_groups.owner_id = auth.uid()
+      )
     )
+    or public.is_group_owner_or_admin(group_members.group_id, auth.uid())
   )
-  or public.is_group_owner_or_admin(group_members.group_id, auth.uid())
 );
 
 drop policy if exists "Owners and admins can change member roles" on public.group_members;
@@ -559,8 +570,18 @@ begin
   ) then
     alter publication supabase_realtime add table public.group_members;
   end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'study_groups'
+  ) then
+    alter publication supabase_realtime add table public.study_groups;
+  end if;
 end $$;
 
 alter table public.friendships replica identity full;
 alter table public.reviewer_shares replica identity full;
 alter table public.group_members replica identity full;
+alter table public.study_groups replica identity full;

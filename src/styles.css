@@ -3059,6 +3059,168 @@ legend {
   max-width: 62ch;
 }
 
+.group-detail-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.group-menu-anchor {
+  position: relative;
+}
+
+.group-menu-popover {
+  position: fixed;
+  z-index: 120;
+  max-height: min(74vh, 560px);
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}
+
+.group-menu-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--separator);
+}
+
+.group-menu-head .muted {
+  margin-left: 0;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.group-menu-head .icon-button {
+  margin-left: auto;
+}
+
+.group-menu-list {
+  display: grid;
+  gap: 6px;
+  padding: 12px 16px;
+}
+
+.group-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.group-menu-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.group-menu-name strong {
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.group-menu-name small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.group-menu-section {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--separator);
+}
+
+.group-menu-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.group-menu-search {
+  display: flex;
+  gap: 8px;
+}
+
+.group-menu-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.group-menu-search input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.group-menu-row .button-row {
+  flex-shrink: 0;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.group-menu-row .button.small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 0.8rem;
+  gap: 5px;
+  border-radius: var(--radius-sm);
+}
+
+.group-menu-note {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.group-menu-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--separator);
+}
+
+.group-reviewer-card {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.group-reviewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -4px;
+}
+
+.danger-text {
+  color: var(--danger);
+}
+
 .group-form {
   display: grid;
   gap: 8px;

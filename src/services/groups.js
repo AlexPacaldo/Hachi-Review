@@ -60,15 +60,35 @@ export async function listMyGroups(userId) {
   const groupsById = mapById(groups);
   const roleById = new Map((memberships || []).map((m) => [m.group_id, m.role]));
 
+  // Who added me, and when, drives the "X added you to Y" notification.
+  const adderIds = [
+    ...new Set((memberships || []).map((m) => m.added_by).filter((id) => id && id !== userId))
+  ];
+  const { data: adderProfiles } = adderIds.length
+    ? await supabase.from(PROFILES_TABLE).select("id, email, display_name").in("id", adderIds)
+    : { data: [] };
+  const addersById = mapById(adderProfiles);
+
   const data = (memberships || [])
     .map((membership) => {
       const group = groupsById.get(membership.group_id);
       if (!group) return null;
 
+      const adder = addersById.get(membership.added_by) || null;
+
       return {
         ...group,
         role: roleById.get(group.id) || "member",
-        memberCount: countsById.get(group.id) || 1
+        memberCount: countsById.get(group.id) || 1,
+        membershipId: membership.id,
+        joinedAt: membership.created_at,
+        addedBy: membership.added_by || null,
+        addedByName: adder
+          ? adder.display_name || adder.email || "Someone"
+          : membership.added_by === userId
+            ? "You"
+            : null,
+        addedByMe: !membership.added_by || membership.added_by === userId
       };
     })
     .filter(Boolean)
@@ -127,7 +147,7 @@ export async function createGroup(userId, { name, description = "" } = {}) {
   // owner membership if this second insert fails.
   const { error: memberError } = await supabase
     .from(MEMBERS_TABLE)
-    .insert({ group_id: group.id, user_id: userId, role: "owner" });
+    .insert({ group_id: group.id, user_id: userId, role: "owner", added_by: userId });
 
   if (memberError) {
     await supabase.from(GROUPS_TABLE).delete().eq("id", group.id);
@@ -181,11 +201,16 @@ export async function listGroupMembers(groupId) {
     .eq("group_id", groupId)
     .order("created_at", { ascending: true });
 
-  if (error) return { data: [], error };
+  if (error) return { data: [], error: friendlyGroupsError(error) };
 
-  const userIds = [...new Set((members || []).map((member) => member.user_id))];
-  const { data: profiles, error: profilesError } = userIds.length
-    ? await supabase.from(PROFILES_TABLE).select("*").in("id", userIds)
+  const profileIds = [
+    ...new Set([
+      ...(members || []).map((member) => member.user_id),
+      ...(members || []).map((member) => member.added_by).filter(Boolean)
+    ])
+  ];
+  const { data: profiles, error: profilesError } = profileIds.length
+    ? await supabase.from(PROFILES_TABLE).select("*").in("id", profileIds)
     : { data: [], error: null };
 
   if (profilesError) return { data: [], error: profilesError };
@@ -196,14 +221,62 @@ export async function listGroupMembers(groupId) {
   const data = (members || [])
     .map((member) => ({
       ...member,
-      profile: profilesById.get(member.user_id) || null
+      profile: profilesById.get(member.user_id) || null,
+      addedByProfile: member.added_by ? profilesById.get(member.added_by) || null : null
     }))
     .sort((a, b) => (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3));
 
   return { data, error: null };
 }
 
-export async function addGroupMember(groupId, profile) {
+// Every membership across all of the signed-in user's groups, with profiles.
+// The notification watcher uses this to spot people joining a group the user
+// already belongs to without querying one group at a time.
+export async function listMyGroupMembers(userId) {
+  if (!supabase || !userId) return { data: [], error: null };
+
+  const { data: memberships, error } = await supabase
+    .from(MEMBERS_TABLE)
+    .select("group_id")
+    .eq("user_id", userId);
+
+  if (error) return { data: [], error: friendlyGroupsError(error) };
+
+  const groupIds = [...new Set((memberships || []).map((row) => row.group_id))];
+  if (!groupIds.length) return { data: [], error: null };
+
+  const { data: members, error: membersError } = await supabase
+    .from(MEMBERS_TABLE)
+    .select("*")
+    .in("group_id", groupIds);
+
+  if (membersError) return { data: [], error: friendlyGroupsError(membersError) };
+
+  const profileIds = [
+    ...new Set([
+      ...(members || []).map((member) => member.user_id),
+      ...(members || []).map((member) => member.added_by).filter(Boolean)
+    ])
+  ];
+  const { data: profiles, error: profilesError } = profileIds.length
+    ? await supabase.from(PROFILES_TABLE).select("*").in("id", profileIds)
+    : { data: [], error: null };
+
+  if (profilesError) return { data: [], error: profilesError };
+
+  const profilesById = mapById(profiles);
+
+  return {
+    data: (members || []).map((member) => ({
+      ...member,
+      profile: profilesById.get(member.user_id) || null,
+      addedByProfile: member.added_by ? profilesById.get(member.added_by) || null : null
+    })),
+    error: null
+  };
+}
+
+export async function addGroupMember(groupId, profile, addedBy) {
   if (!supabase) return NOT_CONFIGURED();
   if (!groupId || !profile?.id) return { error: new Error("Choose someone to add.") };
 
@@ -218,7 +291,7 @@ export async function addGroupMember(groupId, profile) {
 
   const { data, error } = await supabase
     .from(MEMBERS_TABLE)
-    .insert({ group_id: groupId, user_id: profile.id, role: "member" })
+    .insert({ group_id: groupId, user_id: profile.id, role: "member", added_by: addedBy || null })
     .select()
     .single();
 
