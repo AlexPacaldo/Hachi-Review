@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Check,
@@ -50,6 +51,8 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   const [selectedFriends, setSelectedFriends] = useState([]);
   const [pickSaving, setPickSaving] = useState(false);
   const menuRef = useRef(null);
+  const popoverRef = useRef(null);
+  const [popoverStyle, setPopoverStyle] = useState(null);
 
   const storageStatus = reviewer.storageStatus || reviewer.source;
   const hasLocal = storageStatus === "both" || reviewer.source === "local";
@@ -62,10 +65,53 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   const isBuiltIn = reviewer.source === "built-in";
 
   useEffect(() => {
+    if (!open) {
+      setPopoverStyle(null);
+      return undefined;
+    }
+
+    // The popover is portalled to the body, so it positions itself against the
+    // trigger's viewport rectangle instead of an ancestor's box.
+    const updatePosition = () => {
+      const trigger = menuRef.current;
+      if (!trigger) return;
+
+      const rect = trigger.getBoundingClientRect();
+      const gutter = 12;
+      const width = Math.min(320, window.innerWidth - gutter * 2);
+      let left = rect.right - width;
+      let top = rect.bottom + 8;
+
+      left = Math.max(gutter, Math.min(left, window.innerWidth - width - gutter));
+
+      const height = popoverRef.current?.offsetHeight || 0;
+      if (height && top + height > window.innerHeight - gutter) {
+        top = Math.max(gutter, rect.top - height - 8);
+      }
+
+      setPopoverStyle({ top, left, width });
+    };
+
+    updatePosition();
+    const frame = requestAnimationFrame(updatePosition);
+
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
 
     const closeOnOutsideClick = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
+      const insideTrigger = menuRef.current?.contains(event.target);
+      const insidePopover = popoverRef.current?.contains(event.target);
+      if (!insideTrigger && !insidePopover) {
         setOpen(false);
       }
     };
@@ -182,6 +228,7 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   async function openFriendPicker() {
     if (!user) return;
 
+    setOpen(false);
     setPickOpen(true);
     setFriendLoading(true);
     setFriendMode(sharedWith && sharedWith.length ? "selected" : "all");
@@ -290,8 +337,14 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
         <MoreVertical size={18} aria-hidden="true" />
       </button>
 
-      {open ? (
-        <section className="reviewer-menu-popover" aria-label="Reviewer options">
+      {open
+        ? createPortal(
+          <section
+            className="reviewer-menu-popover"
+            ref={popoverRef}
+            style={popoverStyle || { visibility: "hidden" }}
+            aria-label="Reviewer options"
+          >
           {isOwner && visibilitySaving ? (
             <div className="reviewer-menu-item reviewer-menu-status">
               <Loader2 className="spinner" size={16} aria-hidden="true" />
@@ -398,7 +451,7 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
 
           {deleteOptions.length ? (
             <div className="reviewer-menu-section">
-              <button className="reviewer-menu-item danger" type="button" onClick={() => setDeleteOpen(true)}>
+              <button className="reviewer-menu-item danger" type="button" onClick={() => { setOpen(false); setDeleteOpen(true); }}>
                 <Trash2 size={16} aria-hidden="true" />
                 Delete Reviewer
               </button>
@@ -410,17 +463,19 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
               <button
                 className="reviewer-menu-item danger"
                 type="button"
-                onClick={() => setDeleteOpen(true)}
+                onClick={() => { setOpen(false); setDeleteOpen(true); }}
               >
                 <Trash2 size={16} aria-hidden="true" />
                 Delete from this device
               </button>
             </div>
           ) : null}
-        </section>
-      ) : null}
+        </section>,
+        document.body
+      )
+        : null}
 
-      {deleteOpen ? (
+      {deleteOpen ? createPortal(
         <div className="modal-backdrop" role="presentation" onClick={() => setDeleteOpen(false)}>
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-delete-title" onClick={(event) => event.stopPropagation()}>
             <div className="modal-head">
@@ -454,10 +509,11 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
 
             <p className="reviewer-menu-note">This only affects the owner's copies. Your saved answers belong to this device.</p>
           </section>
-        </div>
+        </div>,
+        document.body
       ) : null}
 
-      {pickOpen ? (
+      {pickOpen ? createPortal(
         <div className="modal-backdrop" role="presentation" onClick={() => setPickOpen(false)}>
           <section className="modal reviewer-pick-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-pick-title" onClick={(event) => event.stopPropagation()}>
             <div className="modal-head">
@@ -522,22 +578,26 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
               </button>
             </div>
           </section>
-        </div>
+        </div>,
+        document.body
       ) : null}
 
-      <ConfirmModal
-        open={Boolean(pendingDelete)}
-        title="Delete Reviewer"
-        message={pendingDelete ? `Delete "${reviewer.title}" from ${pendingDelete.title.toLowerCase()}? This cannot be undone.` : ""}
-        confirmLabel="Delete"
-        danger
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={() => {
-          const target = pendingDelete?.target;
-          setPendingDelete(null);
-          if (target) runDelete(target);
-        }}
-      />
+      {createPortal(
+        <ConfirmModal
+          open={Boolean(pendingDelete)}
+          title="Delete Reviewer"
+          message={pendingDelete ? `Delete "${reviewer.title}" from ${pendingDelete.title.toLowerCase()}? This cannot be undone.` : ""}
+          confirmLabel="Delete"
+          danger
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            const target = pendingDelete?.target;
+            setPendingDelete(null);
+            if (target) runDelete(target);
+          }}
+        />,
+        document.body
+      )}
     </div>
   );
 }

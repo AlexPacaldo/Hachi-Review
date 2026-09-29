@@ -1233,18 +1233,17 @@ main {
 }
 
 .reviewer-menu-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 90;
+  position: fixed;
+  z-index: 120;
   width: min(320px, calc(100vw - 24px));
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
   display: grid;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-popover);
-  overflow: hidden;
 }
 
 .reviewer-menu-section {
@@ -2518,7 +2517,7 @@ legend {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 200;
   display: grid;
   background: rgba(8, 13, 20, 0.55);
 }
@@ -5754,15 +5753,27 @@ strong {
   border-color: color-mix(in srgb, var(--warning) 20%, var(--border));
 }
 
-.reviewer-hero-copy,
-.reviewer-hero-dog,
-.availability-box {
+/* The hero copy column stays unpositioned so the options button can anchor to
+   the hero itself, and so the availability box below can never paint over the
+   reviewer menu popover or the delete dialog. */
+.reviewer-setup-hero .reviewer-hero-dog {
   position: relative;
   z-index: 1;
 }
 
 .reviewer-setup-hero .reviewer-head-row {
   align-items: flex-start;
+  padding-right: 46px;
+}
+
+/* Park the options button in the top-right corner of the hero itself. The head
+   row sits in the first grid column, so leaving the button in normal flow put it
+   in the middle of the hero. */
+.reviewer-setup-hero .reviewer-menu-anchor {
+  position: absolute;
+  top: clamp(20px, 2.4vw, 30px);
+  right: clamp(20px, 2.4vw, 30px);
+  z-index: 3;
 }
 
 .reviewer-setup-hero h1 {
