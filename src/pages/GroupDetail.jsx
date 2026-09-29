@@ -9,6 +9,7 @@ import {
   MoreVertical,
   Search,
   Trash2,
+  UserMinus,
   UserPlus,
   UsersRound,
   X
@@ -69,7 +70,7 @@ export default function GroupDetail() {
   const [searching, setSearching] = useState(false);
   const [busyAction, setBusyAction] = useState(null);
 
-  const [pendingRemove, setPendingRemove] = useState(null);
+  const [pendingKick, setPendingKick] = useState(null);
   const [pendingUnshare, setPendingUnshare] = useState(null);
   const [pendingLeave, setPendingLeave] = useState(false);
   const [pendingDeleteGroup, setPendingDeleteGroup] = useState(false);
@@ -325,18 +326,18 @@ export default function GroupDetail() {
     await loadGroup(true);
   }
 
-  async function confirmRemoveMember() {
-    if (!pendingRemove) return;
+  async function confirmKick() {
+    if (!pendingKick) return;
 
-    const name = getProfileName(pendingRemove.profile);
-    const result = await runAction("remove", () =>
-      removeGroupMember(groupId, pendingRemove.user_id)
+    const name = getProfileName(pendingKick.profile);
+    const result = await runAction(`kick-${pendingKick.id}`, () =>
+      removeGroupMember(groupId, pendingKick.user_id)
     );
-    setPendingRemove(null);
+    setPendingKick(null);
 
     if (!result.ok) return;
 
-    setMessage({ type: "success", text: `Removed ${name}.` });
+    setMessage({ type: "success", text: `${name} was removed from ${group.name}.` });
     await loadGroup(true);
   }
 
@@ -496,6 +497,9 @@ export default function GroupDetail() {
               <div className="group-menu-list">
                 {members.map((member) => {
                   const isMe = member.user_id === user.id;
+                  // Kicking is the one member action reserved for the owner, so
+                  // admins get the role toggle without it.
+                  const canKick = myRole === "owner" && !isMe && member.role !== "owner";
 
                   return (
                     <div className="group-menu-row" key={member.id || member.user_id}>
@@ -521,14 +525,17 @@ export default function GroupDetail() {
                           >
                             {member.role === "admin" ? "Demote" : "Admin"}
                           </button>
-                          <button
-                            className="button subtle small danger-text"
-                            type="button"
-                            onClick={() => setPendingRemove(member)}
-                            disabled={isMe}
-                          >
-                            Remove
-                          </button>
+                          {canKick ? (
+                            <button
+                              className="button subtle small danger-text"
+                              type="button"
+                              onClick={() => setPendingKick(member)}
+                              disabled={busyAction === `kick-${member.id}`}
+                            >
+                              <UserMinus size={14} aria-hidden="true" />
+                              Kick
+                            </button>
+                          ) : null}
                         </span>
                       ) : (
                         <span className={`group-role-badge ${member.role}`}>
@@ -694,13 +701,15 @@ export default function GroupDetail() {
       </p>
 
       <ConfirmModal
-        open={Boolean(pendingRemove)}
+        open={Boolean(pendingKick)}
         title="Remove this member?"
-        message={pendingRemove ? `Remove ${getProfileName(pendingRemove.profile)} from ${group.name}?` : ""}
+        message={pendingKick
+          ? `${getProfileName(pendingKick.profile)} will lose access to ${group.name} and to every reviewer shared with it. They can be added again later.`
+          : ""}
         confirmLabel="Remove"
         danger
-        onCancel={() => setPendingRemove(null)}
-        onConfirm={confirmRemoveMember}
+        onCancel={() => setPendingKick(null)}
+        onConfirm={confirmKick}
       />
 
       <ConfirmModal

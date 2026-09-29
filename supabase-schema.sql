@@ -81,10 +81,30 @@ as $$
   );
 $$;
 
+-- Kicking someone else is stricter than changing roles, so it needs its own
+-- owner-only check rather than reusing is_group_owner_or_admin.
+create or replace function public.is_group_owner(target_group_id uuid, target_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.group_members
+    where group_id = target_group_id
+      and user_id = target_user_id
+      and role = 'owner'
+  );
+$$;
+
 revoke all on function public.is_group_member(uuid, uuid) from public;
 revoke all on function public.is_group_owner_or_admin(uuid, uuid) from public;
+revoke all on function public.is_group_owner(uuid, uuid) from public;
 grant execute on function public.is_group_member(uuid, uuid) to authenticated;
 grant execute on function public.is_group_owner_or_admin(uuid, uuid) to authenticated;
+grant execute on function public.is_group_owner(uuid, uuid) to authenticated;
 
 -- A group is readable by its members. Membership is checked through
 -- public.is_group_member so non-members can never discover a group.
@@ -162,9 +182,27 @@ create policy "Owners and admins can change member roles"
 on public.group_members
 for update
 to authenticated
-using (public.is_group_owner_or_admin(group_members.group_id, auth.uid()))
-with check (public.is_group_owner_or_admin(group_members.group_id, auth.uid()));
+-- using sees the old row, with check sees the new one, so together they stop an
+-- admin demoting the owner (old role is owner) or promoting themselves to owner
+-- (new role would be owner).
+using (
+  public.is_group_owner_or_admin(group_members.group_id, auth.uid())
+  and (
+    group_members.role <> 'owner'
+    or public.is_group_owner(group_members.group_id, auth.uid())
+  )
+)
+with check (
+  public.is_group_owner_or_admin(group_members.group_id, auth.uid())
+  and (
+    group_members.role <> 'owner'
+    or public.is_group_owner(group_members.group_id, auth.uid())
+  )
+);
 
+-- Removing someone else is a kick, and only the owner may kick. Everyone can
+-- still delete their own membership to leave.
+drop policy if exists "Owners and admins can remove members" on public.group_members;
 drop policy if exists "Owners, admins, or members leaving can remove members" on public.group_members;
 create policy "Owners, admins, or members leaving can remove members"
 on public.group_members
@@ -172,7 +210,7 @@ for delete
 to authenticated
 using (
   auth.uid() = user_id
-  or public.is_group_owner_or_admin(group_members.group_id, auth.uid())
+  or public.is_group_owner(group_members.group_id, auth.uid())
 );
 
 -- public.friendships is created before public.reviewers because the reviewer
