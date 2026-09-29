@@ -10,6 +10,7 @@ import {
   Trash2,
   UserPlus,
   Users,
+  UsersRound,
   X
 } from "lucide-react";
 import {
@@ -20,6 +21,7 @@ import {
 } from "../services/cloudReviewers.js";
 import ConfirmModal from "./ConfirmModal.jsx";
 import { deleteReviewerSharesForOwner, listFriendships } from "../services/social.js";
+import { clearReviewerGroupShares, listMyGroups, shareReviewerWithGroups } from "../services/groups.js";
 import { pushRemovedProgressToCloud, saveReviewerToAccount } from "../services/syncEngine.js";
 import {
   deleteLocalReviewer,
@@ -35,7 +37,9 @@ function getProfileName(profile) {
 export default function ReviewerMenu({ reviewer, user, configured, onMessage, onChanged }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [visibility, setVisibility] = useState(reviewer.visibility === "private" ? "private" : "friends");
+  const [visibility, setVisibility] = useState(
+    reviewer.visibility === "private" ? "private" : reviewer.visibility === "group" ? "group" : "friends"
+  );
   const [sharedWith, setSharedWith] = useState(
     Array.isArray(reviewer.sharedWith) && reviewer.sharedWith.length ? reviewer.sharedWith : null
   );
@@ -50,6 +54,11 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   const [friendMode, setFriendMode] = useState("all");
   const [selectedFriends, setSelectedFriends] = useState([]);
   const [pickSaving, setPickSaving] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupList, setGroupList] = useState([]);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [groupSaving, setGroupSaving] = useState(false);
+  const [selectedGroups, setSelectedGroups] = useState([]);
   const menuRef = useRef(null);
   const popoverRef = useRef(null);
   const [popoverStyle, setPopoverStyle] = useState(null);
@@ -149,7 +158,7 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       if (!isMounted) return;
 
       if (data) {
-        setVisibility(data.visibility === "private" ? "private" : "friends");
+        setVisibility(data.visibility === "private" ? "private" : data.visibility === "group" ? "group" : "friends");
         setSharedWith(Array.isArray(data.shared_with) && data.shared_with.length ? data.shared_with : null);
       }
     }
@@ -179,6 +188,11 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   async function changeVisibility(nextVisibility) {
     if (!user || !isOwner) return;
 
+    if (nextVisibility === "group") {
+      await openGroupPicker();
+      return;
+    }
+
     setVisibilitySaving(true);
     const { error } = await updateCloudReviewerVisibility(user.id, reviewer.reviewerId, {
       visibility: nextVisibility,
@@ -195,13 +209,67 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       await deleteReviewerSharesForOwner(user.id, reviewer.reviewerId);
     }
 
+    // Leaving group sharing clears the group list without changing visibility,
+    // so switching to Groups then back to Friends works.
+    if (visibility === "group") {
+      await clearReviewerGroupShares(user.id, reviewer.reviewerId);
+    }
+
     setVisibility(nextVisibility);
-    syncMetadata({ visibility: nextVisibility });
+    syncMetadata({ visibility: nextVisibility, sharedGroups: null });
     onMessage({
       type: "success",
       text: nextVisibility === "friends" ? "Visible to friends." : "Now private. Only you can see it."
     });
     setVisibilitySaving(false);
+  }
+
+  async function openGroupPicker() {
+    if (!user) return;
+
+    setOpen(false);
+    setGroupOpen(true);
+    setGroupLoading(true);
+
+    const { data } = await getMyCloudReviewer(user.id, reviewer.reviewerId);
+    setSelectedGroups(Array.isArray(data?.shared_groups) ? data.shared_groups : []);
+
+    const groupsResult = await listMyGroups(user.id);
+    setGroupList(groupsResult.data || []);
+    setGroupLoading(false);
+  }
+
+  function togglePickGroup(groupId) {
+    setSelectedGroups((current) =>
+      current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId]
+    );
+  }
+
+  async function saveGroupSelection() {
+    if (!user || !isOwner || groupSaving) return;
+
+    if (!selectedGroups.length) {
+      onMessage({ type: "error", text: "Pick at least one group, or switch back to Private." });
+      return;
+    }
+
+    setGroupSaving(true);
+    const { error } = await shareReviewerWithGroups(user.id, reviewer.reviewerId, selectedGroups);
+
+    if (error) {
+      onMessage({ type: "error", text: error.message || "Could not save group sharing." });
+      setGroupSaving(false);
+      return;
+    }
+
+    setVisibility("group");
+    syncMetadata({ visibility: "group", sharedGroups: selectedGroups });
+    setGroupSaving(false);
+    setGroupOpen(false);
+    onMessage({
+      type: "success",
+      text: `Shared with ${selectedGroups.length} group${selectedGroups.length === 1 ? "" : "s"}.`
+    });
   }
 
   async function shareWithAllFriends() {
@@ -397,8 +465,32 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
                     <Cloud size={15} aria-hidden="true" />
                     Private
                   </button>
+                  <button
+                    type="button"
+                    className={visibility === "group" ? "active" : ""}
+                    onClick={() => changeVisibility("group")}
+                    disabled={visibilitySaving}
+                  >
+                    <UsersRound size={15} aria-hidden="true" />
+                    Groups
+                  </button>
                 </div>
               </div>
+
+              {visibility === "group" ? (
+                <div className="reviewer-menu-section">
+                  <span className="reviewer-menu-label">Shared with</span>
+                  <div className="reviewer-menu-seg">
+                    <button type="button" onClick={openGroupPicker}>
+                      <UsersRound size={15} aria-hidden="true" />
+                      Choose groups
+                    </button>
+                  </div>
+                  <p className="reviewer-menu-note">
+                    Only members of the groups you pick can see this.
+                  </p>
+                </div>
+              ) : null}
 
               {visibility === "friends" ? (
                 <div className="reviewer-menu-section">
@@ -575,6 +667,64 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
               <button className="button primary" type="button" onClick={saveFriendSelection} disabled={pickSaving || friendLoading}>
                 {pickSaving ? <Loader2 className="spinner" size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}
                 {pickSaving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </section>
+        </div>,
+        document.body
+      ) : null}
+
+      {groupOpen ? createPortal(
+        <div className="modal-backdrop" role="presentation" onClick={() => setGroupOpen(false)}>
+          <section className="modal reviewer-pick-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-group-pick-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h2 id="reviewer-group-pick-title">Share with groups</h2>
+                <p className="muted">Every member of a group you pick can see "{reviewer.title}".</p>
+              </div>
+              <button className="icon-button small" type="button" onClick={() => setGroupOpen(false)} aria-label="Close">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            {groupLoading ? (
+              <p className="reviewer-menu-note">Loading your groups...</p>
+            ) : groupList.length ? (
+              <div className="friend-picker-list">
+                {groupList.map((group) => (
+                  <label className="friend-picker-row" key={group.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedGroups.includes(group.id)}
+                      onChange={() => togglePickGroup(group.id)}
+                    />
+                    <span>
+                      <strong>{group.name}</strong>
+                      <small>{group.memberCount} member{group.memberCount === 1 ? "" : "s"}</small>
+                    </span>
+                    <span className="friend-picker-check" aria-hidden="true">
+                      {selectedGroups.includes(group.id) ? <Check size={14} /> : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="friend-picker-empty">
+                <p className="reviewer-menu-note">You are not in any groups yet.</p>
+                <Link className="button subtle" to="/groups">
+                  <UsersRound size={16} aria-hidden="true" />
+                  Create a group
+                </Link>
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button className="button subtle" type="button" onClick={() => setGroupOpen(false)}>
+                Cancel
+              </button>
+              <button className="button primary" type="button" onClick={saveGroupSelection} disabled={groupSaving || groupLoading}>
+                {groupSaving ? <Loader2 className="spinner" size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}
+                {groupSaving ? "Saving..." : "Save"}
               </button>
             </div>
           </section>

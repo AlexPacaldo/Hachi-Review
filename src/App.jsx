@@ -15,6 +15,8 @@ import Library from "./pages/Library.jsx";
 import Generator from "./pages/Generator.jsx";
 import Account from "./pages/Account.jsx";
 import Friends from "./pages/Friends.jsx";
+import Groups from "./pages/Groups.jsx";
+import GroupDetail from "./pages/GroupDetail.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import { AuthProvider } from "./contexts/AuthContext.jsx";
@@ -115,6 +117,8 @@ function AppShell() {
           <Route path="/history" element={<History />} />
           <Route path="/library" element={<Library />} />
           <Route path="/friends" element={<Friends />} />
+          <Route path="/groups" element={<Groups />} />
+          <Route path="/groups/:groupId" element={<GroupDetail />} />
           <Route path="/generator" element={<Generator />} />
           <Route path="/account" element={<Account />} />
           <Route path="/privacy" element={<Privacy />} />

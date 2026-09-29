@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { History, Home, Hourglass, Library, Menu, Moon, PlayCircle, Sparkles, Sun, Shield, Users, WifiOff } from "lucide-react";
+import { History, Home, Hourglass, Library, Menu, Moon, PlayCircle, Sparkles, Sun, Shield, Users, UsersRound, WifiOff } from "lucide-react";
 import appLogo from "../assets/Icon.png";
 import { REVIEWER_DATA_CHANGED_EVENT, getAllProgress, getAttemptHistory } from "../utils/storageUtils.js";
 import { getAllReviewers } from "../data/reviewerRegistry.js";
@@ -194,7 +194,10 @@ export default function Navbar({ theme, onToggleTheme }) {
             <Users size={17} aria-hidden="true" />
             Friends
           </NavLink>
-          
+          <NavLink to="/groups" onClick={closeMenu}>
+            <UsersRound size={17} aria-hidden="true" />
+            Groups
+          </NavLink>
         </nav>
 
         <div className="sidebar-decks" aria-label="Recently studied">

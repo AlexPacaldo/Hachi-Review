@@ -2975,6 +2975,124 @@ legend {
   gap: 18px;
 }
 
+.group-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.group-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+}
+
+.group-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.group-card-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.group-card-head p {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+}
+
+.group-card-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.group-card-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.group-card .button-row {
+  margin-top: auto;
+}
+
+.group-role-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.group-role-badge.owner {
+  color: var(--accent);
+}
+
+.group-role-badge.admin {
+  color: var(--accent-soft);
+}
+
+.group-detail-description {
+  margin: 0 0 6px;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.group-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.group-form label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.group-form input,
+.group-form textarea {
+  width: 100%;
+  padding: 11px 13px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  resize: vertical;
+}
+
+.group-form input:focus-visible,
+.group-form textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.group-form .modal-actions {
+  margin-top: 8px;
+}
+
 .friend-search-form,
 .share-form {
   display: grid;
@@ -3441,6 +3559,7 @@ legend {
   .answer-comparison,
   .generator-layout,
   .friends-grid,
+  .group-grid,
   .share-form {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -3573,6 +3692,7 @@ legend {
   .answer-comparison,
   .generator-layout,
   .friends-grid,
+  .group-grid,
   .share-form {
     grid-template-columns: 1fr;
   }
@@ -4426,18 +4546,26 @@ textarea {
 
 .drawer-backdrop,
 .modal-backdrop {
-  background: rgba(0, 0, 0, 0.42);
+  background: rgba(8, 13, 20, 0.66);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
 
-.question-drawer,
-.modal {
+.question-drawer {
   background: var(--blur-bg);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-strong);
   backdrop-filter: saturate(180%) blur(24px);
   -webkit-backdrop-filter: saturate(180%) blur(24px);
+}
+
+/* A dialog has to be fully opaque. The frosted surface is kept on the backdrop
+   so the page behind still reads as frosted glass without showing through the
+   panel and hurting legibility. */
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-strong);
 }
 
 .question-grid {

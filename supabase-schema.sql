@@ -1,3 +1,187 @@
+-- Both group tables are created before any policy is defined. PostgreSQL
+-- resolves relation references inside a policy expression the moment the
+-- policy is created, so a policy that mentions public.group_members fails with
+-- 42P01 unless that table already exists.
+create table if not exists public.study_groups (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(trim(name)) between 1 and 60),
+  description text check (char_length(coalesce(description, '')) <= 240),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.group_members (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.study_groups(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null default 'member' check (role in ('owner', 'admin', 'member')),
+  created_at timestamptz not null default now(),
+  unique(group_id, user_id),
+  check (user_id is not null)
+);
+
+alter table public.study_groups enable row level security;
+
+alter table public.group_members enable row level security;
+
+grant select, insert, update, delete on public.study_groups to authenticated;
+
+grant select, insert, update, delete on public.group_members to authenticated;
+
+create index if not exists study_groups_owner_idx
+on public.study_groups(owner_id, updated_at desc);
+
+create index if not exists group_members_group_idx
+on public.group_members(group_id, created_at);
+
+create index if not exists group_members_user_idx
+on public.group_members(user_id, created_at desc);
+
+-- Row level security helpers.
+--
+-- A policy on public.group_members cannot query public.group_members directly:
+-- the subquery is subject to the same policies, so it self-references and
+-- PostgreSQL aborts the statement with "infinite recursion detected in policy
+-- for relation group_members". These SECURITY DEFINER functions read the table
+-- as the table owner, which bypasses RLS and keeps the policies flat.
+create or replace function public.is_group_member(target_group_id uuid, target_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.group_members
+    where group_id = target_group_id
+      and user_id = target_user_id
+  );
+$$;
+
+create or replace function public.is_group_owner_or_admin(target_group_id uuid, target_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.group_members
+    where group_id = target_group_id
+      and user_id = target_user_id
+      and role in ('owner', 'admin')
+  );
+$$;
+
+revoke all on function public.is_group_member(uuid, uuid) from public;
+revoke all on function public.is_group_owner_or_admin(uuid, uuid) from public;
+grant execute on function public.is_group_member(uuid, uuid) to authenticated;
+grant execute on function public.is_group_owner_or_admin(uuid, uuid) to authenticated;
+
+-- A group is readable by its members. Membership is checked through
+-- public.is_group_member so non-members can never discover a group.
+drop policy if exists "Members can read own groups" on public.study_groups;
+create policy "Members can read own groups"
+on public.study_groups
+for select
+to authenticated
+using (
+  auth.uid() = owner_id
+  or public.is_group_member(id, auth.uid())
+);
+
+drop policy if exists "Users can create own groups" on public.study_groups;
+create policy "Users can create own groups"
+on public.study_groups
+for insert
+to authenticated
+with check (auth.uid() = owner_id);
+
+-- Owners and admins can rename a group; owners can also transfer or clear it.
+drop policy if exists "Owners and admins can update groups" on public.study_groups;
+create policy "Owners and admins can update groups"
+on public.study_groups
+for update
+to authenticated
+using (auth.uid() = owner_id or public.is_group_owner_or_admin(id, auth.uid()))
+with check (auth.uid() = owner_id or public.is_group_owner_or_admin(id, auth.uid()));
+
+drop policy if exists "Owners can delete groups" on public.study_groups;
+create policy "Owners can delete groups"
+on public.study_groups
+for delete
+to authenticated
+using (auth.uid() = owner_id);
+
+drop policy if exists "Members can read group members" on public.group_members;
+create policy "Members can read group members"
+on public.group_members
+for select
+to authenticated
+using (public.is_group_member(group_id, auth.uid()));
+
+-- Only owners and admins can add or remove people. The group's creator is
+-- allowed to insert their own owner row, otherwise a brand new group would
+-- never get its first member. Members can always remove themselves, which is
+-- how leaving a group works.
+drop policy if exists "Owners and admins can add members" on public.group_members;
+create policy "Owners and admins can add members"
+on public.group_members
+for insert
+to authenticated
+with check (
+  (
+    user_id = auth.uid()
+    and role = 'owner'
+    and exists (
+      select 1
+      from public.study_groups
+      where study_groups.id = group_members.group_id
+        and study_groups.owner_id = auth.uid()
+    )
+  )
+  or public.is_group_owner_or_admin(group_members.group_id, auth.uid())
+);
+
+drop policy if exists "Owners and admins can change member roles" on public.group_members;
+create policy "Owners and admins can change member roles"
+on public.group_members
+for update
+to authenticated
+using (public.is_group_owner_or_admin(group_members.group_id, auth.uid()))
+with check (public.is_group_owner_or_admin(group_members.group_id, auth.uid()));
+
+drop policy if exists "Owners, admins, or members leaving can remove members" on public.group_members;
+create policy "Owners, admins, or members leaving can remove members"
+on public.group_members
+for delete
+to authenticated
+using (
+  auth.uid() = user_id
+  or public.is_group_owner_or_admin(group_members.group_id, auth.uid())
+);
+
+-- public.friendships is created before public.reviewers because the reviewer
+-- read policy below looks at friendships to decide who can see a shared
+-- reviewer, and a policy cannot reference a table that does not exist yet.
+create table if not exists public.friendships (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references auth.users(id) on delete cascade,
+  addressee_id uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(requester_id, addressee_id),
+  check (requester_id <> addressee_id)
+);
+
+alter table public.friendships enable row level security;
+
+grant select, insert, update, delete on public.friendships to authenticated;
+
 create table if not exists public.reviewers (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
@@ -15,6 +199,11 @@ create table if not exists public.reviewers (
 alter table public.reviewers add column if not exists visibility text not null default 'friends';
 alter table public.reviewers add column if not exists shared_with jsonb;
 
+-- Group sharing reuses the same row as the reviewer. shared_groups holds the
+-- study_groups ids this reviewer is shared with, and visibility = 'group'
+-- means "no friends, groups only".
+alter table public.reviewers add column if not exists shared_groups jsonb;
+
 create index if not exists reviewers_visibility_owner_idx
 on public.reviewers(visibility, owner_id, updated_at desc);
 
@@ -25,7 +214,9 @@ grant select, insert, update, delete on public.reviewers to authenticated;
 -- Anyone can see their own reviewers, plus reviewers that their accepted friends
 -- chose to share. A shared reviewer is visible when visibility = 'friends' and it
 -- was shared with all friends (shared_with is null/empty) or with this user
--- specifically (shared_with contains the current user id).
+-- specifically (shared_with contains the current user id). Reviewers shared to a
+-- group are visible to every member of a group listed in shared_groups, as long
+-- as the owner is still in that group.
 drop policy if exists "Users can read own or friends' shared reviewers" on public.reviewers;
 create policy "Users can read own or friends' shared reviewers"
 on public.reviewers
@@ -48,6 +239,31 @@ using (
       shared_with is null
       or shared_with = '[]'::jsonb
       or shared_with ? auth.uid()::text
+    )
+  )
+  or (
+    visibility = 'group'
+    and shared_groups is not null
+    and shared_groups <> '[]'::jsonb
+    -- Each id is validated before it is cast, so one malformed value in
+    -- shared_groups cannot break the read for every other user.
+    and exists (
+      select 1
+      from (
+        select listed.group_id::uuid as group_id
+        from jsonb_array_elements_text(shared_groups) as listed(group_id)
+        where listed.group_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+      ) as valid_group_ids
+      where public.is_group_member(valid_group_ids.group_id, auth.uid())
+    )
+    and exists (
+      select 1
+      from (
+        select listed.group_id::uuid as group_id
+        from jsonb_array_elements_text(shared_groups) as listed(group_id)
+        where listed.group_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+      ) as valid_group_ids
+      where public.is_group_member(valid_group_ids.group_id, reviewers.owner_id)
     )
   )
 );
@@ -214,21 +430,6 @@ using (auth.uid() = id);
 create index if not exists profiles_email_idx
 on public.profiles(lower(email));
 
-create table if not exists public.friendships (
-  id uuid primary key default gen_random_uuid(),
-  requester_id uuid not null references auth.users(id) on delete cascade,
-  addressee_id uuid not null references auth.users(id) on delete cascade,
-  status text not null default 'pending' check (status in ('pending', 'accepted')),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique(requester_id, addressee_id),
-  check (requester_id <> addressee_id)
-);
-
-alter table public.friendships enable row level security;
-
-grant select, insert, update, delete on public.friendships to authenticated;
-
 drop policy if exists "Users can read own friendships" on public.friendships;
 create policy "Users can read own friendships"
 on public.friendships
@@ -349,7 +550,17 @@ begin
   ) then
     alter publication supabase_realtime add table public.reviewers;
   end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'group_members'
+  ) then
+    alter publication supabase_realtime add table public.group_members;
+  end if;
 end $$;
 
 alter table public.friendships replica identity full;
 alter table public.reviewer_shares replica identity full;
+alter table public.group_members replica identity full;

@@ -20,10 +20,18 @@ function getSharingScope(reviewer) {
     : null;
 }
 
+function getGroupScope(reviewer) {
+  return Array.isArray(reviewer.sharedGroups) && reviewer.sharedGroups.length
+    ? reviewer.sharedGroups.map(String)
+    : null;
+}
+
 export async function upsertCloudReviewer(userId, reviewer) {
   if (!supabase || !userId) {
     return { data: null, error: new Error("Supabase is not configured.") };
   }
+
+  const groupScope = getGroupScope(reviewer);
 
   const payload = {
     owner_id: userId,
@@ -31,8 +39,11 @@ export async function upsertCloudReviewer(userId, reviewer) {
     title: reviewer.title,
     subject: reviewer.subject,
     data: reviewer,
-    visibility: reviewer.visibility === "private" ? "private" : "friends",
+    visibility: groupScope
+      ? "group"
+      : reviewer.visibility === "private" ? "private" : "friends",
     shared_with: getSharingScope(reviewer),
+    shared_groups: groupScope,
     updated_at: new Date().toISOString()
   };
 
@@ -75,15 +86,24 @@ export async function getMyCloudReviewer(userId, reviewerId) {
 export async function listVisibleCloudReviewers(userId) {
   if (!supabase || !userId) return { data: [], error: null };
 
-  const { data: friendships, error: friendshipsError } = await supabase
-    .from("friendships")
-    .select("requester_id, addressee_id, status")
-    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+  const [friendshipsResult, membershipsResult] = await Promise.all([
+    supabase
+      .from("friendships")
+      .select("requester_id, addressee_id, status")
+      .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+    supabase
+      .from("group_members")
+      .select("group_id")
+      .eq("user_id", userId)
+  ]);
+
+  const friendshipsError = friendshipsResult.error;
+  const membershipsError = membershipsResult.error;
 
   if (friendshipsError) return { data: [], error: friendshipsError };
 
   const friendIds = [
-    ...new Set((friendships || [])
+    ...new Set((friendshipsResult.data || [])
       .filter((friendship) => friendship.status === "accepted")
       .flatMap((friendship) => {
         const otherId = friendship.requester_id === userId
@@ -93,17 +113,55 @@ export async function listVisibleCloudReviewers(userId) {
       }))
   ];
 
+  // Group shares live on the reviewer row, so the owners to look for are the
+  // other members of any group this user belongs to.
+  const groupMemberIds = membershipsError
+    ? []
+    : [
+        ...new Set((membershipsResult.data || [])
+          .flatMap((membership) => [membership.group_id]))
+      ];
+
+  const { data: groupPeers } = groupMemberIds.length
+    ? await supabase
+        .from("group_members")
+        .select("user_id, group_id")
+        .in("group_id", groupMemberIds)
+    : { data: [] };
+
+  const groupOwnerIds = [
+    ...new Set((groupPeers || [])
+      .map((peer) => peer.user_id)
+      .filter((peerId) => peerId && peerId !== userId))
+  ];
+
+  const visibleOwnerIds = [...new Set([...friendIds, ...groupOwnerIds])];
+
   const query = supabase.from(REVIEWERS_TABLE).select("*");
 
-  const builtQuery = friendIds.length
-    ? query.or(`owner_id.eq.${userId},owner_id.in.(${friendIds.join(",")})`)
+  const builtQuery = visibleOwnerIds.length
+    ? query.or(`owner_id.eq.${userId},owner_id.in.(${visibleOwnerIds.join(",")})`)
     : query.eq("owner_id", userId);
 
   const { data: rows, error } = await builtQuery.order("updated_at", { ascending: false });
 
   if (error) return { data: [], error };
 
-  const ownerIds = [...new Set((rows || []).map((row) => row.owner_id))];
+  // RLS already limits rows to owner, accepted friends, and groups, but filter
+  // defensively so a group-shared reviewer never leaks into the wrong list.
+  const visibleRows = (rows || []).filter((row) => {
+    if (row.owner_id === userId) return true;
+    if (row.visibility === "group") {
+      const shared = Array.isArray(row.shared_groups) ? row.shared_groups.map(String) : [];
+      return shared.some((groupId) => groupMemberIds.includes(groupId));
+    }
+    if (row.visibility !== "friends") return false;
+    if (!friendIds.includes(row.owner_id)) return false;
+    if (row.shared_with == null || (Array.isArray(row.shared_with) && !row.shared_with.length)) return true;
+    return (row.shared_with || []).map(String).includes(userId);
+  });
+
+  const ownerIds = [...new Set(visibleRows.map((row) => row.owner_id))];
   const { data: profiles, error: profilesError } = ownerIds.length
     ? await supabase.from("profiles").select("id, email, display_name").in("id", ownerIds)
     : { data: [], error: null };
@@ -113,7 +171,7 @@ export async function listVisibleCloudReviewers(userId) {
   const profilesById = new Map((profiles || []).map((profile) => [profile.id, profile]));
 
   return {
-    data: (rows || []).map((row) => {
+    data: visibleRows.map((row) => {
       const profile = row.owner_id === userId ? null : profilesById.get(row.owner_id) || null;
 
       return {

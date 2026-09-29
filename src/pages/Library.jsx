@@ -213,7 +213,8 @@ export default function Library() {
         ownerId: item.owner_id,
         ...(item.ownerName ? { ownerName: item.ownerName } : {}),
         visibility: item.visibility || reviewerData.visibility || "friends",
-        sharedWith: Array.isArray(item.shared_with) ? item.shared_with : reviewerData.sharedWith || null
+        sharedWith: Array.isArray(item.shared_with) ? item.shared_with : reviewerData.sharedWith || null,
+        sharedGroups: Array.isArray(item.shared_groups) ? item.shared_groups : reviewerData.sharedGroups || null
       };
     }));
   }
