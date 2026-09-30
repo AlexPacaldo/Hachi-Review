@@ -1,4 +1,4 @@
-export default function AnswerChoice({ choice, selected, revealed, correct, disabled, onSelect }) {
+export default function AnswerChoice({ choice, letter, selected, revealed, correct, disabled, onSelect }) {
   const statusClass = revealed && correct ? " correct" : revealed && selected && !correct ? " incorrect" : "";
 
   return (
@@ -10,7 +10,7 @@ export default function AnswerChoice({ choice, selected, revealed, correct, disa
       aria-pressed={selected}
     >
       <span className="choice-content">
-        <strong className="choice-letter">{choice.value}</strong>
+        <strong className="choice-letter">{letter}</strong>
         <span>{choice.label}</span>
       </span>
       {revealed && correct ? <span className="status-text">Correct answer</span> : null}

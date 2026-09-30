@@ -1,5 +1,5 @@
 import AnswerChoice from "./AnswerChoice.jsx";
-import { isTypedQuestion } from "../utils/quizUtils.js";
+import { getChoiceLetter, isTypedQuestion } from "../utils/quizUtils.js";
 
 export default function QuizQuestion({ question, selectedAnswer, revealed, locked, onSelect }) {
   const typed = isTypedQuestion(question);
@@ -23,10 +23,11 @@ export default function QuizQuestion({ question, selectedAnswer, revealed, locke
         </label>
       ) : (
         <div className="answers-grid">
-          {question.choices.map((choice) => (
+          {question.choices.map((choice, index) => (
             <AnswerChoice
               key={choice.value}
               choice={choice}
+              letter={getChoiceLetter(index)}
               selected={selectedAnswer === choice.value}
               revealed={revealed}
               correct={question.correctAnswer === choice.value}

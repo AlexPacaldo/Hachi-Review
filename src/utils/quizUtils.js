@@ -13,6 +13,10 @@ export function normalizeChoices(choices) {
     .map(([value, label]) => ({ value, label }));
 }
 
+export function getChoiceLetter(index) {
+  return String.fromCharCode(65 + index);
+}
+
 export function getQuestionType(question) {
   return question?.type || question?.questionType || "multiple_choice";
 }
