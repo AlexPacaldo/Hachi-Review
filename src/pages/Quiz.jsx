@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Grid3X3 } from "lucide-react";
 import EmptyState from "../components/EmptyState.jsx";
@@ -9,7 +9,7 @@ import ConfirmModal from "../components/ConfirmModal.jsx";
 import { getReviewerById } from "../data/reviewerRegistry.js";
 import { clearQuizProgress, loadQuizProgress, saveAttempt, saveQuizProgress } from "../utils/storageUtils.js";
 import { cancelProgressSync, pushAttemptToCloud, pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
-import { createAttemptFromSession, formatDuration, getQuestionResult, isTypedQuestion } from "../utils/quizUtils.js";
+import { createAttemptFromSession, formatDuration, getQuestionResult, getSessionElapsed, isTypedQuestion, pauseQuizSession, resumeQuizSession } from "../utils/quizUtils.js";
 
 function isTypingTarget(target) {
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable;
@@ -19,11 +19,14 @@ export default function Quiz() {
   const { reviewerId } = useParams();
   const navigate = useNavigate();
   const reviewer = getReviewerById(reviewerId);
-  const [session, setSession] = useState(() => loadQuizProgress(reviewerId));
+  const [session, setSession] = useState(() => resumeQuizSession(loadQuizProgress(reviewerId)));
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const sessionRef = useRef(session);
+  const completedRef = useRef(false);
+  sessionRef.current = session;
 
   const currentQuestion = session?.questions[session.currentIndex];
   const mode = session?.settings.mode;
@@ -47,11 +50,28 @@ export default function Quiz() {
 
   useEffect(() => {
     if (!session) return;
-    const tick = () => setElapsed((session.elapsedBeforePause || 0) + (Date.now() - session.startedAt));
+    const tick = () => setElapsed(getSessionElapsed(session));
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
   }, [session?.startedAt, session?.elapsedBeforePause]);
+
+  // Leaving the quiz, closing the tab, or reloading all stop the clock. Without
+  // this the session keeps a startedAt from the previous visit, and the gap gets
+  // counted as work the next time the quiz is opened.
+  useEffect(() => {
+    const stopClock = () => {
+      const current = sessionRef.current;
+      if (!current || current.completed || completedRef.current) return;
+      saveQuizProgress({ ...pauseQuizSession(current), updatedAt: Date.now() });
+    };
+
+    window.addEventListener("pagehide", stopClock);
+    return () => {
+      window.removeEventListener("pagehide", stopClock);
+      stopClock();
+    };
+  }, []);
 
   useEffect(() => {
     if (!session || mode !== "timed" || remainingTime !== 0) return;
@@ -173,7 +193,11 @@ export default function Quiz() {
   }
 
   function completeQuiz(sessionOverride = session) {
-    const finalSession = { ...sessionOverride, elapsedBeforePause: elapsed, completed: true };
+    // The attempt reads the elapsed time from the session itself. Overwriting
+    // elapsedBeforePause here would bank the whole total and then add the
+    // running segment again, so every attempt came out at roughly double.
+    completedRef.current = true;
+    const finalSession = { ...sessionOverride, completed: true };
     const attempt = createAttemptFromSession(finalSession);
     saveAttempt(attempt);
     clearQuizProgress(session.reviewerId);
@@ -309,7 +333,7 @@ export default function Quiz() {
         message="Are you sure you want to submit your quiz?"
         confirmLabel="Submit Quiz"
         onCancel={() => setConfirmSubmit(false)}
-        onConfirm={completeQuiz}
+        onConfirm={() => completeQuiz()}
       />
 
       <ConfirmModal

@@ -133,11 +133,43 @@ export function createQuizSession(reviewer, settings, retryQuestionIds = null) {
     answers: {},
     submittedQuestions: {},
     currentIndex: 0,
-    startedAt: now,
+    startedAt: null,
     elapsedBeforePause: 0,
     updatedAt: now,
     completed: false
   };
+}
+
+// elapsedBeforePause holds the time banked by earlier visits and startedAt is
+// the start of the visit that is on screen. Only the second one moves, so the
+// hours between two visits are never added to the total. startedAt is a number
+// everywhere it is written, but an older cloud record can hold a date string.
+function toTimestamp(value) {
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : 0;
+  const parsed = Date.parse(value || "");
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function getSessionElapsed(session, now = Date.now()) {
+  const banked = Math.max(0, Number(session?.elapsedBeforePause) || 0);
+  const segmentStart = toTimestamp(session?.startedAt);
+  if (!segmentStart) return banked;
+  return banked + Math.max(0, now - segmentStart);
+}
+
+// Banks the running segment when the quiz leaves the screen, so time spent away
+// stops counting.
+export function pauseQuizSession(session, now = Date.now()) {
+  if (!session) return session;
+  return { ...session, elapsedBeforePause: getSessionElapsed(session, now), startedAt: null };
+}
+
+// Opens the clock for a visit. A segment found in storage belongs to a visit
+// that has already ended, so it is replaced rather than credited: the time it
+// held is unknown, and guessing is what produced day-long totals.
+export function resumeQuizSession(session, now = Date.now()) {
+  if (!session) return session;
+  return { ...session, startedAt: now };
 }
 
 export function calculateScore(session) {
@@ -229,7 +261,7 @@ export function createAttemptFromSession(session) {
     correctAnswers: score,
     wrongAnswers: incorrectQuestions.length,
     incorrectQuestionIds: incorrectQuestions.map((question) => question.id),
-    timeTaken: (session.elapsedBeforePause || 0) + (Date.now() - session.startedAt),
+    timeTaken: getSessionElapsed(session),
     date: new Date().toISOString(),
     settings: session.settings,
     topicStats,
