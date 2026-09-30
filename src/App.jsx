@@ -107,6 +107,7 @@ function AppShell() {
           </button>
         </div>
       ) : null}
+      <div className="top-pill-spacer" aria-hidden="true" />
       <main>
         <Routes>
           <Route path="/" element={<Home />} />

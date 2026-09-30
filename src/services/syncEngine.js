@@ -86,7 +86,14 @@ export async function saveReviewerToAccount(userId, reviewer) {
     return { data: null, error: new Error("Sign in to save this reviewer to your account.") };
   }
 
-  const payload = toStorableReviewer(reviewer);
+  // A reviewer is private until it is explicitly shared, and an existing group
+  // share stays a group share. Settling the scope here keeps the upsert from
+  // having to read the row back to avoid widening the audience.
+  const payload = {
+    ...toStorableReviewer(reviewer),
+    visibility: reviewer.visibility
+      || (Array.isArray(reviewer.sharedGroups) && reviewer.sharedGroups.length ? "group" : "private")
+  };
 
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     queueSyncItem({ userId, type: "upsert-reviewer", reviewerId: payload.reviewerId, payload });

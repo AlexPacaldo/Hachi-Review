@@ -78,6 +78,8 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   const [renameOpen, setRenameOpen] = useState(false);
   const [newTitle, setNewTitle] = useState(reviewer.title || "");
   const [newSubject, setNewSubject] = useState(reviewer.subject || "");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState(null);
 
   useEffect(() => {
     if (!open) {
@@ -191,26 +193,64 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     onChanged();
   }
 
-  async function openRename() {
-    const newTitle = window.prompt("New title", reviewer.title || "");
-    if (newTitle == null || !newTitle.trim()) return;
-    const newSubject = window.prompt("New subject", reviewer.subject || "");
-    if (newSubject == null || !newSubject.trim()) return;
+  function openRename() {
+    setOpen(false);
+    setNewTitle(reviewer.title || "");
+    setNewSubject(reviewer.subject || "");
+    setRenameError(null);
+    setRenameOpen(true);
+  }
+
+  async function submitRename(event) {
+    event.preventDefault();
+    if (renameSaving) return;
+
+    const title = newTitle.trim();
+    const subject = newSubject.trim();
+
+    if (!title) {
+      setRenameError("Give the reviewer a title.");
+      return;
+    }
+
+    if (!subject) {
+      setRenameError("Give the reviewer a subject.");
+      return;
+    }
+
+    setRenameSaving(true);
+    setRenameError(null);
 
     // Persist to cloud DB if this is a cloud reviewer
     if (hasCloud && user && isOwner) {
+      // Renaming must not change who the reviewer is shared with, and the cache
+      // copy can be behind the row, so the saved scope comes from the row.
+      const { data: current } = await getMyCloudReviewer(user.id, reviewer.reviewerId);
+      const scope = current
+        ? {
+            visibility: current.visibility,
+            sharedWith: current.shared_with || null,
+            sharedGroups: current.shared_groups || null
+          }
+        : {};
+
       const { error } = await upsertCloudReviewer(user.id, {
         ...reviewer,
-        title: newTitle,
-        subject: newSubject
+        ...scope,
+        title,
+        subject
       });
+
       if (error) {
-        onMessage({ type: "error", text: error.message || "Could not save rename." });
+        setRenameSaving(false);
+        setRenameError(error.message || "Could not save rename.");
         return;
       }
     }
 
-    syncMetadata({ title: newTitle, subject: newSubject });
+    syncMetadata({ title, subject });
+    setRenameSaving(false);
+    setRenameOpen(false);
     onMessage({ type: "success", text: "Reviewer renamed." });
   }
 
@@ -765,6 +805,56 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
                 {groupSaving ? "Saving..." : "Save"}
               </button>
             </div>
+          </section>
+        </div>,
+        document.body
+      ) : null}
+
+      {renameOpen ? createPortal(
+        <div className="modal-backdrop" role="presentation" onClick={() => setRenameOpen(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-rename-heading" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h2 id="reviewer-rename-heading">Rename reviewer</h2>
+                <p className="muted">Everyone this reviewer is shared with sees the new title and subject.</p>
+              </div>
+              <button className="icon-button small" type="button" onClick={() => setRenameOpen(false)} aria-label="Close">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <form className="modal-form" onSubmit={submitRename}>
+              <label htmlFor="reviewer-rename-title">Title</label>
+              <input
+                id="reviewer-rename-title"
+                value={newTitle}
+                onChange={(event) => setNewTitle(event.target.value)}
+                placeholder="Cell Biology midterm"
+                maxLength={80}
+                autoFocus
+              />
+
+              <label htmlFor="reviewer-rename-subject">Subject</label>
+              <input
+                id="reviewer-rename-subject"
+                value={newSubject}
+                onChange={(event) => setNewSubject(event.target.value)}
+                placeholder="Biology"
+                maxLength={60}
+              />
+
+              {renameError ? <p className="sync-message error">{renameError}</p> : null}
+
+              <div className="modal-actions">
+                <button className="button subtle" type="button" onClick={() => setRenameOpen(false)}>
+                  Cancel
+                </button>
+                <button className="button primary" type="submit" disabled={renameSaving}>
+                  {renameSaving ? <Loader2 className="spinner" size={16} aria-hidden="true" /> : <Pencil size={16} aria-hidden="true" />}
+                  {renameSaving ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </form>
           </section>
         </div>,
         document.body

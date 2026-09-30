@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Cloud, Download, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Cloud, Download, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { deleteCloudReviewer, listVisibleCloudReviewers, upsertCloudReviewer } from "../services/cloudReviewers.js";
+import { deleteCloudReviewer, getMyCloudReviewer, listVisibleCloudReviewers, upsertCloudReviewer } from "../services/cloudReviewers.js";
 import {
   clearAllQuizProgress,
   clearAttemptHistory,
@@ -71,6 +71,11 @@ export default function Library() {
   const [syncAllLoading, setSyncAllLoading] = useState(false);
   const [offlineSaveStatus, setOfflineSaveStatus] = useState({});
   const [syncQueue, setSyncQueue] = useState(() => getSyncQueue(user?.id));
+  const [renameTarget, setRenameTarget] = useState(null);
+  const [renameTitle, setRenameTitle] = useState("");
+  const [renameSubject, setRenameSubject] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState(null);
   const [storageInfo, setStorageInfo] = useState({
     supported: false,
     persisted: false,
@@ -251,47 +256,54 @@ export default function Library() {
     }));
   }
 
-  function getRenamedReviewer(reviewer) {
-    const nextTitle = window.prompt("Reviewer title", reviewer.title || "");
-    if (nextTitle === null) return null;
-
-    const trimmedTitle = nextTitle.trim();
-    if (!trimmedTitle) {
-      setCloudMessage({ type: "error", message: "Reviewer title cannot be empty." });
-      return null;
-    }
-
-    const nextSubject = window.prompt("Subject", reviewer.subject || "");
-    if (nextSubject === null) return null;
-
-    const trimmedSubject = nextSubject.trim();
-    if (!trimmedSubject) {
-      setCloudMessage({ type: "error", message: "Subject cannot be empty." });
-      return null;
-    }
-
-    if (trimmedTitle === reviewer.title && trimmedSubject === reviewer.subject) {
-      return null;
-    }
-
-    return {
-      ...reviewer,
-      title: trimmedTitle,
-      subject: trimmedSubject
-    };
+  function openRename(reviewer) {
+    setCloudMessage(null);
+    setRenameError(null);
+    setRenameTitle(reviewer?.title || "");
+    setRenameSubject(reviewer?.subject || "");
+    setRenameTarget(reviewer || null);
   }
 
-  async function renameReviewerEverywhere(reviewer) {
-    if (!reviewer?.reviewerId) {
+  async function submitRename(event) {
+    event.preventDefault();
+    if (renameSaving || !renameTarget) return;
+
+    const trimmedTitle = renameTitle.trim();
+    const trimmedSubject = renameSubject.trim();
+
+    if (!trimmedTitle) {
+      setRenameError("Reviewer title cannot be empty.");
+      return;
+    }
+
+    if (!trimmedSubject) {
+      setRenameError("Subject cannot be empty.");
+      return;
+    }
+
+    if (trimmedTitle === renameTarget.title && trimmedSubject === renameTarget.subject) {
+      setRenameTarget(null);
+      return;
+    }
+
+    setRenameSaving(true);
+    await renameReviewerEverywhere({
+      ...renameTarget,
+      title: trimmedTitle,
+      subject: trimmedSubject
+    });
+    setRenameSaving(false);
+    setRenameTarget(null);
+  }
+
+  async function renameReviewerEverywhere(renamedReviewer) {
+    if (!renamedReviewer?.reviewerId) {
       setCloudMessage({ type: "error", message: "This reviewer is missing a reviewer ID." });
       return;
     }
 
-    const renamedReviewer = getRenamedReviewer(reviewer);
-    if (!renamedReviewer) return;
-
-    const hasOfflineCopy = isReviewerSavedOffline(reviewer.reviewerId);
-    const hasCloudCopy = cloudReviewerIds.has(reviewer.reviewerId);
+    const hasOfflineCopy = isReviewerSavedOffline(renamedReviewer.reviewerId);
+    const hasCloudCopy = cloudReviewerIds.has(renamedReviewer.reviewerId);
 
     if (hasCloudCopy) {
       if (!user) {
@@ -299,7 +311,19 @@ export default function Library() {
         return;
       }
 
-      const { error } = await upsertCloudReviewer(user.id, renamedReviewer);
+      // Renaming must not change who the reviewer is shared with. The row is the
+      // only current source for that scope, because sharing a reviewer into a
+      // group later on changed the row and not the cached payload.
+      const { data: current } = await getMyCloudReviewer(user.id, renamedReviewer.reviewerId);
+      const scope = current
+        ? {
+            visibility: current.visibility,
+            sharedWith: current.shared_with || null,
+            sharedGroups: current.shared_groups || null
+          }
+        : {};
+
+      const { error } = await upsertCloudReviewer(user.id, { ...renamedReviewer, ...scope });
 
       if (error) {
         setCloudMessage({ type: "error", message: error.message || "Could not rename cloud reviewer." });
@@ -316,13 +340,23 @@ export default function Library() {
           ...item,
           title: renamedReviewer.title,
           subject: renamedReviewer.subject,
-          data: renamedReviewer
+          data: { ...itemReviewer, title: renamedReviewer.title, subject: renamedReviewer.subject }
         };
       }));
-      saveCloudReviewerCache([
-        renamedReviewer,
-        ...getCloudReviewerCache().filter((item) => item.reviewerId !== renamedReviewer.reviewerId)
-      ]);
+
+      // A rename only changes these two fields, so the sharing metadata on the
+      // cached entry is kept instead of being replaced by the saved payload.
+      const cached = getCloudReviewerCache();
+      const cachedEntry = cached.find((item) => item.reviewerId === renamedReviewer.reviewerId);
+      saveCloudReviewerCache(
+        cachedEntry
+          ? cached.map((item) => (
+              item.reviewerId === renamedReviewer.reviewerId
+                ? { ...item, title: renamedReviewer.title, subject: renamedReviewer.subject }
+                : item
+            ))
+          : [renamedReviewer, ...cached]
+      );
     }
 
     if (hasOfflineCopy) {
@@ -648,7 +682,7 @@ export default function Library() {
                       <Download size={17} aria-hidden="true" />
                       {savedOffline ? "Saved Offline" : "Save Offline"}
                     </button>
-                    <button className="button subtle" type="button" onClick={() => renameReviewerEverywhere(reviewer)}>
+                    <button className="button subtle" type="button" onClick={() => openRename(reviewer)}>
                       <Pencil size={17} aria-hidden="true" />
                       Rename
                     </button>
@@ -769,7 +803,7 @@ export default function Library() {
                         Sign In to Sync
                       </Link>
                     )}
-                    <button className="button subtle" type="button" onClick={() => renameReviewerEverywhere(reviewer)}>
+                    <button className="button subtle" type="button" onClick={() => openRename(reviewer)}>
                       <Pencil size={17} aria-hidden="true" />
                       Rename
                     </button>
@@ -854,6 +888,55 @@ export default function Library() {
         </div>
         {backupMessage ? <p className={`sync-message ${backupMessage.type}`}>{backupMessage.text}</p> : null}
       </section>
+
+      {renameTarget ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setRenameTarget(null)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="library-rename-heading" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h2 id="library-rename-heading">Rename reviewer</h2>
+                <p className="muted">Renames every copy you own: your account and this device.</p>
+              </div>
+              <button className="icon-button small" type="button" onClick={() => setRenameTarget(null)} aria-label="Close">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <form className="modal-form" onSubmit={submitRename}>
+              <label htmlFor="library-rename-title">Title</label>
+              <input
+                id="library-rename-title"
+                value={renameTitle}
+                onChange={(event) => setRenameTitle(event.target.value)}
+                placeholder="Cell Biology midterm"
+                maxLength={80}
+                autoFocus
+              />
+
+              <label htmlFor="library-rename-subject">Subject</label>
+              <input
+                id="library-rename-subject"
+                value={renameSubject}
+                onChange={(event) => setRenameSubject(event.target.value)}
+                placeholder="Biology"
+                maxLength={60}
+              />
+
+              {renameError ? <p className="sync-message error">{renameError}</p> : null}
+
+              <div className="modal-actions">
+                <button className="button subtle" type="button" onClick={() => setRenameTarget(null)}>
+                  Cancel
+                </button>
+                <button className="button primary" type="submit" disabled={renameSaving}>
+                  {renameSaving ? <Loader2 className="spinner" size={17} aria-hidden="true" /> : <Pencil size={17} aria-hidden="true" />}
+                  {renameSaving ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
 
       <ConfirmModal
         open={Boolean(confirmAction)}

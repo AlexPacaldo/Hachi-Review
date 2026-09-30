@@ -267,6 +267,18 @@ main {
   white-space: nowrap;
 }
 
+/* Reserves the band the fixed account pill floats in, so page content never
+   starts underneath it. Narrow layouts already pad their pages for the pill. */
+.top-pill-spacer {
+  height: 0;
+}
+
+@media (min-width: 761px) {
+  .top-pill-spacer {
+    height: 76px;
+  }
+}
+
 .offline-pill {
   display: inline-flex;
   align-items: center;
@@ -3186,20 +3198,24 @@ legend {
   color: var(--danger);
 }
 
-.group-form {
+.group-form,
+.modal-form {
   display: grid;
   gap: 8px;
   margin-top: 14px;
 }
 
-.group-form label {
+.group-form label,
+.modal-form label {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--muted);
 }
 
 .group-form input,
-.group-form textarea {
+.group-form textarea,
+.modal-form input,
+.modal-form textarea {
   width: 100%;
   padding: 11px 13px;
   font: inherit;
@@ -3211,12 +3227,15 @@ legend {
 }
 
 .group-form input:focus-visible,
-.group-form textarea:focus-visible {
+.group-form textarea:focus-visible,
+.modal-form input:focus-visible,
+.modal-form textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.group-form .modal-actions {
+.group-form .modal-actions,
+.modal-form .modal-actions {
   margin-top: 8px;
 }
 
@@ -4207,7 +4226,7 @@ summary {
 .page,
 .quiz-layout {
   width: min(1500px, calc(100% - 48px));
-  padding: clamp(24px, 3.2vw, 44px) 0 80px;
+  padding: 0 0 80px;
 }
 
 .page.narrow,
@@ -5154,6 +5173,13 @@ strong {
   }
 }
 
+@media (min-width: 761px) {
+  .notification-toasts {
+    top: 76px;
+    right: 24px;
+  }
+}
+
 @media (max-width: 760px) {
   body {
     background: var(--bg);
@@ -5390,7 +5416,7 @@ strong {
   position: relative;
   margin-bottom: 26px;
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(380px, 0.86fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(560px, 0.86fr);
   align-items: center;
   gap: clamp(24px, 3vw, 44px);
   padding: clamp(28px, 3.4vw, 44px);
@@ -5405,7 +5431,6 @@ strong {
 
 .home-page {
   width: min(1560px, calc(100% - 28px));
-  padding-top: clamp(72px, 8vh, 100px);
 }
 
 :root[data-theme="dark"] .home-hero {
@@ -5818,21 +5843,22 @@ strong {
   color: var(--success);
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1400px) {
+  /* The stats column holds the study week strip beside the streak number, which
+     needs roughly 560px to stay legible. Stacking the hero keeps both halves
+     readable instead of squeezing the strip until the labels clip. */
   .home-hero {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
+}
 
+@media (max-width: 1120px) {
   .home-hero-main {
-    grid-template-columns: minmax(0, 1fr) minmax(210px, 0.78fr);
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 0.72fr);
   }
 }
 
 @media (max-width: 900px) {
-  .home-page {
-    padding-top: 96px;
-  }
-
   .home-hero-main {
     grid-template-columns: 1fr;
     gap: 22px;
@@ -5881,6 +5907,39 @@ strong {
     width: 24px;
     height: 24px;
     border-radius: 8px;
+  }
+}
+
+@media (min-width: 901px) and (max-height: 820px) {
+  /* Short monitors (720p and 768p screens) run out of height long before they
+     run out of width, so the hero gives some of its height back. */
+  .home-hero {
+    padding: clamp(22px, 2.2vw, 30px);
+  }
+
+  .home-hero h1 {
+    font-size: clamp(3.5rem, 4vw, 4.8rem);
+  }
+
+  .home-hero-dog {
+    min-height: 190px;
+  }
+
+  .home-hero-dog img {
+    width: min(220px, 86%);
+  }
+
+  .hero-stat {
+    padding: 14px 16px;
+  }
+
+  .hero-stat-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .streak-week {
+    padding: 9px 11px;
   }
 }
 

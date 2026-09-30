@@ -290,6 +290,8 @@ export async function addGroupMember(groupId, profile, addedBy) {
   if (!supabase) return NOT_CONFIGURED();
   if (!groupId || !profile?.id) return { error: new Error("Choose someone to add.") };
 
+  const name = profile.display_name || profile.email;
+
   const { data: existing } = await supabase
     .from(MEMBERS_TABLE)
     .select("id")
@@ -297,13 +299,19 @@ export async function addGroupMember(groupId, profile, addedBy) {
     .eq("user_id", profile.id)
     .maybeSingle();
 
-  if (existing) return { error: new Error(`${profile.display_name || profile.email} is already in this group.`) };
+  if (existing) return { error: new Error(`${name} is already in this group.`) };
 
   const { data, error } = await supabase
     .from(MEMBERS_TABLE)
     .insert({ group_id: groupId, user_id: profile.id, role: "member", added_by: addedBy || null })
     .select()
     .single();
+
+  // Someone can join between the check above and this insert, and the unique
+  // constraint is what actually settles it, so 23505 is the same situation.
+  if (error?.code === "23505") {
+    return { data: null, error: new Error(`${name} is already in this group.`) };
+  }
 
   if (!error) announceSocialChange();
   return { data, error };
@@ -343,7 +351,8 @@ export async function removeGroupMember(groupId, userId) {
 }
 
 export async function leaveGroup(userId, groupId) {
-  if (!userId) return NOT_CONFIGURED();
+  if (!supabase) return NOT_CONFIGURED();
+  if (!userId) return { error: new Error("Sign in to leave this group.") };
   return removeGroupMember(groupId, userId);
 }
 

@@ -29,7 +29,8 @@ import {
   listMyGroups,
   removeGroupMember,
   setGroupMemberRole,
-  shareReviewerWithGroups
+  shareReviewerWithGroups,
+  updateGroup
 } from "../services/groups.js";
 import { listFriendships, searchProfiles } from "../services/social.js";
 import {
@@ -51,6 +52,24 @@ const ROLE_LABELS = {
 
 function getProfileName(profile) {
   return profile?.display_name || profile?.email || "Hachi user";
+}
+
+// Saving the cloud cache announces a reviewer data change, and this page
+// reloads on that event, so the cache is only written when its contents would
+// actually differ. Without this the page reloads itself forever.
+function cacheFingerprint(reviewers) {
+  return JSON.stringify(
+    (reviewers || []).map((item) => [
+      item.reviewerId,
+      item.updatedAt,
+      item.title,
+      item.subject,
+      item.ownerId,
+      item.visibility,
+      item.sharedGroups,
+      item.sharedWith
+    ])
+  );
 }
 
 export default function GroupDetail() {
@@ -160,15 +179,21 @@ export default function GroupDetail() {
           ...payload,
           ownerId: row.owner_id,
           ownerName: row.ownerName,
+          updatedAt: row.updated_at,
           visibility: "group",
           sharedGroups: row.shared_groups || null
         };
       });
       const incomingIds = new Set(incoming.map((item) => item.reviewerId));
-      saveCloudReviewerCache([
+      const currentCache = getCloudReviewerCache();
+      const nextCache = [
         ...incoming,
-        ...getCloudReviewerCache().filter((item) => !incomingIds.has(item.reviewerId))
-      ]);
+        ...currentCache.filter((item) => !incomingIds.has(item.reviewerId))
+      ];
+
+      if (cacheFingerprint(nextCache) !== cacheFingerprint(currentCache)) {
+        saveCloudReviewerCache(nextCache);
+      }
     }
 
     if (reviewersResult.error) {
@@ -640,7 +665,7 @@ export default function GroupDetail() {
                   <button
                     className="button subtle"
                     type="button"
-                    onClick={() => { setMenuOpen(false); setEditOpen(true); }}
+                    onClick={() => { setMenuOpen(false); openEditGroup(); }}
                   >
                     <Pencil size={15} aria-hidden="true" />
                     Edit group

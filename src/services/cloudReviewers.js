@@ -14,16 +14,20 @@ export async function listMyCloudReviewers(userId) {
   return { data: data || [], error };
 }
 
+// Group and friend ids are stored in uuid arrays, so they are normalized to a
+// deduped list of non-empty strings before anything is written.
+function normalizeIdList(ids) {
+  return [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
+}
+
 function getSharingScope(reviewer) {
-  return Array.isArray(reviewer.sharedWith) && reviewer.sharedWith.length
-    ? reviewer.sharedWith
-    : null;
+  const ids = normalizeIdList(reviewer.sharedWith);
+  return ids.length ? ids : null;
 }
 
 function getGroupScope(reviewer) {
-  return Array.isArray(reviewer.sharedGroups) && reviewer.sharedGroups.length
-    ? reviewer.sharedGroups.map(String)
-    : null;
+  const ids = normalizeIdList(reviewer.sharedGroups);
+  return ids.length ? ids : null;
 }
 
 export async function upsertCloudReviewer(userId, reviewer) {
@@ -31,18 +35,38 @@ export async function upsertCloudReviewer(userId, reviewer) {
     return { data: null, error: new Error("Supabase is not configured.") };
   }
 
-  const groupScope = getGroupScope(reviewer);
+  let groupScope = getGroupScope(reviewer);
+  let sharedWith = getSharingScope(reviewer);
+  let visibility = groupScope
+    ? "group"
+    : reviewer.visibility === "friends" ? "friends" : "private";
+
+  // The stored row is the only current source for who a reviewer is shared
+  // with, because sharing is recorded on the row and not in the payload. Most
+  // callers pass a payload without any scope, so without this a routine save
+  // would unshare a reviewer and expose it to every friend.
+  const scopeIsExplicit = Boolean(reviewer.visibility) || Boolean(groupScope);
+  if (!scopeIsExplicit) {
+    const { data: existing } = await getMyCloudReviewer(userId, reviewer.reviewerId);
+    const existingGroups = getGroupScope(existing || {});
+
+    groupScope = existingGroups;
+    sharedWith = getSharingScope(existing || {});
+    visibility = groupScope
+      ? "group"
+      : existing?.visibility === "friends" ? "friends" : "private";
+  }
 
   const payload = {
     owner_id: userId,
     reviewer_id: reviewer.reviewerId,
     title: reviewer.title,
     subject: reviewer.subject,
-    data: reviewer,
-    visibility: groupScope
-      ? "group"
-      : reviewer.visibility === "private" ? "private" : "friends",
-    shared_with: getSharingScope(reviewer),
+    // The resolved scope is stored in the blob too, so a payload read back out
+    // of the row never disagrees with the sharing columns next to it.
+    data: { ...reviewer, visibility, sharedWith, sharedGroups: groupScope },
+    visibility,
+    shared_with: sharedWith,
     shared_groups: groupScope,
     updated_at: new Date().toISOString()
   };
