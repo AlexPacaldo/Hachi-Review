@@ -5,6 +5,7 @@ const GROUPS_TABLE = "study_groups";
 const MEMBERS_TABLE = "group_members";
 const PROFILES_TABLE = "profiles";
 const REVIEWERS_TABLE = "reviewers";
+const SHARES_TABLE = "reviewer_group_shares";
 
 const NOT_CONFIGURED = () => ({ error: new Error("Supabase is not configured.") });
 
@@ -32,6 +33,66 @@ function mapById(items) {
 
 function normalizeGroupIds(groupIds) {
   return [...new Set((groupIds || []).filter((id) => typeof id === "string" && id))];
+}
+
+// Group ids reach these functions from the route, and they are interpolated
+// into a jsonb filter, so anything that is not a uuid is rejected first.
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function isGroupId(value) {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+// shared_groups is jsonb, so the filter value has to be a json array literal
+// rather than a Postgres array, which is what makes Postgres do the matching.
+function sharedWithGroupFilter(groupId) {
+  return `["${groupId}"]`;
+}
+
+// The share table is the fast path, but it only exists once supabase-schema.sql
+// has been applied, so both readers fall back to the shared_groups column while
+// a database is still missing it.
+function isMissingRelation(error) {
+  return error?.code === "42P01" || /does not exist/i.test(error?.message || "");
+}
+
+async function readGroupReviewers(groupId) {
+  // The inner hint keeps the visibility rule, so this returns exactly what the
+  // shared_groups filter returned before the share table existed.
+  const { data, error } = await supabase
+    .from(SHARES_TABLE)
+    .select("reviewers!inner(*)")
+    .eq("group_id", groupId)
+    .eq("reviewers.visibility", "group");
+
+  if (!error) return { rows: (data || []).map((row) => row.reviewers).filter(Boolean), error: null };
+  if (!isMissingRelation(error)) return { rows: [], error };
+
+  const fallback = await supabase
+    .from(REVIEWERS_TABLE)
+    .select("*")
+    .eq("visibility", "group")
+    .contains("shared_groups", sharedWithGroupFilter(groupId));
+
+  return { rows: fallback.data || [], error: fallback.error || null };
+}
+
+async function readGroupReviewerCount(groupId) {
+  const { count, error } = await supabase
+    .from(SHARES_TABLE)
+    .select("reviewer_id", { count: "exact", head: true })
+    .eq("group_id", groupId);
+
+  if (!error) return { count: count || 0, error: null };
+  if (!isMissingRelation(error)) return { count: 0, error };
+
+  const fallback = await supabase
+    .from(REVIEWERS_TABLE)
+    .select("id", { count: "exact", head: true })
+    .eq("visibility", "group")
+    .contains("shared_groups", sharedWithGroupFilter(groupId));
+
+  return { count: fallback.count || 0, error: fallback.error || null };
 }
 
 export async function listMyGroups(userId) {
@@ -357,17 +418,15 @@ export async function leaveGroup(userId, groupId) {
 }
 
 export async function listGroupReviewers(groupId) {
-  if (!supabase || !groupId) return { data: [], error: null };
+  if (!supabase || !isGroupId(groupId)) return { data: [], error: null };
 
-  const { data, error } = await supabase
-    .from(REVIEWERS_TABLE)
-    .select("*")
-    .eq("visibility", "group")
-    .not("shared_groups", "is", null);
+  // Read through the share table so Postgres answers from the group index, and
+  // the second check keeps a row with a malformed id from leaking into a group
+  // it is not actually shared with.
+  const { rows, error } = await readGroupReviewers(groupId);
+  if (error) return { data: [], error: friendlyGroupsError(error) };
 
-  if (error) return { data: [], error };
-
-  const matches = (data || []).filter((row) =>
+  const matches = rows.filter((row) =>
     normalizeGroupIds(row.shared_groups).includes(groupId)
   );
 
@@ -431,28 +490,26 @@ export async function unshareReviewerFromGroup(userId, reviewerId, groupId) {
   return shareReviewerWithGroups(userId, reviewerId, remaining);
 }
 
-// Counts the reviewers shared into each of the given groups with a single
-// read, instead of one query per group on the groups list.
+// Counts the reviewers shared into each of the given groups, one count-only
+// read per group, so no reviewer rows are transferred to count them here.
 export async function listGroupReviewerCounts(groupIds) {
   if (!supabase || !groupIds?.length) return { data: {}, error: null };
-
-  const { data, error } = await supabase
-    .from(REVIEWERS_TABLE)
-    .select("id, shared_groups")
-    .eq("visibility", "group")
-    .not("shared_groups", "is", null);
-
-  if (error) return { data: {}, error: friendlyGroupsError(error) };
 
   const counts = {};
   groupIds.forEach((groupId) => {
     counts[groupId] = 0;
   });
 
-  (data || []).forEach((row) => {
-    normalizeGroupIds(row.shared_groups).forEach((groupId) => {
-      if (groupId in counts) counts[groupId] += 1;
-    });
+  const uniqueGroupIds = [...new Set(groupIds.filter(isGroupId))];
+  if (!uniqueGroupIds.length) return { data: counts, error: null };
+
+  const results = await Promise.all(uniqueGroupIds.map((groupId) => readGroupReviewerCount(groupId)));
+
+  const failed = results.find((result) => result.error);
+  if (failed) return { data: {}, error: friendlyGroupsError(failed.error) };
+
+  uniqueGroupIds.forEach((groupId, index) => {
+    counts[groupId] = results[index].count || 0;
   });
 
   return { data: counts, error: null };

@@ -256,6 +256,144 @@ alter table public.reviewers add column if not exists shared_groups jsonb;
 create index if not exists reviewers_visibility_owner_idx
 on public.reviewers(visibility, owner_id, updated_at desc);
 
+-- Group lookups filter with shared_groups @> '["<group id>"]', which is what
+-- jsonb_path_ops indexes. Without it the database still answers correctly, it
+-- just has to scan the group rows instead of going straight to the matches.
+create index if not exists reviewers_shared_groups_idx
+on public.reviewers using gin (shared_groups jsonb_path_ops);
+
+-- The same group shares, one row per group, so a group can be answered from an
+-- index and a per group count is a plain grouped count. shared_groups stays the
+-- source of truth the reviewer policies read, and the trigger below keeps this
+-- table in step with it, so the two can never drift.
+create table if not exists public.reviewer_group_shares (
+  reviewer_id uuid not null references public.reviewers(id) on delete cascade,
+  group_id uuid not null references public.study_groups(id) on delete cascade,
+  shared_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (reviewer_id, group_id)
+);
+
+create index if not exists reviewer_group_shares_group_idx
+  on public.reviewer_group_shares(group_id, reviewer_id);
+
+alter table public.reviewer_group_shares enable row level security;
+
+grant select, insert, update, delete on public.reviewer_group_shares to authenticated;
+
+-- Any member of a group can see which reviewers are shared into it, which is
+-- the same audience the reviewers policy already gives those reviewers.
+drop policy if exists "Group members can read group shares" on public.reviewer_group_shares;
+create policy "Group members can read group shares"
+  on public.reviewer_group_shares
+  for select
+  to authenticated
+  using (public.is_group_member(group_id, auth.uid()) or shared_by = auth.uid());
+
+-- Only the owner of the reviewer can change where it is shared.
+drop policy if exists "Reviewer owners can manage group shares" on public.reviewer_group_shares;
+create policy "Reviewer owners can manage group shares"
+  on public.reviewer_group_shares
+  for all
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.reviewers
+      where reviewers.id = reviewer_group_shares.reviewer_id
+        and reviewers.owner_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.reviewers
+      where reviewers.id = reviewer_group_shares.reviewer_id
+        and reviewers.owner_id = auth.uid()
+    )
+  );
+
+-- Ids are validated before they are cast, and groups that no longer exist are
+-- skipped, so one stale value in shared_groups cannot fail the reviewer write.
+create or replace function public.reviewer_group_id_list(raw_value jsonb)
+returns text[]
+language sql
+stable
+as $$
+  select coalesce(array(
+    select listed.group_id
+    from jsonb_array_elements_text(coalesce(raw_value, '[]'::jsonb)) as listed(group_id)
+    where listed.group_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+  ), '{}'::text[]);
+$$;
+
+-- Mirrors shared_groups into the share table. Only the difference is written,
+-- so an update that does not touch sharing does no work here. It runs as the
+-- table owner so a stricter policy on the share table can never fail the
+-- reviewer write that triggered it.
+create or replace function public.sync_reviewer_group_shares()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  previous_ids text[];
+  next_ids text[];
+  added_ids text[];
+  removed_ids text[];
+begin
+  if tg_op = 'INSERT' then
+    previous_ids := '{}'::text[];
+  else
+    previous_ids := public.reviewer_group_id_list(old.shared_groups);
+  end if;
+
+  next_ids := public.reviewer_group_id_list(new.shared_groups);
+  added_ids := array(
+    select listed.group_id
+    from unnest(next_ids) as listed(group_id)
+    where not (listed.group_id = any (previous_ids))
+  );
+  removed_ids := array(
+    select listed.group_id
+    from unnest(previous_ids) as listed(group_id)
+    where not (listed.group_id = any (next_ids))
+  );
+
+  if removed_ids <> '{}'::text[] then
+    delete from public.reviewer_group_shares
+    where reviewer_id = new.id
+      and group_id = any (removed_ids::uuid[]);
+  end if;
+
+  if added_ids <> '{}'::text[] then
+    insert into public.reviewer_group_shares (reviewer_id, group_id, shared_by)
+    select new.id, study_groups.id, new.owner_id
+    from unnest(added_ids) as listed(group_id)
+    join public.study_groups on study_groups.id = listed.group_id::uuid
+    on conflict (reviewer_id, group_id) do nothing;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists reviewers_sync_group_shares on public.reviewers;
+create trigger reviewers_sync_group_shares
+  after insert or update on public.reviewers
+  for each row
+  execute function public.sync_reviewer_group_shares();
+
+-- Backfills the table for reviewers that were shared into groups before it
+-- existed. Idempotent, so re-running the schema file is safe.
+insert into public.reviewer_group_shares (reviewer_id, group_id, shared_by)
+select reviewers.id, study_groups.id, reviewers.owner_id
+from public.reviewers
+cross join lateral unnest(public.reviewer_group_id_list(reviewers.shared_groups)) as listed(group_id)
+join public.study_groups on study_groups.id = listed.group_id::uuid
+on conflict (reviewer_id, group_id) do nothing;
+
 alter table public.reviewers enable row level security;
 
 grant select, insert, update, delete on public.reviewers to authenticated;
