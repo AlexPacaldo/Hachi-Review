@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Database, HardDrive, LogOut, UserRound } from "lucide-react";
+import { Cloud, Database, HardDrive, LogIn, LogOut, RefreshCw, UserRound, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
@@ -8,6 +8,24 @@ import { deleteMyCloudAppData, updateMyProfile } from "../services/social.js";
 import { clearAllDeviceData } from "../utils/storageUtils.js";
 
 const authRedirectUrl = import.meta.env.VITE_AUTH_REDIRECT_URL || window.location.origin;
+
+const SIGN_IN_BENEFITS = [
+  {
+    icon: Cloud,
+    title: "Reviewers on every device",
+    text: "Save a reviewer to your account and pick it up on any device, online or offline."
+  },
+  {
+    icon: Users,
+    title: "Friends and group study",
+    text: "Share reviewers with friends and study together in a group."
+  },
+  {
+    icon: Database,
+    title: "Progress that follows you",
+    text: "Attempts, in progress quizzes, and generated reviewers stay in sync."
+  }
+];
 
 function getUserName(user) {
   return user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "Hachi User";
@@ -105,30 +123,49 @@ export default function Account() {
   }
 
   const avatarUrl = getUserAvatar(user);
+  const displayName = getUserName(user);
+  // An empty field would fall back to the current name on save, so the button
+  // only lights up when there is a real change to send.
+  const hasNameChange = Boolean(profileName.trim()) && profileName.trim() !== displayName;
 
   return (
-    <div className="page narrow">
-      <section className="setup-panel">
-        <p className="eyebrow">Account</p>
-        <h1>Account Settings</h1>
-        <p className="muted">Sign in for cloud reviewers, database sync, friends, and sharing. Hachi stays website-first for now, with offline study still available without an account.</p>
+    <div className="page">
+      <section className="section-heading">
+        <div>
+          <p className="eyebrow">Account</p>
+          <h1>Account Settings</h1>
+          <p className="muted">Your identity, your session, and your data, in one place.</p>
+        </div>
+      </section>
 
-        {loading ? (
-          <p className="muted">Checking session...</p>
-        ) : session ? (
-          <>
-            <div className="account-profile-card">
+      {message ? (
+        <p role="status" className={`account-message ${message.type}`}>{message.text}</p>
+      ) : null}
+
+      {loading ? (
+        <section className="account-panel">
+          <div className="account-inline-state">
+            <RefreshCw size={18} className="spinner" aria-hidden="true" />
+            <span>Checking your session...</span>
+          </div>
+        </section>
+      ) : session ? (
+        <div className="account-layout">
+          <section className="account-panel account-panel-profile">
+            <header className="account-panel-head">
+              <h2>Profile</h2>
+              <p className="muted">This is the name friends see when you share a reviewer or join a group.</p>
+            </header>
+
+            <div className="account-identity">
               <div className="account-avatar" aria-hidden="true">
-                {avatarUrl ? <img src={avatarUrl} alt="" /> : <UserRound size={24} />}
+                {avatarUrl ? <img src={avatarUrl} alt="" /> : <UserRound size={30} />}
               </div>
-              <div>
-                <strong>{getUserName(user)}</strong>
+              <div className="account-identity-text">
+                <strong>{displayName}</strong>
                 <p className="muted">{user.email}</p>
               </div>
-              <button className="button subtle" type="button" onClick={() => setConfirmAction("sign-out")}>
-                <LogOut size={17} aria-hidden="true" />
-                Sign Out
-              </button>
+              <span className="account-pill">Signed in</span>
             </div>
 
             <form className="account-form" onSubmit={(event) => {
@@ -136,43 +173,113 @@ export default function Account() {
               saveProfile();
             }}>
               <label>
-                <span>Display Name</span>
-                <input value={profileName} onChange={(event) => setProfileName(event.target.value)} />
+                <span>Display name</span>
+                <input
+                  value={profileName}
+                  onChange={(event) => setProfileName(event.target.value)}
+                  autoComplete="name"
+                />
               </label>
-              <button className="button primary" type="submit" disabled={savingProfile}>
-                {savingProfile ? "Saving..." : "Save Profile"}
+              <button className="button primary" type="submit" disabled={savingProfile || !hasNameChange}>
+                {savingProfile ? "Saving..." : "Save Changes"}
               </button>
             </form>
+          </section>
 
-            <section className="account-danger-zone">
-              <h2>Data Management</h2>
-              <div className="account-data-actions">
-                <button className="button subtle" type="button" onClick={() => setConfirmAction("delete-device-data")}>
-                  <HardDrive size={17} aria-hidden="true" />
-                  Delete Device Data
-                </button>
-                <button className="button subtle danger-text" type="button" onClick={() => setConfirmAction("delete-cloud-data")}>
-                  <Database size={17} aria-hidden="true" />
-                  Delete Cloud App Data
-                </button>
+          <section className="account-panel">
+            <header className="account-panel-head">
+              <h2>Session</h2>
+              <p className="muted">Signed in with Google. Your cloud reviewers stay linked to this account.</p>
+            </header>
+
+            <div className="account-row">
+              <div className="account-row-text">
+                <strong>Sign out</strong>
+                <p className="muted">You can sign back in at any time. Nothing on the cloud is affected.</p>
               </div>
-            </section>
-          </>
-        ) : (
-          <div className="account-signin-stack">
-            <button className="button primary wide" type="button" onClick={signInWithGoogle}>
-              Continue with Google
-            </button>
-          </div>
-        )}
+              <button className="button subtle" type="button" onClick={() => setConfirmAction("sign-out")}>
+                <LogOut size={17} aria-hidden="true" />
+                Sign Out
+              </button>
+            </div>
+          </section>
 
-        {message ? <p className={`account-message ${message.type}`}>{message.text}</p> : null}
+          <section className="account-panel account-panel-danger">
+            <header className="account-panel-head">
+              <h2>Data</h2>
+              <p className="muted">Deleting data is permanent and cannot be undone.</p>
+            </header>
 
-        <div className="account-legal-links">
-          <Link to="/privacy">Privacy Policy</Link>
-          <Link to="/terms">Terms of Service</Link>
+            <div className="account-row">
+              <div className="account-row-text">
+                <strong>Delete cloud data</strong>
+                <p className="muted">Removes your cloud reviewers, profile, friendships, and shares. Your sign-in account stays.</p>
+              </div>
+              <button className="button subtle danger-text" type="button" onClick={() => setConfirmAction("delete-cloud-data")}>
+                <Database size={17} aria-hidden="true" />
+                Delete
+              </button>
+            </div>
+
+            <div className="account-row">
+              <div className="account-row-text">
+                <strong>Delete device data</strong>
+                <p className="muted">Clears offline reviewers, progress, drafts, and preferences in this browser only.</p>
+              </div>
+              <button className="button subtle danger-text" type="button" onClick={() => setConfirmAction("delete-device-data")}>
+                <HardDrive size={17} aria-hidden="true" />
+                Delete
+              </button>
+            </div>
+          </section>
         </div>
-      </section>
+      ) : (
+        <section className="account-panel account-signin">
+          <div className="account-signin-head">
+            <div className="account-avatar account-avatar-large" aria-hidden="true">
+              <UserRound size={34} />
+            </div>
+            <div>
+              <h2>Sign in to Hachi</h2>
+              <p className="muted">Keep studying offline as you are now, or sign in to carry everything with you.</p>
+            </div>
+          </div>
+
+          <ul className="account-benefits">
+            {SIGN_IN_BENEFITS.map((benefit) => {
+              const BenefitIcon = benefit.icon;
+              return (
+                <li key={benefit.title}>
+                  <span className="account-benefit-icon" aria-hidden="true">
+                    <BenefitIcon size={18} />
+                  </span>
+                  <div>
+                    <strong>{benefit.title}</strong>
+                    <p className="muted">{benefit.text}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {!configured ? (
+            <p className="account-inline-notice">
+              Cloud features need a Supabase URL and anon key in <code>.env.local</code> first.
+            </p>
+          ) : null}
+
+          <button className="button primary wide" type="button" onClick={signInWithGoogle}>
+            <LogIn size={17} aria-hidden="true" />
+            Continue with Google
+          </button>
+        </section>
+      )}
+
+      <footer className="account-legal-links">
+        <Link to="/privacy">Privacy Policy</Link>
+        <span aria-hidden="true">/</span>
+        <Link to="/terms">Terms of Service</Link>
+      </footer>
 
       <ConfirmModal
         open={Boolean(confirmAction)}

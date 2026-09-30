@@ -6487,3 +6487,306 @@ strong {
     width: 122px;
   }
 }
+
+/* Account settings. Each panel is one subject, and the destructive actions sit
+   in their own tinted panel so they never read as ordinary buttons. */
+.account-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+/* Profile holds the identity and the one field, so it reads as the header of
+   the page and spans the full width. Session and Data sit underneath it. */
+.account-panel-profile {
+  grid-column: 1 / -1;
+}
+
+.account-panel {
+  display: grid;
+  gap: 18px;
+  padding: clamp(22px, 3vw, 30px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: none;
+}
+
+/* The panel tint marks this one as the only place irreversible actions live. */
+.account-panel-danger {
+  background: color-mix(in srgb, var(--danger-soft) 70%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 26%, var(--border));
+}
+
+.account-panel-head {
+  display: grid;
+  gap: 6px;
+}
+
+.account-panel-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.account-panel-head .muted {
+  margin: 0;
+  font-size: 0.92rem;
+  max-width: 52ch;
+}
+
+.account-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.account-identity-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-identity-text strong {
+  overflow: hidden;
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-identity-text .muted {
+  margin: 0;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.account-avatar {
+  width: 60px;
+  height: 60px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  border-radius: var(--radius-pill);
+}
+
+.account-avatar-large {
+  width: 72px;
+  height: 72px;
+}
+
+.account-pill {
+  flex: none;
+  margin-left: auto;
+  padding: 6px 14px;
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 26%, var(--border));
+  border-radius: var(--radius-pill);
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.account-form {
+  display: grid;
+  gap: 14px;
+  align-items: end;
+  margin-top: 0;
+  grid-template-columns: minmax(0, 440px) auto;
+  justify-content: start;
+}
+
+.account-form label {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.account-form input {
+  min-height: 48px;
+  padding: 0 16px;
+  font-weight: 600;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.account-panel-danger .account-row {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--danger) 18%, var(--border));
+}
+
+.account-row-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.account-row-text strong {
+  font-size: 1rem;
+}
+
+.account-row-text .muted {
+  margin: 0;
+  font-size: 0.88rem;
+  max-width: 48ch;
+}
+
+.account-row .button {
+  flex: none;
+}
+
+/* A single sign in card reads better centered than pinned to the left edge of a
+   wide content area. */
+.account-signin {
+  gap: 22px;
+  max-width: 640px;
+  margin-inline: auto;
+}
+
+.account-signin-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.account-signin-head h2 {
+  margin: 0 0 4px;
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.account-signin-head .muted {
+  margin: 0;
+  font-size: 0.94rem;
+}
+
+.account-benefits {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-benefits li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.account-benefits strong {
+  display: block;
+  font-size: 0.98rem;
+}
+
+.account-benefits .muted {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+}
+
+.account-benefit-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: var(--radius-sm);
+}
+
+.account-inline-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.account-inline-state svg {
+  color: var(--accent);
+}
+
+.account-inline-notice {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--warning);
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--border));
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+}
+
+.account-inline-notice code {
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.account-message {
+  margin: 0 0 18px;
+}
+
+.account-legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 26px;
+  color: var(--tertiary);
+  font-size: 0.88rem;
+}
+
+.account-legal-links a {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.account-legal-links a:hover {
+  color: var(--accent);
+}
+
+@media (min-width: 900px) {
+  .account-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .account-identity {
+    flex-wrap: wrap;
+  }
+
+  .account-pill {
+    margin-left: 0;
+  }
+
+  .account-form {
+    grid-template-columns: 1fr;
+  }
+
+  .account-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .account-row .button {
+    width: 100%;
+    justify-content: center;
+  }
+}
