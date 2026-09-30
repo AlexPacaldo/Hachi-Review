@@ -3617,12 +3617,15 @@ legend {
     background: #111827;
   }
 
+  /* The theme toggle belongs in the drawer header next to the brand. It used to
+     be fixed to the viewport, which pinned it in place while the drawer
+     scrolled and painted it over the links underneath at z-index 41. */
   .navbar:is(.menu-open, .menu-closing) .navbar-controls {
     display: flex;
-    position: fixed;
-    bottom: 22px;
-    left: 22px;
-    z-index: 41;
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    justify-self: end;
     margin: 0;
     gap: 0;
   }
