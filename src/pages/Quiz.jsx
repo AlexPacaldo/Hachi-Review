@@ -131,7 +131,7 @@ export default function Quiz() {
       <EmptyState
         title="No active quiz"
         message="Start or continue a reviewer quiz first."
-        action={<Link className="button primary" to={reviewer ? `/reviewer/${reviewerId}` : "/"}>Back to Reviewer</Link>}
+        action={<Link className="button primary" to={reviewer ? `/reviewer/${reviewerId}` : "/home"}>Back to Reviewer</Link>}
       />
     );
   }

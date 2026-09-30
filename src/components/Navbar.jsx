@@ -166,7 +166,7 @@ export default function Navbar({ theme, onToggleTheme }) {
         className={`navbar ${menuOpen ? "menu-open" : ""} ${menuClosing ? "menu-closing" : ""} ${isScrolled ? "scrolled" : ""}`}
         {...swipeHandlers}
       >
-        <Link to="/" className="brand" aria-label="Hachi home" onClick={closeMenu}>
+        <Link to="/home" className="brand" aria-label="Hachi home" onClick={closeMenu}>
           <span className="brand-icon-wrap">
             <img src={appLogo} alt="Hachi logo" width={28} height={28} />
           </span>
@@ -174,7 +174,7 @@ export default function Navbar({ theme, onToggleTheme }) {
         </Link>
 
         <nav className="nav-links" aria-label="Main navigation" id="main-navigation">
-          <NavLink to="/" onClick={closeMenu}>
+          <NavLink to="/home" onClick={closeMenu}>
             <Home size={17} aria-hidden="true" />
             Home
           </NavLink>
@@ -218,7 +218,7 @@ export default function Navbar({ theme, onToggleTheme }) {
               </Link>
             ))
           ) : (
-            <Link to="/" onClick={closeMenu}>
+            <Link to="/home" onClick={closeMenu}>
               <PlayCircle size={17} aria-hidden="true" />
               Start studying
             </Link>

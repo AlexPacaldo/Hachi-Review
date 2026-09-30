@@ -1,8 +1,9 @@
 {
   "name": "Hachi - Your Study Companion",
   "short_name": "Hachi",
-  "description": "An offline-first reviewer, AI generator, sharing, and quiz app.",
-  "start_url": ".",
+  "description": "Hachi is a study companion for organizing notes and reviewers, practicing with quizzes, and tracking progress, online or offline.",
+  "id": "/",
+  "start_url": "./home",
   "scope": ".",
   "display": "standalone",
   "background_color": "#f6f7f9",

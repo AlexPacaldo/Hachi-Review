@@ -17,7 +17,12 @@ export default function Terms() {
         <p>Offline features depend on browser storage on your device. Cloud features depend on Supabase, Google sign-in, and network availability.</p>
         <h2>Account Data</h2>
         <p>You can remove device data and app cloud data from Account Settings. Shared reviewers or backups you gave to other people may remain with them.</p>
-        <Link className="button subtle" to="/account">Back to Account</Link>
+        <p>Last updated: 1 October 2026</p>
+
+        <footer className="legal-footer">
+          <Link className="back-link" to="/">Back to Hachi</Link>
+          <Link to="/privacy">Privacy Policy</Link>
+        </footer>
       </section>
     </div>
   );

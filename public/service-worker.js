@@ -1,11 +1,13 @@
-const CACHE_VERSION = "review-hub-v6";
+const CACHE_VERSION = "review-hub-v7";
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./home",
+  "./privacy",
+  "./terms",
   "./offline.html",
   "./manifest.webmanifest",
-  "./icon.png",
-  "./icon.svg"
+  "./icon.png"
 ];
 
 async function cacheUrls(cache, urls) {
@@ -28,9 +30,12 @@ async function cacheAppShell() {
     const indexResponse = await fetch("./index.html", { cache: "no-store" });
     const indexHtml = await indexResponse.clone().text();
     await cache.put("./index.html", indexResponse);
-    await cache.put("./", new Response(indexHtml, {
-      headers: { "Content-Type": "text/html" }
-    }));
+
+    // Every route is served the same SPA shell, so the landing page, the app
+    // home, and the public legal pages can all be answered offline from one
+    // copy of index.html without waiting on the network.
+    const shellResponse = () => new Response(indexHtml, { headers: { "Content-Type": "text/html" } });
+    await Promise.all(["./", "./home", "./privacy", "./terms"].map((url) => cache.put(url, shellResponse())));
 
     const assetUrls = [...indexHtml.matchAll(/(?:src|href)="([^"]+)"/g)]
       .map((match) => match[1])

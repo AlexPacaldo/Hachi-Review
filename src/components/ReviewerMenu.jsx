@@ -450,7 +450,7 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       saveCloudReviewerCache(getCloudReviewerCache().filter((item) => item.reviewerId !== reviewer.reviewerId));
     }
 
-    navigate("/");
+    navigate("/home");
   }
 
   const deleteOptions = [];

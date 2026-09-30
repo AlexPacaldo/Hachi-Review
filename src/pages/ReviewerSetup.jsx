@@ -95,7 +95,7 @@ export default function ReviewerSetup() {
   });
 
   if (!reviewer || !reviewer.validation.isValid) {
-    return <EmptyState title="Unable to load this reviewer." message={reviewer?.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/">Back to Reviewers</Link>} />;
+    return <EmptyState title="Unable to load this reviewer." message={reviewer?.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />;
   }
 
   const dogState = getReviewerDogState({ savedProgress, latestAttempt });
@@ -148,7 +148,7 @@ export default function ReviewerSetup() {
 
   return (
     <div className="page narrow reviewer-setup-page">
-      <Link className="back-link" to="/">
+      <Link className="back-link" to="/home">
         <ArrowLeft size={17} aria-hidden="true" />
         Back to Reviewers
       </Link>

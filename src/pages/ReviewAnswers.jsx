@@ -36,7 +36,7 @@ export default function ReviewAnswers() {
   }, [attempt]);
 
   if (!attempt) {
-    return <EmptyState title="No attempt found" message="There is no completed attempt to review." action={<Link className="button primary" to="/">Back to Reviewers</Link>} />;
+    return <EmptyState title="No attempt found" message="There is no completed attempt to review." action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />;
   }
 
   function retryIncorrect() {

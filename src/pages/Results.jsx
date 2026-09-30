@@ -98,7 +98,7 @@ export default function Results() {
           <button className="button subtle" type="button" onClick={retryIncorrect}>Retry Incorrect Questions</button>
         ) : null}
         <Link className="button subtle" to={`/reviewer/${reviewerId}`}>Retake Quiz</Link>
-        <Link className="button subtle" to="/">Back to Reviewers</Link>
+        <Link className="button subtle" to="/home">Back to Reviewers</Link>
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import Navbar from "./components/Navbar.jsx";
 import { NotificationToasts } from "./components/NotificationCenter.jsx";
 import SocialNotificationWatcher from "./components/SocialNotificationWatcher.jsx";
 import TopActions from "./components/TopActions.jsx";
+import Landing from "./pages/Landing.jsx";
 import Home from "./pages/Home.jsx";
 import ReviewerSetup from "./pages/ReviewerSetup.jsx";
 import Quiz from "./pages/Quiz.jsx";
@@ -110,7 +111,8 @@ function AppShell() {
       <div className="top-pill-spacer" aria-hidden="true" />
       <main>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Landing />} />
+          <Route path="/home" element={<Home />} />
           <Route path="/reviewer/:reviewerId" element={<ReviewerSetup />} />
           <Route path="/quiz/:reviewerId" element={<Quiz />} />
           <Route path="/results/:reviewerId" element={<Results />} />
@@ -124,7 +126,7 @@ function AppShell() {
           <Route path="/account" element={<Account />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
       </main>
     </AuthProvider>

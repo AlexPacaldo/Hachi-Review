@@ -46,7 +46,7 @@ export default function History() {
           ))}
         </div>
       ) : (
-        <EmptyState title="No quiz history" message="Completed quizzes will appear here." action={<Link className="button primary" to="/">Choose a Reviewer</Link>} />
+        <EmptyState title="No quiz history" message="Completed quizzes will appear here." action={<Link className="button primary" to="/home">Choose a Reviewer</Link>} />
       )}
 
       <ConfirmModal

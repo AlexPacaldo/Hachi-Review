@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hachi-review.site/sitemap.xml
