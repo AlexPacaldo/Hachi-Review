@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import appLogo from "../assets/Icon.png";
 import hachiDogExcited from "../assets/hachi-dog-excited.png";
+import DepthCarousel from "../components/DepthCarousel.jsx";
+import { PREVIEW_MODE_ITEMS } from "../components/PreviewModeCard.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useOnlineCount } from "../hooks/useOnlineCount.js";
 import useScrollReveal from "../hooks/useScrollReveal.js";
@@ -113,12 +115,52 @@ const FAQS = [
   }
 ];
 
-const PREVIEW_OPTIONS = [
-  { label: "Right atrium", correct: false },
-  { label: "Left ventricle", correct: true },
-  { label: "Right ventricle", correct: false },
-  { label: "Left atrium", correct: false }
-];
+/**
+ * The depth fan needs horizontal room to breathe. On a phone the stage is only
+ * about 300px wide, and the upstream scale factor would shrink a 400px card down
+ * to roughly 190px, which renders the text inside it unreadably small. So below
+ * the breakpoint we shrink the card itself, tighten the fan, and let the card
+ * scale down far less.
+ */
+const PREVIEW_CAROUSEL_WIDE = {
+  cardWidth: 400,
+  cardHeight: 330,
+  radius: 30,
+  depth: 170,
+  spread: 58,
+  tilt: 20,
+  visibleCards: 3,
+  falloff: 0.24,
+  blur: 5
+};
+
+const PREVIEW_CAROUSEL_COMPACT = {
+  cardWidth: 264,
+  cardHeight: 300,
+  radius: 26,
+  depth: 96,
+  spread: 20,
+  tilt: 14,
+  visibleCards: 2,
+  falloff: 0.26,
+  blur: 3
+};
+
+function useCompactViewport() {
+  const [compact, setCompact] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches
+  );
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 720px)");
+    const sync = () => setCompact(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  return compact;
+}
 
 function PrimaryLink({ user, className = "button primary", children }) {
   return (
@@ -133,7 +175,11 @@ export default function Landing({ theme, onToggleTheme }) {
   const pageRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navScrolled, setNavScrolled] = useState(false);
+  const [modeIndex, setModeIndex] = useState(0);
   const onlineCount = useOnlineCount();
+  const compact = useCompactViewport();
+  const carouselConfig = compact ? PREVIEW_CAROUSEL_COMPACT : PREVIEW_CAROUSEL_WIDE;
+  const activeMode = PREVIEW_MODE_ITEMS[modeIndex] ?? PREVIEW_MODE_ITEMS[0];
 
   useScrollReveal(pageRef);
 
@@ -379,20 +425,20 @@ export default function Landing({ theme, onToggleTheme }) {
 
         <section className="landing-preview" id="preview" aria-labelledby="landing-preview-heading">
           <div className="landing-preview-copy" data-reveal>
-            <p className="eyebrow">Practice mode</p>
-            <h2 id="landing-preview-heading">Quizzes that tell you what to fix</h2>
+            <p className="eyebrow">Quiz modes</p>
+            <h2 id="landing-preview-heading">Five ways to revise the same material</h2>
             <p>
-              Hachi marks every answer, explains the ones you got wrong, and keeps a history you can actually
-              use before the next exam.
+              Every reviewer can be practised five different ways. Pick the mode that matches how you want to
+              study, and Hachi keeps your progress either way.
             </p>
             <ul className="landing-preview-points">
               <li>
                 <Check size={16} aria-hidden="true" />
-                Instant right or wrong feedback
+                Instant feedback with an explanation for every answer
               </li>
               <li>
                 <Check size={16} aria-hidden="true" />
-                Explanations for every missed answer
+                Exam, timed, mistakes-only, and flashcard modes
               </li>
               <li>
                 <Check size={16} aria-hidden="true" />
@@ -402,30 +448,24 @@ export default function Landing({ theme, onToggleTheme }) {
           </div>
 
           <div className="landing-preview-stage" data-reveal style={{ "--reveal-delay": "120ms" }}>
-            <div className="landing-preview-card">
-              <div className="landing-preview-meta">
-                <span className="landing-preview-course">BIO 201 · Human Anatomy</span>
-                <span className="landing-preview-count">Question 4 of 12</span>
-              </div>
-              <div className="landing-preview-bar">
-                <span />
-              </div>
-              <p className="landing-preview-question">
-                Which chamber of the heart pumps oxygenated blood into the systemic circulation?
-              </p>
-              <ul className="landing-preview-options">
-                {PREVIEW_OPTIONS.map((option) => (
-                  <li className={option.correct ? "is-correct" : ""} key={option.label}>
-                    <span className="landing-preview-key">{option.label.slice(0, 1)}</span>
-                    {option.label}
-                    {option.correct ? <Check size={16} aria-hidden="true" /> : null}
-                  </li>
-                ))}
-              </ul>
-              <div className="landing-preview-foot">
-                <span className="landing-preview-verdict">Correct. The left ventricle drives systemic circulation.</span>
-              </div>
+            <div className="landing-preview-carousel">
+              <DepthCarousel
+                items={PREVIEW_MODE_ITEMS}
+                onChange={(index) => setModeIndex(index)}
+                {...carouselConfig}
+                tiltDirection="right"
+                perspective={1400}
+                duration={700}
+                autoplay
+                autoplayDelay={4200}
+                loop
+                tint={theme === "dark" ? "#05060a" : "#dde3ea"}
+              />
             </div>
+            <p className="landing-preview-caption" aria-live="polite">
+              <strong>{activeMode?.mode.label}</strong>
+              {activeMode?.blurb}
+            </p>
           </div>
         </section>
 

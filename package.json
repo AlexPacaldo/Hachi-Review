@@ -11,6 +11,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "@vitejs/plugin-react": "latest",
+    "gsap": "^3.15.0",
     "lucide-react": "latest",
     "pdfjs-dist": "^4.10.38",
     "react": "latest",

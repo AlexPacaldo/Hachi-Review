@@ -1,0 +1,168 @@
+/*
+ * DepthCarousel chrome.
+ *
+ * The upstream stylesheet shipped dark glassmorphism (near-black arrow fills,
+ * white hairlines). Hachi is a light, border-led interface, so the arrows and
+ * dots are re-expressed with the shared tokens. The 3D mechanics themselves are
+ * untouched: the JS owns every transform.
+ */
+
+.depth-carousel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: var(--dc-perspective, 1400px);
+  perspective-origin: 50% 50%;
+  touch-action: pan-y;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+
+.depth-carousel:active {
+  cursor: grabbing;
+}
+
+.depth-carousel:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: 3px;
+  border-radius: var(--radius-lg);
+}
+
+.depth-carousel__stage {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+.depth-carousel__card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: center center;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-popover);
+  will-change: transform, opacity, filter;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+
+/* Cards that render real markup instead of a photo. */
+.depth-carousel__content {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.depth-carousel__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.depth-carousel__tint {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+.depth-carousel__arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3000;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 200ms var(--ease-apple), border-color 200ms var(--ease-apple),
+    color 200ms var(--ease-apple), transform 200ms var(--ease-apple);
+}
+
+.depth-carousel__arrow:hover {
+  background: var(--surface-2);
+  color: var(--success);
+}
+
+.depth-carousel__arrow:active {
+  transform: translateY(-50%) scale(0.94);
+}
+
+.depth-carousel__arrow--prev {
+  left: 0;
+}
+
+.depth-carousel__arrow--next {
+  right: 0;
+}
+
+.depth-carousel__dots {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  display: flex;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+.depth-carousel__dot {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--muted) 38%, transparent);
+  cursor: pointer;
+  transition: width 250ms var(--ease-apple), background-color 250ms var(--ease-apple);
+}
+
+.depth-carousel__dot.is-active {
+  width: 20px;
+  background: var(--success);
+}
+
+/* Below the point where the fan has room, the arrows would sit on top of the
+   cards, so drop them and leave the dots plus swipe/keyboard as the controls. */
+@media (max-width: 560px) {
+  .depth-carousel__arrow {
+    display: none;
+  }
+
+  .depth-carousel__dots {
+    bottom: -6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .depth-carousel__card {
+    will-change: auto;
+  }
+
+  .depth-carousel__arrow,
+  .depth-carousel__dot {
+    transition: none;
+  }
+}
