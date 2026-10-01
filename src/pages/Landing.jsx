@@ -247,11 +247,6 @@ export default function Landing({ theme, onToggleTheme }) {
         <div className="landing-hero-inner">
           <div className="landing-hero-copy">
             <div className="landing-hero-kicker">
-              <p className="landing-badge" data-reveal>
-                <Sparkles size={14} aria-hidden="true" />
-                Your study companion
-              </p>
-
               <div className="landing-online" aria-live="polite">
                 {onlineCount ? (
                   <>
@@ -260,6 +255,11 @@ export default function Landing({ theme, onToggleTheme }) {
                   </>
                 ) : null}
               </div>
+
+              <p className="landing-badge" data-reveal>
+                <Sparkles size={14} aria-hidden="true" />
+                Your study companion
+              </p>
             </div>
 
             <h1 className="landing-title" data-reveal style={{ "--reveal-delay": "80ms" }}>
