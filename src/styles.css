@@ -7035,13 +7035,22 @@ strong {
   min-width: 0;
 }
 
+/* The eyebrow and the live count read as one small cluster above the headline. */
+.landing-hero-kicker {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
 /* A quiet editorial eyebrow rather than a chip: letterspaced caps led by a short
    rule, with the sparkle picking up the brand's playful side. */
 .landing-badge {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  margin: 0 0 20px;
+  margin: 0;
   color: var(--success);
   font-size: 0.75rem;
   font-weight: 900;
@@ -7988,11 +7997,6 @@ strong {
   .landing-step,
   .landing-preview {
     padding: 22px;
-  }
-
-  /* Once the nav collapses to the burger there is no room for the live count. */
-  .landing-online {
-    display: none;
   }
 }
 

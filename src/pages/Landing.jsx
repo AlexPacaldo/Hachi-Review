@@ -198,14 +198,6 @@ export default function Landing({ theme, onToggleTheme }) {
             <PrimaryLink user={user} className="button primary landing-nav-cta">
               {user ? "Open Hachi" : "Start studying"}
             </PrimaryLink>
-            <div className="landing-online" aria-live="polite">
-              {onlineCount ? (
-                <>
-                  <span className="landing-online-dot" aria-hidden="true" />
-                  {onlineCount}+ online now
-                </>
-              ) : null}
-            </div>
             <button
               className="icon-button landing-nav-burger"
               type="button"
@@ -254,10 +246,21 @@ export default function Landing({ theme, onToggleTheme }) {
 
         <div className="landing-hero-inner">
           <div className="landing-hero-copy">
-            <p className="landing-badge" data-reveal>
-              <Sparkles size={14} aria-hidden="true" />
-              Your study companion
-            </p>
+            <div className="landing-hero-kicker">
+              <p className="landing-badge" data-reveal>
+                <Sparkles size={14} aria-hidden="true" />
+                Your study companion
+              </p>
+
+              <div className="landing-online" aria-live="polite">
+                {onlineCount ? (
+                  <>
+                    <span className="landing-online-dot" aria-hidden="true" />
+                    {onlineCount}+ online now
+                  </>
+                ) : null}
+              </div>
+            </div>
 
             <h1 className="landing-title" data-reveal style={{ "--reveal-delay": "80ms" }}>
               Hachi turns your notes into a <span className="landing-title-accent">study machine.</span>
