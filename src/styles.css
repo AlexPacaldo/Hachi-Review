@@ -7000,11 +7000,11 @@ strong {
   margin-top: calc(-1 * var(--landing-nav-h));
   padding: calc(var(--landing-nav-h) + clamp(28px, 6vh, 64px)) 0 clamp(74px, 11vh, 112px);
   overflow: hidden;
-  background: linear-gradient(180deg, #fffdf7 0%, #f2f6e9 38%, #e9f3e2 72%, var(--bg) 100%);
+  background: linear-gradient(180deg, #fffdf7 0%, #fdf4e4 38%, #f8e6cd 72%, var(--bg) 100%);
 }
 
 :root[data-theme="dark"] .landing-hero {
-  background: linear-gradient(180deg, #161a15 0%, #16201a 38%, #12281c 72%, var(--bg) 100%);
+  background: linear-gradient(180deg, #17130e 0%, #201812 38%, #2b2116 72%, var(--bg) 100%);
 }
 
 .landing-hero-inner {
