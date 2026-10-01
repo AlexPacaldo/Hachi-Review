@@ -7161,14 +7161,25 @@ strong {
 /* Subjects */
 /* One sentence instead of a subject list: it says what the product does for you. */
 .landing-promise {
-  max-width: 58ch;
-  margin: clamp(34px, 4.4vw, 56px) auto 0;
-  color: var(--muted);
-  font-size: clamp(1.02rem, 1.5vw, 1.16rem);
-  font-weight: 700;
-  line-height: 1.62;
+  max-width: 60ch;
+  margin: clamp(40px, 5vw, 68px) auto 0;
+  color: var(--text);
+  font-size: clamp(1.22rem, 2.1vw, 1.68rem);
+  font-weight: 900;
+  line-height: 1.22;
+  letter-spacing: -0.015em;
   text-align: center;
   text-wrap: balance;
+  padding: clamp(14px, 2vw, 20px) clamp(18px, 3vw, 30px);
+  border-radius: var(--radius-2xl);
+  background: radial-gradient(
+      120% 120% at 50% 0%,
+      color-mix(in srgb, var(--surface) 96%, transparent) 0%,
+      color-mix(in srgb, var(--surface) 92%, var(--success-soft)) 100%
+    )
+    var(--surface);
+  border: 1px solid color-mix(in srgb, var(--success) 16%, var(--border));
+  box-shadow: 0 40px 80px -40px rgba(36, 138, 61, 0.16);
 }
 
 .landing-online {
@@ -7283,9 +7294,9 @@ strong {
   width: 48px;
   height: 48px;
   margin-bottom: 18px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 20%, var(--border));
   border-radius: var(--radius-md);
   transition: transform 280ms var(--ease-apple);
 }
