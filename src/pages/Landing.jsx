@@ -21,6 +21,7 @@ import {
 import appLogo from "../assets/Icon.png";
 import hachiDogExcited from "../assets/hachi-dog-excited.png";
 import { useAuth } from "../contexts/AuthContext.jsx";
+import { useOnlineCount } from "../hooks/useOnlineCount.js";
 import useScrollReveal from "../hooks/useScrollReveal.js";
 
 const NAV_LINKS = [
@@ -31,21 +32,6 @@ const NAV_LINKS = [
 ];
 
 const HERO_PROOF = ["Free to use", "Works offline", "Syncs across devices"];
-
-const SUBJECTS = [
-  "Human Anatomy",
-  "Organic Chemistry",
-  "Calculus",
-  "World History",
-  "Microbiology",
-  "Pharmacology",
-  "Statistics",
-  "Literature",
-  "Genetics",
-  "Immunology",
-  "Linear Algebra",
-  "Psychology"
-];
 
 const FEATURES = [
   {
@@ -147,6 +133,7 @@ export default function Landing({ theme, onToggleTheme }) {
   const pageRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navScrolled, setNavScrolled] = useState(false);
+  const onlineCount = useOnlineCount();
 
   useScrollReveal(pageRef);
 
@@ -285,7 +272,16 @@ export default function Landing({ theme, onToggleTheme }) {
               )}
             </div>
 
-            <ul className="landing-proof" data-reveal style={{ "--reveal-delay": "320ms" }}>
+            <div className="landing-online" data-reveal style={{ "--reveal-delay": "280ms" }} aria-live="polite">
+            {onlineCount ? (
+              <>
+                <span className="landing-online-dot" aria-hidden="true" />
+                {onlineCount}+ online now
+              </>
+            ) : null}
+          </div>
+
+          <ul className="landing-proof" data-reveal style={{ "--reveal-delay": "320ms" }}>
               {HERO_PROOF.map((item) => (
                 <li key={item}>
                   <Check size={15} aria-hidden="true" />
@@ -300,23 +296,13 @@ export default function Landing({ theme, onToggleTheme }) {
             <span className="hero-note">You can do it!</span>
           </div>
         </div>
-
-        <a className="landing-scroll-hint" href="#features" aria-label="Scroll to features">
-          <ChevronDown size={20} aria-hidden="true" />
-        </a>
       </section>
 
       <div className="landing-body">
-        <section className="landing-subjects" aria-label="Supported subjects">
-          <p className="landing-subjects-label">Built for any subject</p>
-          <ul className="landing-subjects-list">
-            {SUBJECTS.map((subject, index) => (
-              <li key={subject} data-reveal style={{ "--reveal-delay": `${index * 45}ms` }}>
-                {subject}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <p className="landing-promise" data-reveal>
+          Bring notes from any class. Leave with quizzes, clear explanations, and a study
+          plan you can actually keep up with.
+        </p>
 
         <section className="landing-section" id="features" aria-labelledby="landing-features-heading">
           <div className="landing-section-head" data-reveal>

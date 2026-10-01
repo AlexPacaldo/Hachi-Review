@@ -3927,9 +3927,9 @@ legend {
   --tertiary: #9a9aa0;
   --border: rgba(0, 0, 0, 0.08);
   --separator: rgba(0, 0, 0, 0.1);
-  --accent: #0071e3;
-  --accent-strong: #005bbf;
-  --accent-soft: #e8f2ff;
+  --accent: #b76f37;
+  --accent-strong: #96562a;
+  --accent-soft: #ffe1af;
   --success: #248a3d;
   --success-soft: #e8f7ed;
   --danger: #d70015;
@@ -3969,9 +3969,9 @@ legend {
   --tertiary: #77777d;
   --border: rgba(255, 255, 255, 0.1);
   --separator: rgba(255, 255, 255, 0.11);
-  --accent: #2997ff;
-  --accent-strong: #6eb8ff;
-  --accent-soft: rgba(41, 151, 255, 0.16);
+  --accent: #e8a56b;
+  --accent-strong: #f3c496;
+  --accent-soft: rgba(232, 165, 107, 0.16);
   --success: #32d74b;
   --success-soft: rgba(50, 215, 75, 0.14);
   --danger: #ff453a;
@@ -7018,29 +7018,6 @@ strong {
   margin: 0 auto;
 }
 
-.landing-scroll-hint {
-  position: absolute;
-  left: 50%;
-  bottom: clamp(18px, 4vh, 32px);
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  margin-left: -21px;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  animation: landing-bounce 2.4s var(--ease-apple) infinite;
-  transition: color 200ms var(--ease-apple), border-color 200ms var(--ease-apple);
-}
-
-.landing-scroll-hint:hover {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
-}
-
 .landing-hero-copy {
   position: relative;
   z-index: 1;
@@ -7118,14 +7095,14 @@ strong {
 }
 
 .landing-actions .button.primary {
-  background: var(--success);
-  border-color: var(--success);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
 }
 
 .landing-actions .button.primary:hover {
-  background: color-mix(in srgb, var(--success) 82%, #000);
-  border-color: color-mix(in srgb, var(--success) 82%, #000);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 .landing-actions .button svg {
@@ -7134,7 +7111,7 @@ strong {
 }
 
 :root[data-theme="dark"] .landing-actions .button.primary {
-  color: #06170c;
+  color: #1a1006;
 }
 
 .landing-proof {
@@ -7175,39 +7152,51 @@ strong {
 }
 
 /* Subjects */
-.landing-subjects {
-  display: flex;
-  flex-wrap: wrap;
+/* One sentence instead of a subject list: it says what the product does for you. */
+.landing-promise {
+  max-width: 58ch;
+  margin: clamp(34px, 4.4vw, 56px) auto 0;
+  color: var(--muted);
+  font-size: clamp(1.02rem, 1.5vw, 1.16rem);
+  font-weight: 700;
+  line-height: 1.62;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.landing-online {
+  display: inline-flex;
   align-items: center;
-  gap: 10px 12px;
-  margin-top: clamp(28px, 3.4vw, 44px);
-}
-
-.landing-subjects-label {
-  margin: 0 4px 0 0;
-  color: var(--tertiary);
-  font-size: 0.8rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.landing-subjects-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.landing-subjects-list li {
-  padding: 8px 15px;
+  gap: 9px;
+  min-height: 32px;
+  padding: 6px 14px 6px 11px;
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   font-weight: 800;
+}
+
+.landing-online:empty {
+  display: none;
+}
+
+.landing-online-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.landing-online-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1px solid var(--success);
+  border-radius: 50%;
+  animation: landing-ping 2.8s ease-out infinite;
 }
 
 /* Sections */
@@ -7797,16 +7786,6 @@ strong {
   }
 }
 
-@keyframes landing-bounce {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(6px);
-  }
-}
-
 @keyframes landing-pop {
   0% {
     opacity: 0;
@@ -7853,8 +7832,8 @@ strong {
   }
 
   .landing-badge-dot::after,
+  .landing-online-dot::after,
   .landing-art img,
-  .landing-scroll-hint,
   .landing-actions .button svg {
     animation: none;
   }
@@ -7934,19 +7913,6 @@ strong {
 
   .landing-art {
     min-height: 300px;
-  }
-
-  .landing-scroll-hint {
-    display: none;
-  }
-
-  .landing-subjects {
-    justify-content: center;
-    text-align: center;
-  }
-
-  .landing-subjects-list {
-    justify-content: center;
   }
 
   .landing-steps {
