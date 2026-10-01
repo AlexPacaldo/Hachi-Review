@@ -116,31 +116,40 @@ const FAQS = [
 ];
 
 /**
- * The depth fan needs horizontal room to breathe. On a phone the stage is only
- * about 300px wide, and the upstream scale factor would shrink a 400px card down
- * to roughly 190px, which renders the text inside it unreadably small. So below
- * the breakpoint we shrink the card itself, tighten the fan, and let the card
- * scale down far less.
+ * The card is the section container, not a chip inside it, so it is sized to fill
+ * the available width and the carousel's own fit-to-width scaling stays near 1.
+ * The component reserves `cardWidth + 2 * spread + 120` for itself, so the wide
+ * numbers are chosen to land close to the real content width.
  */
 const PREVIEW_CAROUSEL_WIDE = {
-  cardWidth: 400,
-  cardHeight: 330,
-  radius: 30,
-  depth: 170,
-  spread: 58,
-  tilt: 20,
+  cardWidth: 900,
+  cardHeight: 552,
+  radius: 34,
+  depth: 150,
+  spread: 32,
+  tilt: 18,
   visibleCards: 3,
-  falloff: 0.24,
+  falloff: 0.22,
   blur: 5
 };
 
+/**
+ * On a phone the content width is only about 340px and the component always
+ * reserves 120px plus the fan, so a card can never fill it exactly. Shrink the
+ * card and tighten the fan to keep the scale as close to 1 as possible. The card
+ * is tall because the stylesheet stacks the answer choices in one column below
+ * this breakpoint, which is the only way the labels stay readable at that width.
+ *
+ * The breakpoint must stay in step with the `max-width: 760px` block in
+ * styles.css, otherwise the tall card gets the phone layout and overflows.
+ */
 const PREVIEW_CAROUSEL_COMPACT = {
-  cardWidth: 264,
-  cardHeight: 300,
+  cardWidth: 300,
+  cardHeight: 780,
   radius: 26,
-  depth: 96,
-  spread: 20,
-  tilt: 14,
+  depth: 104,
+  spread: 16,
+  tilt: 13,
   visibleCards: 2,
   falloff: 0.26,
   blur: 3
@@ -148,11 +157,11 @@ const PREVIEW_CAROUSEL_COMPACT = {
 
 function useCompactViewport() {
   const [compact, setCompact] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches
   );
 
   useEffect(() => {
-    const query = window.matchMedia("(max-width: 720px)");
+    const query = window.matchMedia("(max-width: 760px)");
     const sync = () => setCompact(query.matches);
     sync();
     query.addEventListener("change", sync);
@@ -424,27 +433,13 @@ export default function Landing({ theme, onToggleTheme }) {
         </section>
 
         <section className="landing-preview" id="preview" aria-labelledby="landing-preview-heading">
-          <div className="landing-preview-copy" data-reveal>
+          <div className="landing-preview-head" data-reveal>
             <p className="eyebrow">Quiz modes</p>
             <h2 id="landing-preview-heading">Five ways to revise the same material</h2>
             <p>
               Every reviewer can be practised five different ways. Pick the mode that matches how you want to
               study, and Hachi keeps your progress either way.
             </p>
-            <ul className="landing-preview-points">
-              <li>
-                <Check size={16} aria-hidden="true" />
-                Instant feedback with an explanation for every answer
-              </li>
-              <li>
-                <Check size={16} aria-hidden="true" />
-                Exam, timed, mistakes-only, and flashcard modes
-              </li>
-              <li>
-                <Check size={16} aria-hidden="true" />
-                Streaks and scores that stay on your device
-              </li>
-            </ul>
           </div>
 
           <div className="landing-preview-stage" data-reveal style={{ "--reveal-delay": "120ms" }}>

@@ -1761,7 +1761,7 @@ legend {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 18px;
+  padding: 26px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -2427,7 +2427,7 @@ legend {
 .flashcard-answer {
   display: grid;
   gap: 10px;
-  padding: 18px;
+  padding: 26px;
   background: var(--success-soft);
   border: 1px solid color-mix(in srgb, var(--success) 34%, var(--border));
   border-radius: 8px;
@@ -4494,7 +4494,7 @@ summary {
 .json-import-panel,
 .advanced-panel,
 .question-builder {
-  padding: 18px;
+  padding: 26px;
   border-radius: var(--radius-lg);
 }
 
@@ -4550,7 +4550,7 @@ legend,
 
 .mode-card {
   min-height: 130px;
-  padding: 18px;
+  padding: 26px;
   background: var(--surface-2);
 }
 
@@ -5435,7 +5435,7 @@ strong {
   .legal-panel,
   .generator-panel,
   .library-panel {
-    padding: 18px;
+    padding: 26px;
   }
 
   .answer-choice {
@@ -5771,7 +5771,7 @@ strong {
 
 .hero-stat {
   min-width: 0;
-  padding: 18px;
+  padding: 26px;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 60%, #fff);
   border-radius: var(--radius-lg);
@@ -5936,7 +5936,7 @@ strong {
   }
 
   .hero-stat:not(:first-child) {
-    padding: 18px;
+    padding: 26px;
   }
 }
 
@@ -7439,12 +7439,11 @@ strong {
   line-height: 1.6;
 }
 
-/* Practice mode preview */
+/* Quiz modes preview: the section is the frame, and each carousel card fills it. */
 .landing-preview {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  align-items: center;
-  gap: clamp(26px, 4vw, 56px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(24px, 3vw, 38px);
   margin-top: clamp(52px, 6.5vw, 92px);
   padding: clamp(28px, 4vw, 48px);
   scroll-margin-top: 92px;
@@ -7453,46 +7452,32 @@ strong {
   border-radius: var(--radius-2xl);
 }
 
-.landing-preview-copy .eyebrow {
+.landing-preview-head {
+  max-width: 62ch;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.landing-preview-head .eyebrow {
   color: var(--success);
 }
 
-.landing-preview-copy h2 {
+.landing-preview-head h2 {
   margin: 12px 0 0;
   color: var(--text);
   font-size: clamp(1.65rem, 3vw, 2.4rem);
   font-weight: 900;
   line-height: 1.18;
+  text-wrap: balance;
 }
 
-.landing-preview-copy > p {
-  margin: 14px 0 0;
+.landing-preview-head > p {
+  margin: 14px auto 0;
   color: var(--muted);
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.6;
-}
-
-.landing-preview-points {
-  display: grid;
-  gap: 12px;
-  margin: 24px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.landing-preview-points li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text);
-  font-size: 0.96rem;
-  font-weight: 800;
-}
-
-.landing-preview-points svg {
-  flex: 0 0 auto;
-  color: var(--success);
+  text-wrap: pretty;
 }
 
 /* Preview carousel: a real quiz screen per mode, fanned out in depth. */
@@ -7500,14 +7485,13 @@ strong {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: 380px;
+  gap: 12px;
 }
 
 .landing-preview-carousel {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 320px;
+  /* Tall enough that the scaled card never overflows its box at any width. */
+  height: clamp(420px, 46vw, 560px);
 }
 
 .landing-preview-caption {
@@ -7536,10 +7520,10 @@ strong {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 18px;
+  padding: 26px;
   color: var(--text);
   background: var(--surface);
-  font-size: 0.8rem;
+  font-size: 1rem;
   text-align: left;
 }
 
@@ -7552,33 +7536,33 @@ strong {
 
 .preview-mode-subject {
   color: var(--accent);
-  font-size: 0.68rem;
+  font-size: 0.84rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .preview-mode-timer {
-  padding: 3px 10px;
+  padding: 4px 13px;
   color: var(--muted);
   background: var(--surface-2);
   border-radius: var(--radius-pill);
-  font-size: 0.72rem;
+  font-size: 0.9rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
 .preview-mode-count {
-  margin: 10px 0 0;
+  margin: 14px 0 0;
   color: var(--text);
-  font-size: 1.02rem;
+  font-size: 1.5rem;
   font-weight: 900;
   line-height: 1.2;
 }
 
 .preview-mode-bar {
-  height: 6px;
-  margin: 10px 0 14px;
+  height: 8px;
+  margin: 14px 0 20px;
   overflow: hidden;
   background: var(--surface-3);
   border-radius: var(--radius-pill);
@@ -7592,39 +7576,39 @@ strong {
 }
 
 .preview-mode-topic {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   color: var(--accent);
-  font-size: 0.68rem;
+  font-size: 0.84rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .preview-mode-question {
-  margin: 0 0 14px;
+  margin: 0 0 20px;
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 1.3rem;
   font-weight: 800;
-  line-height: 1.34;
+  line-height: 1.32;
 }
 
 .preview-mode-choices {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
+  gap: 10px;
 }
 
 .preview-choice {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
   min-width: 0;
-  padding: 8px 9px;
+  padding: 12px 13px;
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  font-size: 0.76rem;
+  font-size: 1rem;
   font-weight: 700;
 }
 
@@ -7632,12 +7616,12 @@ strong {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
   color: var(--accent);
   background: var(--accent-soft);
   border-radius: var(--radius-xs);
-  font-size: 0.68rem;
+  font-size: 0.86rem;
   font-weight: 900;
 }
 
@@ -7673,9 +7657,9 @@ strong {
 .preview-mode-reveal {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 14px;
-  padding: 14px;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 20px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -7685,7 +7669,7 @@ strong {
 .preview-mode-reveal-label {
   margin: 0;
   color: var(--tertiary);
-  font-size: 0.66rem;
+  font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -7694,7 +7678,7 @@ strong {
 .preview-mode-reveal-text {
   margin: 0;
   color: var(--text);
-  font-size: 1.05rem;
+  font-size: 1.5rem;
   font-weight: 900;
 }
 
@@ -7702,11 +7686,11 @@ strong {
 .preview-mode-feedback {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin-top: 12px;
-  padding: 11px 12px;
+  gap: 5px;
+  margin-top: 16px;
+  padding: 15px 16px;
   border-radius: var(--radius-md);
-  font-size: 0.73rem;
+  font-size: 0.95rem;
   font-weight: 600;
   line-height: 1.42;
 }
@@ -7731,8 +7715,8 @@ strong {
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-bottom: 2px;
-  font-size: 0.84rem;
+  margin-bottom: 3px;
+  font-size: 1.12rem;
   font-weight: 900;
 }
 
@@ -7754,13 +7738,13 @@ strong {
   align-items: center;
   gap: 8px;
   margin-top: auto;
-  padding-top: 12px;
-  font-size: 0.72rem;
+  padding-top: 18px;
+  font-size: 0.95rem;
   font-weight: 800;
 }
 
 .preview-mode-prev {
-  padding: 5px 11px;
+  padding: 7px 15px;
   color: var(--muted);
   background: var(--surface-2);
   border-radius: var(--radius-pill);
@@ -7773,14 +7757,14 @@ strong {
 
 .preview-mode-graded {
   margin-left: auto;
-  padding: 5px 11px;
+  padding: 7px 15px;
   color: var(--muted);
   background: var(--surface-2);
   border-radius: var(--radius-pill);
 }
 
 .preview-mode-next {
-  padding: 5px 12px;
+  padding: 7px 16px;
   color: #fff;
   background: var(--success);
   border-radius: var(--radius-pill);
@@ -8104,14 +8088,6 @@ strong {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .landing-preview-copy {
-    text-align: center;
-  }
-
-  .landing-preview-points {
-    justify-items: center;
-  }
-
   .landing-footer {
     grid-template-columns: minmax(0, 1fr);
     justify-items: start;
@@ -8145,51 +8121,46 @@ strong {
     padding: 22px;
   }
 
-  /* Let the carousel borrow the section padding so the cards stay legible, and
-     scale the type back up to offset the carousel's fit-to-width scaling. */
+  /* Let the carousel borrow the section padding so the card stays as wide as it
+     can, and keep the type readable under the carousel's fit-to-width scaling. */
   .landing-preview-carousel {
-    margin: 0 -10px;
+    height: 800px;
+    margin: 0 -8px;
+  }
+
+  /* One column of choices: at phone widths two columns would clip every label. */
+  .preview-mode-choices {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .preview-mode {
-    padding: 15px;
-    font-size: 0.9rem;
+    padding: 18px;
+    font-size: 1.02rem;
   }
 
   .preview-mode-count {
-    font-size: 1.14rem;
+    font-size: 1.3rem;
   }
 
   .preview-mode-question {
-    font-size: 1.02rem;
+    font-size: 1.14rem;
   }
 
   .preview-mode-subject,
   .preview-mode-topic {
-    font-size: 0.76rem;
-  }
-
-  .preview-choice {
-    padding: 9px 10px;
-    font-size: 0.86rem;
-  }
-
-  .preview-choice-key {
-    width: 23px;
-    height: 23px;
-    font-size: 0.76rem;
+    font-size: 0.78rem;
   }
 
   .preview-mode-feedback {
-    font-size: 0.82rem;
+    font-size: 0.88rem;
   }
 
   .preview-mode-verdict {
-    font-size: 0.94rem;
+    font-size: 1rem;
   }
 
   .preview-mode-actions {
-    font-size: 0.8rem;
+    font-size: 0.88rem;
   }
 }
 
