@@ -7043,14 +7043,14 @@ strong {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--success);
+  background: var(--accent);
 }
 
 .landing-badge-dot::after {
   content: "";
   position: absolute;
   inset: -4px;
-  border: 1px solid var(--success);
+  border: 1px solid var(--accent);
   border-radius: 50%;
   animation: landing-ping 2.8s ease-out infinite;
 }
@@ -7065,7 +7065,7 @@ strong {
 
 .landing-title-accent {
   display: inline-block;
-  color: var(--success);
+  color: var(--accent);
 }
 
 .landing-title.is-revealed .landing-title-accent {
@@ -7133,7 +7133,40 @@ strong {
 }
 
 .landing-proof svg {
-  color: var(--success);
+  color: var(--accent);
+}
+
+/* The shared paw rules alternate green, accent and warning. On the landing hero the
+   green set is remapped onto the warm palette so the screen stays one colour, while
+   the dashboard keeps its own mix. */
+.landing-hero .hero-note {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+
+.landing-hero .hero-paw.paw-a,
+.landing-hero .hero-paw.paw-d,
+.landing-hero .hero-paw.paw-e,
+.landing-hero .hero-paw.paw-i,
+.landing-hero .hero-paw.paw-k,
+.landing-hero .hero-paw.paw-n,
+.landing-hero .hero-paw.paw-o {
+  color: var(--accent);
+}
+
+.landing-hero .hero-paw.paw-b,
+.landing-hero .hero-paw.paw-f,
+.landing-hero .hero-paw.paw-g,
+.landing-hero .hero-paw.paw-m,
+.landing-hero .hero-paw.paw-p {
+  color: color-mix(in srgb, var(--accent) 58%, var(--warning));
+}
+
+.landing-hero .hero-paw.paw-c,
+.landing-hero .hero-paw.paw-h,
+.landing-hero .hero-paw.paw-j,
+.landing-hero .hero-paw.paw-l {
+  color: color-mix(in srgb, var(--warning) 74%, var(--accent));
 }
 
 .landing-art {
@@ -7210,7 +7243,7 @@ strong {
 }
 
 .landing-section-head .eyebrow {
-  color: var(--success);
+  color: var(--accent);
 }
 
 .landing-section-head h2 {
@@ -7252,7 +7285,7 @@ strong {
 
 .landing-feature:hover {
   transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--success) 30%, var(--border));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
 }
 
 /* The reveal transition would otherwise own the hover lift, so stagger the fade on
@@ -7382,9 +7415,9 @@ strong {
   width: 50px;
   height: 50px;
   margin-bottom: 18px;
-  color: var(--success);
-  background: var(--success-soft);
-  border: 1px solid color-mix(in srgb, var(--success) 22%, var(--border));
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
   border-radius: var(--radius-md);
 }
 
@@ -7427,7 +7460,7 @@ strong {
 }
 
 .landing-preview-copy .eyebrow {
-  color: var(--success);
+  color: var(--accent);
 }
 
 .landing-preview-copy h2 {
@@ -7465,7 +7498,7 @@ strong {
 
 .landing-preview-points svg {
   flex: 0 0 auto;
-  color: var(--success);
+  color: var(--accent);
 }
 
 .landing-preview-stage {
@@ -7515,7 +7548,7 @@ strong {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--success);
+  background: var(--accent);
   animation: landing-fill 5s var(--ease-apple) infinite;
 }
 
@@ -7605,7 +7638,7 @@ strong {
 }
 
 .landing-faq-item[open] {
-  border-color: color-mix(in srgb, var(--success) 34%, var(--border));
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
 }
 
 .landing-faq-item summary {
@@ -7632,7 +7665,7 @@ strong {
 }
 
 .landing-faq-item[open] summary svg {
-  color: var(--success);
+  color: var(--accent);
   transform: rotate(180deg);
 }
 
@@ -7654,8 +7687,8 @@ strong {
   margin-top: clamp(52px, 6.5vw, 92px);
   padding: clamp(36px, 5vw, 64px);
   text-align: center;
-  background: color-mix(in srgb, var(--success-soft) 60%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--success) 22%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
   border-radius: var(--radius-2xl);
 }
 
@@ -7721,7 +7754,7 @@ strong {
 }
 
 .landing-footer-links a:hover {
-  color: var(--success);
+  color: var(--accent);
 }
 
 .landing-footer-copy {
