@@ -6977,10 +6977,21 @@ strong {
   background: var(--surface-2);
 }
 
-.landing-nav-cta {
+.landing-nav-actions .button.primary.landing-nav-cta {
   min-height: 44px;
   padding: 0 20px;
+  color: #fff;
+  background: var(--success);
+  border-color: var(--success);
   box-shadow: none;
+  transition: background-color 200ms var(--ease-apple), border-color 200ms var(--ease-apple),
+    transform 200ms var(--ease-apple);
+}
+
+.landing-nav-actions .button.primary.landing-nav-cta:hover {
+  background: color-mix(in srgb, var(--success) 86%, #000);
+  border-color: color-mix(in srgb, var(--success) 86%, #000);
+  transform: translateY(-1px);
 }
 
 .landing-nav-burger,
@@ -7024,35 +7035,31 @@ strong {
   min-width: 0;
 }
 
+/* A quiet editorial eyebrow rather than a chip: letterspaced caps led by a short
+   rule, with the sparkle picking up the brand's playful side. */
 .landing-badge {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  margin: 0;
-  padding: 7px 15px 7px 12px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  font-size: 0.85rem;
-  font-weight: 800;
+  gap: 9px;
+  margin: 0 0 20px;
+  color: var(--success);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
 }
 
-.landing-badge-dot {
-  position: relative;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-}
-
-.landing-badge-dot::after {
+.landing-badge::before {
   content: "";
-  position: absolute;
-  inset: -4px;
-  border: 1px solid var(--success);
-  border-radius: 50%;
-  animation: landing-ping 2.8s ease-out infinite;
+  width: 26px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.landing-badge svg {
+  flex: 0 0 auto;
+  animation: landing-twinkle 4.4s var(--ease-apple) infinite;
 }
 
 .landing-title {
@@ -7751,6 +7758,18 @@ strong {
   }
 }
 
+@keyframes landing-twinkle {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.14) rotate(10deg);
+  }
+}
+
 @keyframes landing-arrow {
   0%,
   100% {
@@ -7831,7 +7850,7 @@ strong {
     transition: none;
   }
 
-  .landing-badge-dot::after,
+  .landing-badge svg,
   .landing-online-dot::after,
   .landing-art img,
   .landing-actions .button svg {
@@ -7958,6 +7977,11 @@ strong {
   .landing-step,
   .landing-preview {
     padding: 22px;
+  }
+
+  /* Once the nav collapses to the burger there is no room for the live count. */
+  .landing-online {
+    display: none;
   }
 }
 

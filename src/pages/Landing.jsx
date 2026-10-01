@@ -195,6 +195,14 @@ export default function Landing({ theme, onToggleTheme }) {
                 Sign in
               </Link>
             )}
+            <div className="landing-online" aria-live="polite">
+              {onlineCount ? (
+                <>
+                  <span className="landing-online-dot" aria-hidden="true" />
+                  {onlineCount}+ online now
+                </>
+              ) : null}
+            </div>
             <PrimaryLink user={user} className="button primary landing-nav-cta">
               {user ? "Open Hachi" : "Start studying"}
             </PrimaryLink>
@@ -247,7 +255,7 @@ export default function Landing({ theme, onToggleTheme }) {
         <div className="landing-hero-inner">
           <div className="landing-hero-copy">
             <p className="landing-badge" data-reveal>
-              <span className="landing-badge-dot" aria-hidden="true" />
+              <Sparkles size={14} aria-hidden="true" />
               Your study companion
             </p>
 
@@ -272,16 +280,7 @@ export default function Landing({ theme, onToggleTheme }) {
               )}
             </div>
 
-            <div className="landing-online" data-reveal style={{ "--reveal-delay": "280ms" }} aria-live="polite">
-            {onlineCount ? (
-              <>
-                <span className="landing-online-dot" aria-hidden="true" />
-                {onlineCount}+ online now
-              </>
-            ) : null}
-          </div>
-
-          <ul className="landing-proof" data-reveal style={{ "--reveal-delay": "320ms" }}>
+            <ul className="landing-proof" data-reveal style={{ "--reveal-delay": "320ms" }}>
               {HERO_PROOF.map((item) => (
                 <li key={item}>
                   <Check size={15} aria-hidden="true" />
