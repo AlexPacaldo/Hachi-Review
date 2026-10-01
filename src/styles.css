@@ -3927,9 +3927,9 @@ legend {
   --tertiary: #9a9aa0;
   --border: rgba(0, 0, 0, 0.08);
   --separator: rgba(0, 0, 0, 0.1);
-  --accent: #b76f37;
-  --accent-strong: #96562a;
-  --accent-soft: #ffe1af;
+  --accent: #0071e3;
+  --accent-strong: #005bbf;
+  --accent-soft: #e8f2ff;
   --success: #248a3d;
   --success-soft: #e8f7ed;
   --danger: #d70015;
@@ -3969,9 +3969,9 @@ legend {
   --tertiary: #77777d;
   --border: rgba(255, 255, 255, 0.1);
   --separator: rgba(255, 255, 255, 0.11);
-  --accent: #e8a56b;
-  --accent-strong: #f3c496;
-  --accent-soft: rgba(232, 165, 107, 0.16);
+  --accent: #2997ff;
+  --accent-strong: #6eb8ff;
+  --accent-soft: rgba(41, 151, 255, 0.16);
   --success: #32d74b;
   --success-soft: rgba(50, 215, 75, 0.14);
   --danger: #ff453a;
@@ -7000,11 +7000,11 @@ strong {
   margin-top: calc(-1 * var(--landing-nav-h));
   padding: calc(var(--landing-nav-h) + clamp(28px, 6vh, 64px)) 0 clamp(74px, 11vh, 112px);
   overflow: hidden;
-  background: linear-gradient(180deg, #fffdf7 0%, #fdf4e4 38%, #f8e6cd 72%, var(--bg) 100%);
+  background: linear-gradient(180deg, #fffdf7 0%, #f2f6e9 38%, #e9f3e2 72%, var(--bg) 100%);
 }
 
 :root[data-theme="dark"] .landing-hero {
-  background: linear-gradient(180deg, #17130e 0%, #201812 38%, #2b2116 72%, var(--bg) 100%);
+  background: linear-gradient(180deg, #161a15 0%, #16201a 38%, #12281c 72%, var(--bg) 100%);
 }
 
 .landing-hero-inner {
@@ -7043,14 +7043,14 @@ strong {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--success);
 }
 
 .landing-badge-dot::after {
   content: "";
   position: absolute;
   inset: -4px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--success);
   border-radius: 50%;
   animation: landing-ping 2.8s ease-out infinite;
 }
@@ -7065,7 +7065,7 @@ strong {
 
 .landing-title-accent {
   display: inline-block;
-  color: var(--accent);
+  color: var(--success);
 }
 
 .landing-title.is-revealed .landing-title-accent {
@@ -7095,14 +7095,14 @@ strong {
 }
 
 .landing-actions .button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--success);
+  border-color: var(--success);
   color: #fff;
 }
 
 .landing-actions .button.primary:hover {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
+  background: color-mix(in srgb, var(--success) 82%, #000);
+  border-color: color-mix(in srgb, var(--success) 82%, #000);
 }
 
 .landing-actions .button svg {
@@ -7111,7 +7111,7 @@ strong {
 }
 
 :root[data-theme="dark"] .landing-actions .button.primary {
-  color: #1a1006;
+  color: #06170c;
 }
 
 .landing-proof {
@@ -7133,40 +7133,7 @@ strong {
 }
 
 .landing-proof svg {
-  color: var(--accent);
-}
-
-/* The shared paw rules alternate green, accent and warning. On the landing hero the
-   green set is remapped onto the warm palette so the screen stays one colour, while
-   the dashboard keeps its own mix. */
-.landing-hero .hero-note {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
-}
-
-.landing-hero .hero-paw.paw-a,
-.landing-hero .hero-paw.paw-d,
-.landing-hero .hero-paw.paw-e,
-.landing-hero .hero-paw.paw-i,
-.landing-hero .hero-paw.paw-k,
-.landing-hero .hero-paw.paw-n,
-.landing-hero .hero-paw.paw-o {
-  color: var(--accent);
-}
-
-.landing-hero .hero-paw.paw-b,
-.landing-hero .hero-paw.paw-f,
-.landing-hero .hero-paw.paw-g,
-.landing-hero .hero-paw.paw-m,
-.landing-hero .hero-paw.paw-p {
-  color: color-mix(in srgb, var(--accent) 58%, var(--warning));
-}
-
-.landing-hero .hero-paw.paw-c,
-.landing-hero .hero-paw.paw-h,
-.landing-hero .hero-paw.paw-j,
-.landing-hero .hero-paw.paw-l {
-  color: color-mix(in srgb, var(--warning) 74%, var(--accent));
+  color: var(--success);
 }
 
 .landing-art {
@@ -7243,7 +7210,7 @@ strong {
 }
 
 .landing-section-head .eyebrow {
-  color: var(--accent);
+  color: var(--success);
 }
 
 .landing-section-head h2 {
@@ -7285,7 +7252,7 @@ strong {
 
 .landing-feature:hover {
   transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-color: color-mix(in srgb, var(--success) 30%, var(--border));
 }
 
 /* The reveal transition would otherwise own the hover lift, so stagger the fade on
@@ -7415,9 +7382,9 @@ strong {
   width: 50px;
   height: 50px;
   margin-bottom: 18px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 22%, var(--border));
   border-radius: var(--radius-md);
 }
 
@@ -7460,7 +7427,7 @@ strong {
 }
 
 .landing-preview-copy .eyebrow {
-  color: var(--accent);
+  color: var(--success);
 }
 
 .landing-preview-copy h2 {
@@ -7498,7 +7465,7 @@ strong {
 
 .landing-preview-points svg {
   flex: 0 0 auto;
-  color: var(--accent);
+  color: var(--success);
 }
 
 .landing-preview-stage {
@@ -7548,7 +7515,7 @@ strong {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--accent);
+  background: var(--success);
   animation: landing-fill 5s var(--ease-apple) infinite;
 }
 
@@ -7638,7 +7605,7 @@ strong {
 }
 
 .landing-faq-item[open] {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-color: color-mix(in srgb, var(--success) 34%, var(--border));
 }
 
 .landing-faq-item summary {
@@ -7665,7 +7632,7 @@ strong {
 }
 
 .landing-faq-item[open] summary svg {
-  color: var(--accent);
+  color: var(--success);
   transform: rotate(180deg);
 }
 
@@ -7687,8 +7654,8 @@ strong {
   margin-top: clamp(52px, 6.5vw, 92px);
   padding: clamp(36px, 5vw, 64px);
   text-align: center;
-  background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  background: color-mix(in srgb, var(--success-soft) 60%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--success) 22%, var(--border));
   border-radius: var(--radius-2xl);
 }
 
@@ -7754,7 +7721,7 @@ strong {
 }
 
 .landing-footer-links a:hover {
-  color: var(--accent);
+  color: var(--success);
 }
 
 .landing-footer-copy {
