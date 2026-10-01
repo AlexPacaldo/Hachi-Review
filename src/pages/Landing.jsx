@@ -195,6 +195,9 @@ export default function Landing({ theme, onToggleTheme }) {
                 Sign in
               </Link>
             )}
+            <PrimaryLink user={user} className="button primary landing-nav-cta">
+              {user ? "Open Hachi" : "Start studying"}
+            </PrimaryLink>
             <div className="landing-online" aria-live="polite">
               {onlineCount ? (
                 <>
@@ -203,9 +206,6 @@ export default function Landing({ theme, onToggleTheme }) {
                 </>
               ) : null}
             </div>
-            <PrimaryLink user={user} className="button primary landing-nav-cta">
-              {user ? "Open Hachi" : "Start studying"}
-            </PrimaryLink>
             <button
               className="icon-button landing-nav-burger"
               type="button"
