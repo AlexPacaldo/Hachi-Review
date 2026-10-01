@@ -7,7 +7,6 @@ import {
   ChevronDown,
   CloudOff,
   FileText,
-  Flame,
   ListChecks,
   Menu,
   Moon,
@@ -32,26 +31,19 @@ const NAV_LINKS = [
 
 const HERO_PROOF = ["Free to use", "Works offline", "Syncs across devices"];
 
-const TOPICS_FRONT = [
+const SUBJECTS = [
   "Human Anatomy",
   "Organic Chemistry",
   "Calculus",
   "World History",
   "Microbiology",
-  "Physics",
   "Pharmacology",
-  "Statistics"
-];
-
-const TOPICS_BACK = [
-  "Macroeconomics",
+  "Statistics",
   "Literature",
   "Genetics",
-  "Neuroanatomy",
   "Immunology",
-  "Psychology",
   "Linear Algebra",
-  "European History"
+  "Psychology"
 ];
 
 const FEATURES = [
@@ -184,13 +176,6 @@ export default function Landing({ theme, onToggleTheme }) {
 
   return (
     <div className="landing-page" ref={pageRef}>
-      <div className="landing-aurora" aria-hidden="true">
-        <span className="landing-orb landing-orb-a" />
-        <span className="landing-orb landing-orb-b" />
-        <span className="landing-orb landing-orb-c" />
-        <span className="landing-grid" />
-      </div>
-
       <header className={`landing-nav ${navScrolled ? "is-scrolled" : ""} ${menuOpen ? "is-open" : ""}`}>
         <div className="landing-nav-inner">
           <Link to="/" className="landing-brand" aria-label="Hachi home">
@@ -223,7 +208,7 @@ export default function Landing({ theme, onToggleTheme }) {
               </Link>
             )}
             <PrimaryLink user={user} className="button primary landing-nav-cta">
-              {user ? "Open Hachi" : "Get started"}
+              {user ? "Open Hachi" : "Start studying"}
             </PrimaryLink>
             <button
               className="icon-button landing-nav-burger"
@@ -270,7 +255,7 @@ export default function Landing({ theme, onToggleTheme }) {
 
             <div className="landing-actions" data-reveal style={{ "--reveal-delay": "240ms" }}>
               <PrimaryLink user={user}>
-                {user ? "Open Hachi" : "Get Started"}
+                {user ? "Open Hachi" : "Start studying"}
                 <ArrowRight size={18} aria-hidden="true" />
               </PrimaryLink>
               {user ? null : (
@@ -291,39 +276,18 @@ export default function Landing({ theme, onToggleTheme }) {
           </div>
 
           <div className="landing-art" aria-hidden="true">
-            <span className="landing-art-ring" />
-            <span className="landing-art-glow" />
             <img src={hachiDogExcited} alt="" />
-            <span className="landing-chip landing-chip-streak">
-              <Flame size={15} />
-              12 day streak
-            </span>
-            <span className="landing-chip landing-chip-score">
-              <Target size={15} />
-              88% mastered
-            </span>
-            <span className="landing-chip landing-chip-offline">
-              <CloudOff size={15} />
-              Ready offline
-            </span>
+            <span className="hero-note">You can do it!</span>
           </div>
         </section>
 
-        <section className="landing-marquee" aria-hidden="true">
-          <div className="landing-marquee-track">
-            {[...TOPICS_FRONT, ...TOPICS_FRONT].map((topic, index) => (
-              <span className="landing-marquee-pill" key={`front-${index}`}>
-                {topic}
-              </span>
+        <section className="landing-subjects" aria-label="Supported subjects">
+          <p className="landing-subjects-label">Built for any subject</p>
+          <ul className="landing-subjects-list">
+            {SUBJECTS.map((subject) => (
+              <li key={subject}>{subject}</li>
             ))}
-          </div>
-          <div className="landing-marquee-track landing-marquee-reverse">
-            {[...TOPICS_BACK, ...TOPICS_BACK].map((topic, index) => (
-              <span className="landing-marquee-pill" key={`back-${index}`}>
-                {topic}
-              </span>
-            ))}
-          </div>
+          </ul>
         </section>
 
         <section className="landing-section" id="features" aria-labelledby="landing-features-heading">
@@ -360,7 +324,7 @@ export default function Landing({ theme, onToggleTheme }) {
                           <Check size={13} />
                         </span>
                       </div>
-                      <div className="landing-demo-card landing-demo-card-alt">
+                      <div className="landing-demo-card">
                         <span>Answer + explanation ready</span>
                       </div>
                     </div>
@@ -379,7 +343,6 @@ export default function Landing({ theme, onToggleTheme }) {
           </div>
 
           <div className="landing-steps-wrap">
-            <span className="landing-steps-rail" aria-hidden="true" />
             <ol className="landing-steps">
               {STEPS.map((step, index) => {
                 const Icon = step.icon;
@@ -447,15 +410,6 @@ export default function Landing({ theme, onToggleTheme }) {
                 <span className="landing-preview-verdict">Correct. The left ventricle drives systemic circulation.</span>
               </div>
             </div>
-
-            <span className="landing-preview-float landing-preview-float-a">
-              <TrendingUp size={15} />
-              88% score
-            </span>
-            <span className="landing-preview-float landing-preview-float-b">
-              <Sparkles size={15} />
-              12 questions
-            </span>
           </div>
         </section>
 
@@ -480,12 +434,11 @@ export default function Landing({ theme, onToggleTheme }) {
         </section>
 
         <section className="landing-cta" data-reveal>
-          <span className="landing-cta-shine" aria-hidden="true" />
           <h2>Ready when you are</h2>
           <p>Build a reviewer, take a quiz, and see your progress the moment you open Hachi.</p>
           <div className="landing-actions">
             <PrimaryLink user={user}>
-              {user ? "Open Hachi" : "Get Started"}
+              {user ? "Open Hachi" : "Start studying"}
               <ArrowRight size={18} aria-hidden="true" />
             </PrimaryLink>
             {user ? null : (
