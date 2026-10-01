@@ -6851,17 +6851,14 @@ strong {
   padding-top: 0;
 }
 
-/* One page tint, one brand green, one accent blue. The hero reuses the exact home
-   hero wash and every card is a plain surface with a subtle border, so nothing on
-   this page competes for attention with the product itself. */
+/* One page tint, one brand green, one accent blue. The hero reuses the home hero
+   wash and every card is a plain surface with a subtle border, so nothing on this
+   page competes for attention with the product itself. */
 .landing-page {
+  --landing-nav-h: 76px;
   position: relative;
   min-height: 100vh;
-  background: linear-gradient(180deg, #fffdf7 0%, #f4f8ef 42%, var(--bg) 84%);
-}
-
-:root[data-theme="dark"] .landing-page {
-  background: linear-gradient(180deg, #161a15 0%, #0d100e 42%, var(--bg) 84%);
+  background: var(--bg);
 }
 
 .landing-body {
@@ -6908,7 +6905,7 @@ strong {
   gap: 16px;
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto;
-  min-height: 76px;
+  min-height: var(--landing-nav-h);
 }
 
 .landing-brand {
@@ -6992,23 +6989,56 @@ strong {
 }
 
 /* Hero */
+/* The hero owns the first screen, so it bleeds edge to edge and slides up under the
+   transparent nav rather than sitting in a bordered card inside the content column. */
 .landing-hero {
   position: relative;
+  display: grid;
+  align-content: center;
+  min-height: 100vh;
+  min-height: 100svh;
+  margin-top: calc(-1 * var(--landing-nav-h));
+  padding: calc(var(--landing-nav-h) + clamp(28px, 6vh, 64px)) 0 clamp(74px, 11vh, 112px);
+  overflow: hidden;
+  background: linear-gradient(180deg, #fffdf7 0%, #f2f6e9 38%, #e9f3e2 72%, var(--bg) 100%);
+}
+
+:root[data-theme="dark"] .landing-hero {
+  background: linear-gradient(180deg, #161a15 0%, #16201a 38%, #12281c 72%, var(--bg) 100%);
+}
+
+.landing-hero-inner {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   align-items: center;
   gap: clamp(24px, 4vw, 56px);
-  margin-top: clamp(20px, 2.6vw, 34px);
-  padding: clamp(28px, 4vw, 52px);
-  overflow: hidden;
-  background: linear-gradient(90deg, #fffdf7 0%, #f2f6e9 55%, #dceee0 100%);
-  border: 1px solid color-mix(in srgb, var(--success) 20%, var(--border));
-  border-radius: var(--radius-2xl);
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
 }
 
-:root[data-theme="dark"] .landing-hero {
-  background: linear-gradient(90deg, #1a1c17 0%, #16201a 55%, #12281c 100%);
-  border-color: color-mix(in srgb, var(--success) 24%, var(--border));
+.landing-scroll-hint {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(18px, 4vh, 32px);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-left: -21px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  animation: landing-bounce 2.4s var(--ease-apple) infinite;
+  transition: color 200ms var(--ease-apple), border-color 200ms var(--ease-apple);
+}
+
+.landing-scroll-hint:hover {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
 }
 
 .landing-hero-copy {
@@ -7057,7 +7087,12 @@ strong {
 }
 
 .landing-title-accent {
+  display: inline-block;
   color: var(--success);
+}
+
+.landing-title.is-revealed .landing-title-accent {
+  animation: landing-pop 700ms var(--ease-apple) both 360ms;
 }
 
 .landing-lede {
@@ -7260,7 +7295,7 @@ strong {
 }
 
 .landing-feature:hover .landing-feature-icon {
-  transform: scale(1.05) rotate(-5deg);
+  animation: landing-wiggle 720ms var(--ease-apple);
 }
 
 .landing-feature h3 {
@@ -7346,6 +7381,10 @@ strong {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
+}
+
+.landing-step.is-revealed .landing-step-icon {
+  animation: landing-pop 640ms var(--ease-apple) both calc(var(--reveal-delay, 0ms) + 120ms);
 }
 
 .landing-step-icon {
@@ -7758,6 +7797,43 @@ strong {
   }
 }
 
+@keyframes landing-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(6px);
+  }
+}
+
+@keyframes landing-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes landing-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  28% {
+    transform: rotate(-9deg) scale(1.06);
+  }
+  62% {
+    transform: rotate(7deg) scale(1.06);
+  }
+}
+
 @keyframes landing-faq-in {
   from {
     opacity: 0;
@@ -7778,8 +7854,14 @@ strong {
 
   .landing-badge-dot::after,
   .landing-art img,
+  .landing-scroll-hint,
   .landing-actions .button svg {
     animation: none;
+  }
+
+  .landing-title-accent,
+  .landing-step-icon {
+    opacity: 1;
   }
 }
 
@@ -7836,12 +7918,12 @@ strong {
     font-weight: 800;
   }
 
-  .landing-hero,
+  .landing-hero-inner,
   .landing-preview {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .landing-hero {
+  .landing-hero-inner {
     text-align: center;
   }
 
@@ -7852,6 +7934,10 @@ strong {
 
   .landing-art {
     min-height: 300px;
+  }
+
+  .landing-scroll-hint {
+    display: none;
   }
 
   .landing-subjects {
@@ -7884,8 +7970,13 @@ strong {
 @media (max-width: 760px) {
   .landing-body,
   .landing-nav-inner,
-  .landing-nav-sheet {
+  .landing-nav-sheet,
+  .landing-hero-inner {
     width: min(100% - 32px, 1180px);
+  }
+
+  .landing-hero {
+    padding-top: calc(var(--landing-nav-h) + 24px);
   }
 
   .landing-features {

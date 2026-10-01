@@ -10,6 +10,7 @@ import {
   ListChecks,
   Menu,
   Moon,
+  PawPrint,
   Sparkles,
   Sun,
   Target,
@@ -236,8 +237,27 @@ export default function Landing({ theme, onToggleTheme }) {
         </div>
       </header>
 
-      <div className="landing-body">
-        <section className="landing-hero">
+      <section className="landing-hero">
+        <div className="hero-paws" aria-hidden="true">
+          <PawPrint className="hero-paw paw-a" size={26} />
+          <PawPrint className="hero-paw paw-b" size={18} />
+          <PawPrint className="hero-paw paw-c" size={22} />
+          <PawPrint className="hero-paw paw-d" size={14} />
+          <PawPrint className="hero-paw paw-e" size={20} />
+          <PawPrint className="hero-paw paw-f" size={15} />
+          <PawPrint className="hero-paw paw-g" size={24} />
+          <PawPrint className="hero-paw paw-h" size={16} />
+          <PawPrint className="hero-paw paw-i" size={19} />
+          <PawPrint className="hero-paw paw-j" size={13} />
+          <PawPrint className="hero-paw paw-k" size={17} />
+          <PawPrint className="hero-paw paw-l" size={21} />
+          <PawPrint className="hero-paw paw-m" size={12} />
+          <PawPrint className="hero-paw paw-n" size={16} />
+          <PawPrint className="hero-paw paw-o" size={18} />
+          <PawPrint className="hero-paw paw-p" size={15} />
+        </div>
+
+        <div className="landing-hero-inner">
           <div className="landing-hero-copy">
             <p className="landing-badge" data-reveal>
               <span className="landing-badge-dot" aria-hidden="true" />
@@ -279,13 +299,21 @@ export default function Landing({ theme, onToggleTheme }) {
             <img src={hachiDogExcited} alt="" />
             <span className="hero-note">You can do it!</span>
           </div>
-        </section>
+        </div>
 
+        <a className="landing-scroll-hint" href="#features" aria-label="Scroll to features">
+          <ChevronDown size={20} aria-hidden="true" />
+        </a>
+      </section>
+
+      <div className="landing-body">
         <section className="landing-subjects" aria-label="Supported subjects">
           <p className="landing-subjects-label">Built for any subject</p>
           <ul className="landing-subjects-list">
-            {SUBJECTS.map((subject) => (
-              <li key={subject}>{subject}</li>
+            {SUBJECTS.map((subject, index) => (
+              <li key={subject} data-reveal style={{ "--reveal-delay": `${index * 45}ms` }}>
+                {subject}
+              </li>
             ))}
           </ul>
         </section>
