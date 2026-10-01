@@ -33,6 +33,7 @@ const DepthCarousel = ({
   autoplay = false,
   autoplayDelay = 3200,
   loop = true,
+  enableWheel = false,
   showControls = true,
   showIndicators = true,
   onChange,
@@ -191,6 +192,10 @@ const DepthCarousel = ({
   }, [layout]);
 
   useEffect(() => {
+    // Off by default. The upstream handler calls preventDefault, so leaving it
+    // attached would trap the page scroll whenever the cursor passed over the
+    // carousel, which is far more annoying than the gesture is worth.
+    if (!enableWheel) return undefined;
     const el = rootRef.current;
     if (!el) return undefined;
     const onWheel = (e) => {
@@ -211,7 +216,7 @@ const DepthCarousel = ({
       el.removeEventListener("wheel", onWheel);
       if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
     };
-  }, [layout, setFocus]);
+  }, [layout, setFocus, enableWheel]);
 
   const onPointerDown = useCallback((e) => {
     const cfg = cfgRef.current;
