@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import Navbar from "./components/Navbar.jsx";
 import { NotificationToasts } from "./components/NotificationCenter.jsx";
@@ -29,6 +29,12 @@ function AppShell() {
   const [theme, setTheme] = useState(getThemePreference);
   const [updateReady, setUpdateReady] = useState(false);
   const { notify } = useNotifications();
+  const location = useLocation();
+  // The public marketing page owns its full-height layout, so the app sidebar,
+  // the floating account pill, and their reserved gutter are skipped there.
+  const isLanding = location.pathname === "/";
+
+  const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -96,8 +102,8 @@ function AppShell() {
   return (
     <AuthProvider>
       <SocialNotificationWatcher />
-      <Navbar theme={theme} onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))} />
-      <TopActions />
+      {isLanding ? null : <Navbar theme={theme} onToggleTheme={toggleTheme} />}
+      {isLanding ? null : <TopActions />}
       <NotificationToasts />
       {updateReady ? (
         <div className="update-banner" role="status">
@@ -108,10 +114,10 @@ function AppShell() {
           </button>
         </div>
       ) : null}
-      <div className="top-pill-spacer" aria-hidden="true" />
-      <main>
+      {isLanding ? null : <div className="top-pill-spacer" aria-hidden="true" />}
+      <main className={isLanding ? "landing-main" : undefined}>
         <Routes>
-          <Route path="/" element={<Landing />} />
+          <Route path="/" element={<Landing theme={theme} onToggleTheme={toggleTheme} />} />
           <Route path="/home" element={<Home />} />
           <Route path="/reviewer/:reviewerId" element={<ReviewerSetup />} />
           <Route path="/quiz/:reviewerId" element={<Quiz />} />
