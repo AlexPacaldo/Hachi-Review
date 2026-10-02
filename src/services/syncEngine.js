@@ -17,9 +17,12 @@ import {
   getLocalReviewers,
   getAllProgress,
   getPendingDeletesForUser,
+  getProgressTimestamp,
   getSyncQueue,
+  cacheCloudReviewer,
   mergeCloudAttempts,
   mergeCloudProgress,
+  dropProgressOlderThanAttempts,
   dropConflictingQueueItems,
   queuePendingDelete,
   queueSyncItem,
@@ -170,7 +173,22 @@ export function flushPendingProgress() {
 
   entries.forEach(([, { timer, session }]) => {
     window.clearTimeout(timer);
-    pushProgressToCloud(session);
+
+    // Recorded in the durable queue before the request goes out. This runs on
+    // pagehide, where an in-flight fetch is simply killed when the tab closes,
+    // so anything not already sent was being lost outright and never even queued.
+    // queueSyncItem keeps one entry per reviewer, so this cannot pile up.
+    const queued = canWrite() && Boolean(activeUserId);
+    if (queued) {
+      queueSyncItem({ userId: activeUserId, type: "upsert-progress", reviewerId: session.reviewerId, payload: session });
+    }
+
+    pushProgressToCloud(session).then((result) => {
+      // Only drop the safety net once the account has actually accepted it.
+      if (queued && !result?.queued) {
+        removeSyncItem(activeUserId, "upsert-progress", session.reviewerId);
+      }
+    });
   });
 }
 
@@ -224,21 +242,37 @@ export async function flushSyncQueue() {
 // point at has to be in hand before they can be merged into local storage.
 async function resolveReviewerMap(reviewerIds) {
   const byId = new Map();
+  const hasQuestions = (reviewer) => Array.isArray(reviewer?.questions);
 
   [...getCloudReviewerCache(), ...getLocalReviewers()].forEach((reviewer) => {
-    if (reviewer?.reviewerId) byId.set(reviewer.reviewerId, reviewer);
+    if (!reviewer?.reviewerId) return;
+    // The reviewer list stores a summary for anything this device has not opened
+    // yet, and a summary cannot rebuild a progress or attempt record. Only a
+    // cached copy that actually carries its questions counts as usable.
+    const existing = byId.get(reviewer.reviewerId);
+    if (!hasQuestions(existing) || hasQuestions(reviewer)) byId.set(reviewer.reviewerId, reviewer);
   });
 
-  const missing = [...new Set(reviewerIds.filter((id) => id && !byId.has(id)))];
+  // Testing presence rather than completeness here is what stopped progress from
+  // ever reaching a second device: the summary made the reviewer look present, no
+  // fetch happened, and the record was then dropped further down for having no
+  // questions to restore from.
+  const missing = [...new Set(reviewerIds.filter((id) => id && !hasQuestions(byId.get(id))))];
   if (!missing.length) return byId;
 
   // A record synced from another device can turn up before its reviewer has ever
   // been opened here, so fetch the missing ones instead of dropping the record.
   const { data } = await listCloudReviewersByIds(missing);
-  (data || []).forEach((row) => {
-    if (!row?.reviewer_id) return;
-    byId.set(row.reviewer_id, { ...row.data, reviewerId: row.reviewer_id });
-  });
+  const fetched = (data || [])
+    .filter((row) => row?.reviewer_id)
+    .map((row) => ({ ...row.data, reviewerId: row.reviewer_id }));
+
+  fetched.forEach((reviewer) => byId.set(reviewer.reviewerId, reviewer));
+
+  // Cached so the next hydrate finds them complete and does not fetch the same
+  // reviewers again. This runs on a timer, so without this a long history would
+  // be re-downloaded every minute for reviewers the device never opens.
+  if (fetched.length) cacheCloudReviewer(fetched);
 
   return byId;
 }
@@ -258,6 +292,11 @@ export async function hydrateFromCloud() {
 
   if (progressResult.data.length) mergeCloudProgress(progressResult.data, reviewersById);
   if (attemptsResult.data.length) mergeCloudAttempts(attemptsResult.data, reviewersById);
+
+  // Runs after both merges so it can compare against the attempts that just
+  // arrived, and before anything pushes, so a session this device already
+  // finished on another one is not sent back up again.
+  dropProgressOlderThanAttempts();
 
   // Prunes only what has already synced and fallen out of the history window, so
   // it is safe to fire and forget alongside the pull.
@@ -290,9 +329,16 @@ export async function pushUnsyncedLocalData() {
     )]);
   }
 
+  // A sign-in push used to be unconditional, so whichever device signed in last
+  // decided whose progress survived. A session older than the row the account
+  // already holds is left alone, so this can only ever move progress forward.
+  const { updatedAtByReviewerId } = await listCloudProgress(userId);
+
   let progress = 0;
   for (const session of Object.values(getAllProgress())) {
     if (!session?.reviewerId || session.completed) continue;
+    const cloudUpdatedAt = Date.parse(updatedAtByReviewerId?.[session.reviewerId] || "") || 0;
+    if (cloudUpdatedAt > getProgressTimestamp(session)) continue;
     const { error } = await upsertCloudProgress(userId, session);
     if (!error) progress += 1;
   }
@@ -338,9 +384,14 @@ export async function syncAccount() {
   // Deletes run before the pull, otherwise a record deleted while signed out
   // would be pulled straight back down from the account.
   const deletes = await applyPendingDeletes(activeUserId);
+  // The pull has to run before the push. Pushing first let a device holding
+  // stale local progress overwrite whatever the account already had, which is
+  // how two devices signed in to the same account ended up disagreeing for good.
+  // After the merge, local holds the newer of the two records, so the push that
+  // follows only ever carries real progress.
+  const hydrated = await hydrateFromCloud();
   const pushed = await pushUnsyncedLocalData();
   const flushed = await flushSyncQueue();
-  const hydrated = await hydrateFromCloud();
 
   return { ...deletes, ...pushed, ...flushed, error: hydrated.error };
 }

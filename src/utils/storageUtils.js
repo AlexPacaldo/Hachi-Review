@@ -226,6 +226,44 @@ export function getLatestAttempt(reviewerId) {
   return getAttemptHistory().find((attempt) => attempt.reviewerId === reviewerId) || null;
 }
 
+// Finishing a quiz clears progress, but that clear only reaches the device that
+// finished it. Without this, a second device kept showing "In progress" forever
+// and kept pushing that stale session back to the account, which is what made two
+// signed-in devices disagree about a reviewer's status. An attempt for a reviewer
+// is proof the quiz was completed, so any progress older than the newest such
+// attempt has already been superseded.
+export function dropProgressOlderThanAttempts(attempts = getAttemptHistory()) {
+  const newestAttemptAt = new Map();
+
+  (Array.isArray(attempts) ? attempts : []).forEach((attempt) => {
+    if (!attempt?.reviewerId) return;
+    const at = getAttemptTimestamp(attempt);
+    if (at > (newestAttemptAt.get(attempt.reviewerId) || 0)) {
+      newestAttemptAt.set(attempt.reviewerId, at);
+    }
+  });
+
+  if (!newestAttemptAt.size) return getAllProgress();
+
+  const progress = getAllProgress();
+  let changed = false;
+
+  Object.keys(progress).forEach((reviewerId) => {
+    const completedAt = newestAttemptAt.get(reviewerId);
+    if (!completedAt) return;
+    if (getProgressTimestamp(progress[reviewerId]) >= completedAt) return;
+    delete progress[reviewerId];
+    changed = true;
+  });
+
+  if (changed) {
+    writeJson(KEYS.progress, progress);
+    notifyReviewerDataChanged();
+  }
+
+  return progress;
+}
+
 export function getLocalReviewers() {
   return readJson(KEYS.localReviewers, []);
 }

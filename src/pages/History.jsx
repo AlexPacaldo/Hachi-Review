@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import EmptyState from "../components/EmptyState.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
-import { clearAttemptHistory, getAttemptHistory } from "../utils/storageUtils.js";
+import { clearAttemptHistory, getAttemptHistory, REVIEWER_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
 import { pushClearedHistoryToCloud } from "../services/syncEngine.js";
 import { formatDuration } from "../utils/quizUtils.js";
 
@@ -10,13 +10,27 @@ export default function History() {
   const [history, setHistory] = useState(getAttemptHistory);
   const [confirmClear, setConfirmClear] = useState(false);
 
+  // Attempts pulled down from the account arrive after this page has mounted, so
+  // without this the list showed whatever the browser already had and needed a
+  // second refresh to pick up a history synced from another device.
+  useEffect(() => {
+    const refresh = () => setHistory(getAttemptHistory());
+
+    window.addEventListener(REVIEWER_DATA_CHANGED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(REVIEWER_DATA_CHANGED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
   return (
     <div className="page">
       <section className="section-heading">
         <div>
-          <p className="eyebrow">Local history</p>
+          <p className="eyebrow">Account history</p>
           <h1>Quiz History</h1>
-          <p className="muted">Attempts are stored only in this browser.</p>
+          <p className="muted">Your completed quizzes follow your account and show up on every device you sign in on.</p>
         </div>
         {history.length ? (
           <button className="button subtle danger-text" type="button" onClick={() => setConfirmClear(true)}>

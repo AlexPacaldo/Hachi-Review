@@ -342,7 +342,7 @@ export default function Home() {
         <div className="section-heading compact">
           <div>
             <h2>Recent Attempts</h2>
-            <p className="muted">Your latest completed quizzes are stored in this browser.</p>
+            <p className="muted">Your latest completed quizzes follow your account and show up on every device you sign in on.</p>
           </div>
           <Link className="button subtle" to="/history">
             View History

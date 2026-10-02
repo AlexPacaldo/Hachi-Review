@@ -33,18 +33,39 @@ function getGroupScope(reviewer) {
   return ids.length ? ids : null;
 }
 
+// Restoring progress needs the full question list, so a signed-in account with a
+// long history would otherwise pull every reviewer in one unbounded query. These
+// rows are large, so the fetch is batched to keep a sync from stalling.
+const REVIEWER_FETCH_BATCH_SIZE = 12;
+
 export async function listCloudReviewersByIds(reviewerIds) {
   const ids = [...new Set((reviewerIds || []).map(String).filter(Boolean))];
   if (!supabase || !ids.length) return { data: [], error: null };
 
-  // No owner filter on purpose: a synced record can belong to a reviewer a
-  // friend shared, and the read policies already decide who may see it.
-  const { data, error } = await supabase
-    .from(REVIEWERS_TABLE)
-    .select("reviewer_id, data")
-    .in("reviewer_id", ids);
+  const rows = [];
+  let firstError = null;
 
-  return { data: data || [], error };
+  for (let index = 0; index < ids.length; index += REVIEWER_FETCH_BATCH_SIZE) {
+    const batch = ids.slice(index, index + REVIEWER_FETCH_BATCH_SIZE);
+
+    // No owner filter on purpose: a synced record can belong to a reviewer a
+    // friend shared, and the read policies already decide who may see it.
+    const { data, error } = await supabase
+      .from(REVIEWERS_TABLE)
+      .select("reviewer_id, data")
+      .in("reviewer_id", batch);
+
+    if (error) {
+      // A failed batch is reported but never discards the batches that worked,
+      // so one bad request cannot throw away the whole history.
+      firstError = firstError || error;
+      continue;
+    }
+
+    rows.push(...(data || []));
+  }
+
+  return { data: rows, error: firstError };
 }
 
 export async function upsertCloudReviewer(userId, reviewer) {

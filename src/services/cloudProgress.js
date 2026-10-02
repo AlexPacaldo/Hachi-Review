@@ -6,18 +6,28 @@ const ATTEMPTS_TABLE = "reviewer_attempts";
 const MAX_SYNCED_ATTEMPTS = 500;
 const ATTEMPT_RETENTION_DAYS = 14;
 
+// The row's own updated_at is returned separately rather than folded into the
+// session. It is only needed to decide whether a local session is newer than
+// what the account already holds, and merging it in would persist a field the
+// rest of the app has no use for and push straight back to the server.
 export async function listCloudProgress(userId) {
-  if (!supabase || !userId) return { data: [], error: null };
+  if (!supabase || !userId) return { data: [], updatedAtByReviewerId: {}, error: null };
 
   const { data, error } = await supabase
     .from(PROGRESS_TABLE)
     .select("reviewer_id, data, updated_at")
     .eq("owner_id", userId);
 
-  if (error) return { data: [], error };
+  if (error) return { data: [], updatedAtByReviewerId: {}, error };
+
+  const updatedAtByReviewerId = {};
 
   return {
-    data: (data || []).map((row) => ({ ...row.data, reviewerId: row.reviewer_id })),
+    data: (data || []).map((row) => {
+      if (row?.reviewer_id) updatedAtByReviewerId[row.reviewer_id] = row.updated_at;
+      return { ...row.data, reviewerId: row.reviewer_id };
+    }),
+    updatedAtByReviewerId,
     error: null
   };
 }
