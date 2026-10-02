@@ -99,6 +99,30 @@ DIFFICULTY LEVELS:
 - medium: requires choosing the right concept, cause, process stage, or comparison from closely related alternatives.
 - hard: requires applying the concept to an unfamiliar situation, resolving a tricky-but-fair distinction, or combining two or more ideas from the material.
 - A hard question must still be answerable from the study material. Difficulty comes from the reasoning required, never from an unfair or missing detail.`;
+const EXPLANATION_INSTRUCTIONS = `EXPLANATION QUALITY - CRITICAL:
+- An explanation must TEACH the concept behind the answer. It must never simply repeat or paraphrase the correct answer.
+- Every explanation should do at least 2-3 of the following: explain the underlying concept; explain why the correct answer fits this question; connect the concept to the scenario; explain the relationship between the ideas; clarify the distinction from a closely related concept; explain why the situation leads to this answer; give a simple example when useful.
+- Do not rearrange or swap words from the correct choice into the explanation. If the explanation reads like the answer written out as a sentence, it has failed.
+
+HOW TO WRITE EACH KIND OF EXPLANATION:
+- Scenario question: connect the explanation to the situation. For "A startup divides customers according to age, income, and education level. Which segmentation method is being used?" the answer "Demographic segmentation" is explained by noting that age, income and education describe the population of a customer group, and that this differs from behavioral segmentation, which focuses on actions such as usage frequency or purchasing behavior.
+- Concept question: explain the important idea rather than repeating the answer. For "Which technology enables secure digital transactions and smart contracts?" the answer "Blockchain" is explained by describing a distributed record of transactions that participants can share and verify, and how that structure supports secure transactions while programmable smart contracts execute agreed conditions.
+- Factual question: when the material gives enough context, explain why the fact matters. For "What percentage of startup failures is attributed to no market need?" the answer "42%" is explained by noting that the material identifies no market need as a major cause, and what that implies about validating the problem before building a solution.
+- Comparison question: use the explanation to clarify the distinction the question is testing. For "A customer purchases a product for an employee who will actually use it. Which distinction is demonstrated?" the answer "Buyer versus user" is explained by defining each role, noting they can be the same person, and pointing out that here they are different.
+- Process question: explain why the selected stage comes at that point in the process, not just what the stage is called.
+
+EXPLANATION LENGTH:
+- Aim for 1-3 sentences on straightforward questions and 2-4 sentences on scenario and application questions.
+- Add more only when the concept genuinely requires it. Do not pad explanations to look thorough.
+
+EXPLANATION SOURCE ACCURACY:
+- Every explanation must be supported by the provided study material. Do not introduce outside facts to make an explanation sound more impressive, and preserve the material's own terminology and concepts.
+- If the source only supports limited information about a concept, keep the explanation limited to what the source supports.
+
+EXPLANATION AUDIT, FOR EVERY QUESTION:
+- Compare the explanation against the question, the correct answer, and the choices, then ask: "Does this explanation give the student information they did not already get by reading the correct answer?" If not, rewrite it.
+- Then ask: "If I hide the answer choice, would this explanation still teach me something useful about the concept?" If not, rewrite it.
+- The student must finish reading it able to answer "Why was this the answer?", not "What did the answer choice say?"`;
 const QUESTION_TYPE_INSTRUCTIONS = {
   multiple_choice: {
     label: "multiple-choice",
@@ -106,20 +130,47 @@ const QUESTION_TYPE_INSTRUCTIONS = {
     instructions: `MULTIPLE-CHOICE RULES:
 - Every question must have exactly 4 choices: A, B, C, and D.
 - Every question must have exactly one correct answer.
-- Include a short, source-supported explanation for every question.
 
-CHOICE PARITY RULES (CRITICAL - THE STUDENT MUST NOT BE ABLE TO GUESS):
-- All four choices must be similar in topic, in level of specificity, and in grammatical structure.
-- Keep the four choices close in length. The correct answer must never be the longest, the shortest, or the only noticeably longer or more detailed choice. Aim for all four within a few words of each other.
-- Every choice must be a real concept taken from the same subject area of the material. A learner who half-understood the lesson must find all four plausible.
-- Never make the correct answer the only choice that uses technical terminology, the only professionally worded choice, or the only one written as a full sentence when the others are fragments.
-- Never use "All of the above", "None of the above", "Both A and B", or similar giveaways unless those exact choices already exist in an original quiz.
+ANSWER CHOICE BALANCE - CRITICAL:
+- Never make the correct answer noticeably longer, more detailed, more specific, or more technically sophisticated than the incorrect choices. The correct answer must NOT be identifiable because it contains more information.
+- Keep all four choices reasonably similar in length, level of detail, specificity, grammatical structure, complexity, and number of ideas.
+- The correct answer may be slightly longer when accuracy requires it, but there must NOT be a large or obvious difference. If the correct answer is substantially longer, rewrite the choices.
+- Do not add unnecessary detail to the correct answer just to make it accurate. Match its information density to the distractors: if the correct answer carries three components, the distractors need a comparable level of detail.
+- Every choice must be similar in topic and level of specificity. All four must be real concepts from the same subject area, so a learner who half-understood the lesson finds all four plausible.
+- Never make the correct answer the only choice that uses technical terminology, the only professionally worded choice, or the only grammatically complete sentence when the others are fragments.
+- Never repeat the correct choice's wording in the question stem, and never let the stem hint at which choice is right.
+
+UNBALANCED EXAMPLE, DO NOT WRITE THIS:
+- Question: "How do emerging technologies drive sustainability and social responsibility in modern business?"
+- A. By increasing paper usage and expanding carbon footprints
+- B. By optimizing energy use through IoT/AI, ensuring supply chain transparency via blockchain, and reducing paper via digital platforms
+- C. By accelerating manual trial-and-error manufacturing processes
+- D. By eliminating the need for remote work arrangements
+- Choice B is guessable because it is far longer and carries several specific examples while the others are short and obviously negative.
+
+BALANCED VERSION, WRITE SOMETHING LIKE THIS:
+- A. By increasing resource consumption through traditional operations
+- B. By improving efficiency, transparency, and resource management through digital technologies
+- C. By expanding manual processes across business operations
+- D. By replacing digital systems with conventional business practices
+- Every choice now carries the same amount of information and looks equally plausible.
+
+DISTRACTOR QUALITY:
+- Incorrect choices must be plausible enough that a student who does not fully understand the material could reasonably consider them.
+- Avoid obviously negative or extreme wording such as "By eliminating all technology", "By doing nothing", "By always increasing costs", "By completely removing users", or "By never using digital systems", unless the source material specifically supports those concepts.
+- Distractors should represent realistic misunderstandings, related concepts, alternative approaches, or other concepts from the same topic.
+- Every distractor must be clearly incorrect according to the material, and wrong for a defensible reason rather than obviously out of scope.
 - Never use absurd or joke distractors. A distractor must be something a confused learner would genuinely write.
-- Never repeat the correct choice's wording inside the question stem. The stem must not hint at which choice is right.
-- Distractors must be clearly incorrect according to the material, and they must be wrong for a defensible reason rather than obviously out of scope.
+- Never make the correct answer the only positive-sounding option while the distractors read as obviously negative.
+- Never use "All of the above", "None of the above", "Both A and B", or similar giveaways unless those exact choices already exist in an original quiz.
 
 DISTRACTOR DESIGN EXAMPLE:
 - If the answer is "Demographic segmentation", the other choices should be "Behavioral segmentation", "Psychographic segmentation", and "Geographic segmentation": four real methods from the same topic, only one of which fits the scenario.
+
+ANSWER CHOICE AUDIT, FOR EVERY QUESTION:
+- Ask: "Could a student guess the correct answer without knowing the material, just by picking the longest or most detailed option?" The answer must be NO.
+- Rewrite the choices, keeping the same correct concept, if any of these are true: the correct answer is the longest; it is the most technical; it is the only positive-sounding option; the incorrect choices use obviously negative wording; the correct answer is the only grammatically complete sentence; it carries more examples than every other choice; it is the only choice that directly repeats terminology from the question.
+- The student must understand the material to pick the answer, not read the formatting of the choices.
 
 ANSWER POSITION RULES:
 - correctAnswer must be only "A", "B", "C", or "D".
@@ -141,7 +192,7 @@ ANSWER POSITION RULES:
 - answerText must be the exact expected answer text.
 - choices must still be present for the schema, but set A, B, C, and D to empty strings.
 - Keep answers short enough to type, usually a term, name, date, concept, or short phrase.
-- Include a short, source-supported explanation for every question.`
+- The explanation must teach the concept rather than restate the expected answer.`
   },
   true_false: {
     label: "true/false",
@@ -152,7 +203,7 @@ ANSWER POSITION RULES:
 - correctAnswer must be only "A" or "B".
 - answerText must exactly match choices[correctAnswer].
 - Avoid trick wording unless the selected difficulty is hard.
-- Include a short, source-supported explanation for every question.`
+- The explanation must teach the concept and give the reason the statement holds or fails, rather than restating it.`
   },
   flashcard: {
     label: "flashcard",
@@ -163,7 +214,7 @@ ANSWER POSITION RULES:
 - correctAnswer must be "TEXT".
 - choices must still be present for the schema, but set A, B, C, and D to empty strings.
 - Prefer concise answers with the key fact, term, definition, or process.
-- Include a short source-supported explanation that reinforces the answer.`
+- The explanation must add context, reasoning, purpose, or application on the back of the card rather than restating the front.`
   }
 };
 
@@ -456,6 +507,8 @@ QUESTION TYPE RULES:
 - Set each question.type to "${questionType || "multiple_choice"}".
 ${questionTypeConfig.instructions}
 
+${EXPLANATION_INSTRUCTIONS}
+
 JSON RULES:
 - Return valid JSON only.
 - Do not wrap the answer in markdown.
@@ -477,8 +530,10 @@ FINAL SELF-CHECK BEFORE RETURNING JSON:
 - Every question has a topic and explanation.
 - No obvious duplicate questions.
 - For generated questions, correct-answer positions are reasonably balanced and not patterned.
-- For every multiple-choice question, all four choices are the same kind of thing: comparable in length, comparable in specificity, and grammatically parallel. The correct answer must not stand out by being longer, shorter, more technical, or better worded than the distractors.
 - No question gives the answer away in its own wording.
+- CHOICE AUDIT: for every multiple-choice question, ask whether a student could pick the correct answer without knowing the material, just by choosing the longest or most detailed option. The answer must be no. If the correct answer is the longest, the most technical, the only positive-sounding option, the only complete sentence, or the only one carrying more examples than the rest, rewrite the choices and keep the same correct concept.
+- EXPLANATION AUDIT: for every question, hide the correct choice and read the explanation on its own. If it no longer teaches anything useful about the concept, rewrite it. An explanation that only rearranges the answer choice's own words has failed.
+- EXPLANATION SUPPORT: no explanation introduces a fact that the study material does not contain.
 
 Reviewer details:
 - Title: ${title || "Generated Reviewer"}
@@ -530,12 +585,15 @@ QUESTION TYPE RULES:
 - Set each question.type to "${questionType || "multiple_choice"}".
 ${questionTypeConfig.instructions}
 
+${EXPLANATION_INSTRUCTIONS}
+
 JSON RULES:
 - Return a complete reviewer JSON object using the API schema.
 - The returned questions array must contain exactly ${missingCount} new questions.
 - Use question IDs starting at 1 inside this completion response.
 - questionCount must equal ${missingCount}.
-- For every multiple-choice question, all four choices must be comparable in length, specificity, and grammatical structure. The correct answer must never be the longest or the only technically worded choice.
+- For every multiple-choice question, run the answer choice audit and rewrite the choices if the correct answer is the longest, the most technical, the only positive-sounding option, or the only one carrying more examples than the rest.
+- For every question, run the explanation audit. Hide the correct choice and read the explanation alone; if it teaches nothing beyond the answer's own wording, rewrite it.
 
 Reviewer details:
 - Title: ${title || "Generated Reviewer"}
