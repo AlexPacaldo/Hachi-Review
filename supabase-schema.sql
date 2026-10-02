@@ -578,7 +578,11 @@ on public.reviewer_attempts(owner_id, reviewer_id);
 -- its own sync, so trimming needs no scheduled job and stays off every other
 -- user's query path. Security invoker keeps the delete under the owner's own
 -- delete policy.
-create or replace function public.prune_reviewer_attempts(p_owner uuid, p_older_than_days integer default 180)
+--
+-- The window is two weeks. It has to be changed here as well as in
+-- cloudProgress.js, because this default is what applies when the app calls the
+-- function without passing a window.
+create or replace function public.prune_reviewer_attempts(p_owner uuid, p_older_than_days integer default 14)
 returns integer
 language sql
 security invoker

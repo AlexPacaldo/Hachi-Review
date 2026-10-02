@@ -4,7 +4,7 @@ import { toCompactQuizRecord } from "../utils/quizUtils.js";
 const PROGRESS_TABLE = "reviewer_progress";
 const ATTEMPTS_TABLE = "reviewer_attempts";
 const MAX_SYNCED_ATTEMPTS = 500;
-const ATTEMPT_RETENTION_DAYS = 180;
+const ATTEMPT_RETENTION_DAYS = 14;
 
 export async function listCloudProgress(userId) {
   if (!supabase || !userId) return { data: [], error: null };
