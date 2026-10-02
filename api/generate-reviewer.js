@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { inferQuestionStyle } from "../src/utils/quizUtils.js";
+import { CHOICE_LETTERS, findChoiceBalanceIssues, getChoiceBalanceIssue, inferQuestionStyle } from "../src/utils/quizUtils.js";
 
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -139,6 +139,7 @@ const EXPLANATION_INSTRUCTIONS = `EXPLANATION QUALITY - CRITICAL:
 - An explanation must TEACH the concept behind the answer. It must never simply repeat or paraphrase the correct answer.
 - Every explanation should do at least 2-3 of the following: explain the underlying concept; explain why the correct answer fits this question; connect the concept to the scenario; explain the relationship between the ideas; clarify the distinction from a closely related concept; explain why the situation leads to this answer; give a simple example when useful.
 - Do not rearrange or swap words from the correct choice into the explanation. If the explanation reads like the answer written out as a sentence, it has failed.
+- This is the most common failure of all. Restating the correct choice with "The answer is", "This is defined as", or "X refers to" followed by the choice's own words adds nothing. A learner who has not seen the choices must still learn something from the explanation.
 
 HOW TO WRITE EACH KIND OF EXPLANATION:
 - Scenario question: connect the explanation to the situation. For "A startup divides customers according to age, income, and education level. Which segmentation method is being used?" the answer "Demographic segmentation" is explained by noting that age, income and education describe the population of a customer group, and that this differs from behavioral segmentation, which focuses on actions such as usage frequency or purchasing behavior.
@@ -193,6 +194,8 @@ BALANCED VERSION, WRITE SOMETHING LIKE THIS:
 - Every choice now carries the same amount of information and looks equally plausible.
 
 DISTRACTOR QUALITY:
+- Every distractor must come from the SAME subject area as the question. Importing a distractor from an unrelated field is the most common way this section fails, and it gives the item away even when the lengths match.
+- For a question about customer insights in technopreneurship, the other three choices must be other real concepts from technopreneurship or customer research. Never "software source code architectures", "government patent approvals", "corporate accounting", or anything from a different subject.
 - Incorrect choices must be plausible enough that a student who does not fully understand the material could reasonably consider them.
 - Avoid obviously negative or extreme wording such as "By eliminating all technology", "By doing nothing", "By always increasing costs", "By completely removing users", or "By never using digital systems", unless the source material specifically supports those concepts.
 - Distractors should represent realistic misunderstandings, related concepts, alternative approaches, or other concepts from the same topic.
@@ -200,6 +203,11 @@ DISTRACTOR QUALITY:
 - Never use absurd or joke distractors. A distractor must be something a confused learner would genuinely write.
 - Never make the correct answer the only positive-sounding option while the distractors read as obviously negative.
 - Never use "All of the above", "None of the above", "Both A and B", or similar giveaways unless those exact choices already exist in an original quiz.
+
+DISTRACTOR LENGTH RULE, THE ONE THAT MATTERS MOST:
+- Before returning, count the words in all four choices. If the correct choice is more than about two words longer than the others, rewrite the distractors until the four match.
+- Do not shorten a correct answer that is naturally wordy just to make it fit. Lengthen the distractors to meet it, or reword all four so they carry one idea each.
+- A correct answer may be one or two words longer. It must never be the clear outlier.
 
 DISTRACTOR DESIGN EXAMPLE:
 - If the answer is "Demographic segmentation", the other choices should be "Behavioral segmentation", "Psychographic segmentation", and "Geographic segmentation": four real methods from the same topic, only one of which fits the scenario.
@@ -302,6 +310,73 @@ const reviewerSchema = {
   },
   required: ["title", "subject", "coverage", "questionCount", "questionType", "choicesPerQuestion", "instructions", "questions"]
 };
+
+const choiceRepairSchema = {
+  type: "OBJECT",
+  properties: {
+    questions: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          id: { type: "INTEGER" },
+          choices: {
+            type: "OBJECT",
+            properties: {
+              A: { type: "STRING" },
+              B: { type: "STRING" },
+              C: { type: "STRING" },
+              D: { type: "STRING" }
+            },
+            required: ["A", "B", "C", "D"]
+          },
+          correctAnswer: { type: "STRING" },
+          answerText: { type: "STRING" },
+          explanation: { type: "STRING" }
+        },
+        required: ["id", "choices", "correctAnswer", "answerText", "explanation"]
+      }
+    }
+  },
+  required: ["questions"]
+};
+
+// Repairs only the give-away items, so the prompt is a short work order instead
+// of a second full generation. Rewriting in place is what makes this cheaper
+// than the original call and what keeps every other question untouched.
+function buildChoiceRepairPrompt(issues, sourceText) {
+  const workOrder = issues.map((issue) => [
+    `id ${issue.id}: ${issue.question}`,
+    `- The current choices give it away because ${issue.reasons.join("; ")}.`,
+    `- A: ${issue.choices.A}`,
+    `- B: ${issue.choices.B}`,
+    `- C: ${issue.choices.C}`,
+    `- D: ${issue.choices.D}`,
+    `- The correct answer is currently ${issue.correctAnswer}.`,
+    `- The current explanation is: ${issue.explanation}`
+  ].join("\n")).join("\n\n");
+
+  return `The following multiple-choice questions were written so that the answer gives itself away by its shape. Rewrite just those questions.
+
+${workOrder}
+
+WHAT WENT WRONG:
+- The correct choice is visibly longer, more detailed, or the only one carrying more than one idea, so a learner can pick it without knowing the subject.
+- In these items the distractors are also drawn from unrelated subject areas, which makes them easy to rule out rather than hard to choose between.
+
+REWRITE EACH QUESTION SO THAT:
+- Keep the same concept as the correct answer. Do not change what the question is really asking, and do not change which answer is correct. Only the wording and the explanations get rewritten.
+- Keep the same id, and return exactly the ${issues.length} question(s) listed above and nothing else.
+- Match all four choices to each other on length, detail, and specificity. Count the words and aim for all four to land within about two words of each other.
+- Keep all four choices in the same subject area as the question. A learner who half-understood the lesson must find all four plausible, so never import a distractor from an unrelated field.
+- Never repeat the question's own wording inside the correct choice.
+- No "All of the above", "None of the above", or "Both A and B".
+- answerText must exactly equal choices[correctAnswer].
+- Rewrite the explanation so it teaches the concept instead of restating the correct choice. A learner who has not read the choices should still learn something useful from it.
+
+Study material for reference:
+${(sourceText || "[The study material was not pasted as text.]").slice(0, 24000)}`;
+}
 
 function sendJson(response, statusCode, payload) {
   response.status(statusCode).json(payload);
@@ -790,7 +865,99 @@ function getDifficultyMixWarning(reviewer) {
   return `Difficulty mix came back thin (${sparse.map((level) => `${mix[level]} ${level}`).join(", ")} out of ${total}). Filtering to ${sparse.join(" or ")} in the reviewer will return fewer questions than expected.`;
 }
 
-async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs }) {
+// One repair call has to stay cheap, so only the worst offenders go back to the
+// model. Anything past this is still reported to the learner as a warning.
+const MAX_CHOICE_REPAIR_QUESTIONS = 12;
+
+// A repair is only accepted if it actually fixed the item. The model sometimes
+// returns choices that are still lopsided, or answers pointing at a blank, and
+// keeping the original is always better than shipping a half-finished rewrite.
+function applyChoiceRepairs(reviewer, rawRepair, issues) {
+  const repairsById = new Map(
+    (Array.isArray(rawRepair?.questions) ? rawRepair.questions : [])
+      .filter((repair) => repair && Number.isFinite(Number(repair.id)))
+      .map((repair) => [Number(repair.id), repair])
+  );
+  let repairedCount = 0;
+
+  const questions = (reviewer?.questions || []).map((question) => {
+    const repair = repairsById.get(Number(question?.id));
+    if (!repair) return question;
+
+    const choices = {
+      A: String(repair?.choices?.A || "").trim(),
+      B: String(repair?.choices?.B || "").trim(),
+      C: String(repair?.choices?.C || "").trim(),
+      D: String(repair?.choices?.D || "").trim()
+    };
+    if (CHOICE_LETTERS.some((letter) => !choices[letter])) return question;
+
+    const correctAnswer = String(repair?.correctAnswer || "").trim().toUpperCase();
+    if (!CHOICE_LETTERS.includes(correctAnswer)) return question;
+
+    const candidate = {
+      ...question,
+      choices,
+      correctAnswer,
+      answerText: choices[correctAnswer],
+      explanation: String(repair?.explanation || question.explanation || "").trim()
+    };
+
+    if (getChoiceBalanceIssue(candidate)) return question;
+
+    repairedCount += 1;
+    return candidate;
+  });
+
+  return { reviewer: { ...reviewer, questions }, repairedCount, attemptedCount: issues.length };
+}
+
+// Prompt rules for balanced choices demonstrably leak, so the finished reviewer
+// is measured instead and only the give-away items are sent back for a rewrite.
+// Best effort by design: a reviewer with one long distractor beats a failed
+// request, so any error here returns the reviewer untouched.
+async function rebalanceReviewerChoices({ reviewer, sourceText, requestId }) {
+  const issues = findChoiceBalanceIssues(reviewer?.questions);
+  if (!issues.length) return { reviewer, repairedCount: 0, unresolvedCount: 0 };
+
+  const repairable = issues.slice(0, MAX_CHOICE_REPAIR_QUESTIONS);
+
+  try {
+    const { reviewer: rawRepair } = await requestReviewerWithFallback({
+      parts: [{ text: buildChoiceRepairPrompt(repairable, sourceText) }],
+      hasReadableMaterial: true,
+      requestId
+    });
+    const result = applyChoiceRepairs(reviewer, rawRepair, repairable);
+
+    if (result.repairedCount) {
+      console.warn(`[${requestId}] Rewrote ${result.repairedCount} of ${issues.length} give-away choices.`);
+    }
+
+    return {
+      reviewer: result.reviewer,
+      repairedCount: result.repairedCount,
+      unresolvedCount: issues.length - result.repairedCount
+    };
+  } catch (error) {
+    console.warn(`[${requestId}] Could not rebalance give-away choices: ${error?.message || "Unknown error"}`);
+    return { reviewer, repairedCount: 0, unresolvedCount: issues.length };
+  }
+}
+
+// A give-away choice that survived the repair pass is still a flaw in the
+// reviewer, so say how many rather than shipping it silently.
+function getChoiceBalanceWarning(repairedCount, unresolvedCount) {
+  if (!unresolvedCount) return null;
+
+  const repaired = repairedCount
+    ? `${repairedCount} give-away ${repairedCount === 1 ? "question was" : "questions were"} rewritten, `
+    : "";
+
+  return `${repaired}but ${unresolvedCount} still ${unresolvedCount === 1 ? "has" : "have"} an answer that stands out by its length or detail. Regenerate if that bothers you.`;
+}
+
+async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs, schema }) {
   const geminiResponse = await fetchWithTimeout(`${GEMINI_ENDPOINT}/${model}:generateContent`, {
     method: "POST",
     headers: {
@@ -808,7 +975,7 @@ async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs }) {
         temperature: 0.35,
         maxOutputTokens: 32768,
         response_mime_type: "application/json",
-        response_schema: reviewerSchema
+        response_schema: schema || reviewerSchema
       }
     })
   }, timeoutMs, "Gemini");
@@ -984,7 +1151,7 @@ async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasRe
   }
 }
 
-async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId, hasFileData = false }) {
+async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId, hasFileData = false, schema }) {
   const providers = getConfiguredProviders({ hasFileData, hasReadableMaterial });
 
   if (!providers.length) {
@@ -1005,7 +1172,7 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
       const apiKey = process.env[provider.apiKeyEnv];
       const model = getProviderModel(provider);
       const reviewer = provider.kind === "gemini"
-        ? await requestReviewerFromGemini({ apiKey, model, parts, timeoutMs })
+        ? await requestReviewerFromGemini({ apiKey, model, parts, timeoutMs, schema })
         : await requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasReadableMaterial, timeoutMs });
 
       if (attempts.length) {
@@ -1170,23 +1337,29 @@ export default async function handler(request, response) {
         instructions: baseReviewer.instructions,
         questionType: extensionQuestionType
       });
-      const reviewer = {
+const reviewer = {
         ...mergeReviewers(baseReviewer, additionalReviewer, requestedCount),
         reviewerId: existingReviewer.reviewerId || baseReviewer.reviewerId
       };
+      const { reviewer: rebalancedReviewer, repairedCount, unresolvedCount } = await rebalanceReviewerChoices({
+        reviewer,
+        sourceText: safeSourceText,
+        requestId
+      });
 
       return sendJson(response, 200, {
-        reviewer,
+        reviewer: rebalancedReviewer,
         provider: servedProvider,
         requestedQuestionCount: requestedCount,
-        generatedQuestionCount: reviewer.questions.length,
-        addedQuestionCount: Math.max(0, reviewer.questions.length - baseReviewer.questions.length),
-        difficultyMix: getDifficultyMix(reviewer.questions),
+        generatedQuestionCount: rebalancedReviewer.questions.length,
+        addedQuestionCount: Math.max(0, rebalancedReviewer.questions.length - baseReviewer.questions.length),
+        difficultyMix: getDifficultyMix(rebalancedReviewer.questions),
         warning: [
           reviewer.questions.length < requestedCount
-            ? `${servedProvider} added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - baseReviewer.questions.length} requested new questions.`
+            ? `${servedProvider} added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - reviewer.questions.length} requested new questions.`
             : null,
-          getDifficultyMixWarning(reviewer)
+          getDifficultyMixWarning(rebalancedReviewer),
+          getChoiceBalanceWarning(repairedCount, unresolvedCount)
         ].filter(Boolean).join(" ") || null
       });
     } catch (error) {
@@ -1296,19 +1469,26 @@ export default async function handler(request, response) {
       reviewer = mergeReviewers(reviewer, additionalReviewer, requestedCount);
     }
 
+    const { reviewer: rebalancedReviewer, repairedCount, unresolvedCount } = await rebalanceReviewerChoices({
+      reviewer,
+      sourceText: safeSourceText,
+      requestId
+    });
+
     const warning = [
       requestedCount && reviewer.questions.length < requestedCount
         ? `${servedProvider} generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
         : null,
-      getDifficultyMixWarning(reviewer)
+      getDifficultyMixWarning(rebalancedReviewer),
+      getChoiceBalanceWarning(repairedCount, unresolvedCount)
     ].filter(Boolean).join(" ") || null;
 
     return sendJson(response, 200, {
-      reviewer,
+      reviewer: rebalancedReviewer,
       provider: servedProvider,
       requestedQuestionCount: requestedCount || "comprehensive",
-      generatedQuestionCount: reviewer.questions.length,
-      difficultyMix: getDifficultyMix(reviewer.questions),
+      generatedQuestionCount: rebalancedReviewer.questions.length,
+      difficultyMix: getDifficultyMix(rebalancedReviewer.questions),
       warning
     });
   } catch (error) {

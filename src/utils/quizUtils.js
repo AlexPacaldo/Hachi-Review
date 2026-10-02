@@ -76,6 +76,93 @@ export function countNegativeStemQuestions(questions) {
   return (questions || []).filter(isNegativeStemQuestion).length;
 }
 
+export const CHOICE_LETTERS = ["A", "B", "C", "D"];
+
+// A learner's fastest tell is shape, not knowledge: whichever choice is longer,
+// or the only one carrying two ideas, gets picked without reading. Prompt rules
+// alone did not stop that, so the same check runs in code and hands the failures
+// to a repair pass. These thresholds sit above ordinary wording variance so a
+// genuinely shorter-but-correct answer is not flagged.
+const BALANCE_LENGTH_RATIO = 1.5;
+const BALANCE_MIN_WORD_GAP = 3;
+const BALANCE_MAX_WORD_GAP = 4;
+const BALANCE_MIN_SHORT_RATIO = 0.6;
+
+function countWords(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+// Commas and semicolons are the reliable signal that a choice packs in extra
+// ideas. Counting "and"/"or" would misfire on ordinary phrases like
+// "research and development".
+function countClauses(text) {
+  return (String(text || "").match(/[,;]/g) || []).length;
+}
+
+function getMedian(values) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)];
+}
+
+// Returns null when the question is fine, or an object describing exactly what
+// gives it away so a repair prompt can be told the specific problem.
+export function getChoiceBalanceIssue(question) {
+  const choices = question?.choices || {};
+  const texts = CHOICE_LETTERS.map((letter) => String(choices[letter] || "").trim());
+
+  // Typed and true/false reviewers reuse the schema with blank or fixed
+  // choices, and a duplicated choice cannot be a length tell.
+  if (texts.some((text) => !text)) return null;
+  if (new Set(texts.map((text) => text.toLowerCase())).size !== texts.length) return null;
+
+  const correctAnswer = String(question?.correctAnswer || "").trim().toUpperCase();
+  const correctIndex = CHOICE_LETTERS.indexOf(correctAnswer);
+  if (correctIndex === -1) return null;
+
+  const wordCounts = texts.map(countWords);
+  const clauseCounts = texts.map(countClauses);
+  const correctWords = wordCounts[correctIndex];
+  const distractorWords = wordCounts.filter((_, index) => index !== correctIndex);
+  const medianDistractorWords = getMedian(distractorWords);
+  if (!correctWords || !medianDistractorWords) return null;
+
+  const reasons = [];
+  const wordGap = correctWords - medianDistractorWords;
+  const plural = (count) => `${count} ${count === 1 ? "word" : "words"}`;
+
+  if (wordGap >= BALANCE_MIN_WORD_GAP && correctWords / medianDistractorWords >= BALANCE_LENGTH_RATIO) {
+    reasons.push(`the correct answer is ${plural(correctWords)} while the other choices sit around ${plural(medianDistractorWords)}`);
+  }
+
+  if (wordGap <= -BALANCE_MAX_WORD_GAP && correctWords / medianDistractorWords <= BALANCE_MIN_SHORT_RATIO) {
+    reasons.push(`the correct answer is ${plural(correctWords)} while the other choices sit around ${plural(medianDistractorWords)}, so it stands out as the short one`);
+  }
+
+  const maxDistractorClauses = Math.max(...clauseCounts.filter((_, index) => index !== correctIndex));
+  if (clauseCounts[correctIndex] >= 2 && maxDistractorClauses < 2) {
+    reasons.push(`the correct answer is the only choice that packs in more than one idea (${clauseCounts[correctIndex]} clauses against ${maxDistractorClauses})`);
+  }
+
+  if (!reasons.length) return null;
+
+  return {
+    id: question?.id,
+    question: String(question?.question || "").trim(),
+    choices: { ...choices },
+    correctAnswer,
+    answerText: String(question?.answerText || "").trim(),
+    explanation: String(question?.explanation || "").trim(),
+    correctWords,
+    medianDistractorWords,
+    reasons
+  };
+}
+
+export function findChoiceBalanceIssues(questions) {
+  return (questions || []).map((question) => getChoiceBalanceIssue(question)).filter(Boolean);
+}
+
 export function getQuestionStyle(question) {
   const raw = String(question?.style || "").trim().toLowerCase();
   return ["scenario", "direct"].includes(raw) ? raw : inferQuestionStyle(question?.question);

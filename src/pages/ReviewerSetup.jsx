@@ -6,7 +6,7 @@ import ConfirmModal from "../components/ConfirmModal.jsx";
 import ReviewerMenu from "../components/ReviewerMenu.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useReviewer } from "../hooks/useReviewer.js";
-import { countNegativeStemQuestions, createQuizSession, getQuestionDifficulty, getQuestionStyle, getQuestionTypeOptions, getReviewerStyleCounts, getStoredQuestionTypes } from "../utils/quizUtils.js";
+import { countNegativeStemQuestions, createQuizSession, findChoiceBalanceIssues, getQuestionDifficulty, getQuestionStyle, getQuestionTypeOptions, getReviewerStyleCounts, getStoredQuestionTypes } from "../utils/quizUtils.js";
 import { clearQuizProgress, getLatestAttempt, loadQuizProgress, saveQuizProgress } from "../utils/storageUtils.js";
 import { pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
 import hachiDogCurious from "../assets/hachi-dog-curious.png";
@@ -98,6 +98,7 @@ export default function ReviewerSetup() {
   const defaultQuestionTypes = useMemo(() => (reviewer ? getStoredQuestionTypes(reviewer) : []), [reviewer]);
   const styleCounts = useMemo(() => getReviewerStyleCounts(reviewer?.questions || []), [reviewer]);
   const negativeStemCount = useMemo(() => countNegativeStemQuestions(reviewer?.questions || []), [reviewer]);
+  const giveAwayCount = useMemo(() => findChoiceBalanceIssues(reviewer?.questions || []).length, [reviewer]);
   const difficultyCounts = useMemo(() => {
     return (reviewer?.questions || []).reduce((counts, question) => {
       const level = ["easy", "medium", "hard"].includes(question?.difficulty) ? question.difficulty : "medium";
@@ -385,6 +386,15 @@ export default function ReviewerSetup() {
             {negativeStemCount > 0 ? `: this reviewer has ${negativeStemCount} of them.` : ": this reviewer has none."}
           </p>
         </fieldset>
+
+        {giveAwayCount > 0 ? (
+          <fieldset>
+            <legend>Answer Balance</legend>
+            <p className="muted">
+              {giveAwayCount} of {totalQuestions} {giveAwayCount === 1 ? "question has" : "questions have"} an answer that stands out by its length or detail, so it can be guessed without knowing the material. New reviewers get these rewritten automatically. To fix this one, regenerate it from the Generator.
+            </p>
+          </fieldset>
+        ) : null}
 
         <fieldset>
           <legend>Question Order</legend>
