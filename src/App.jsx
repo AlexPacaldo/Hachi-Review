@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import Navbar from "./components/Navbar.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import AdminUsageBanner from "./components/AdminUsageBanner.jsx";
 import { NotificationToasts } from "./components/NotificationCenter.jsx";
 import SocialNotificationWatcher from "./components/SocialNotificationWatcher.jsx";
@@ -118,24 +119,26 @@ function AppShell() {
       {isLanding ? null : <AdminUsageBanner />}
       {isLanding ? null : <div className="top-pill-spacer" aria-hidden="true" />}
       <main className={isLanding ? "landing-main" : undefined}>
-        <Routes>
-          <Route path="/" element={<Landing theme={theme} onToggleTheme={toggleTheme} />} />
-          <Route path="/home" element={<Home />} />
-          <Route path="/reviewer/:reviewerId" element={<ReviewerSetup />} />
-          <Route path="/quiz/:reviewerId" element={<Quiz />} />
-          <Route path="/results/:reviewerId" element={<Results />} />
-          <Route path="/review/:reviewerId" element={<ReviewAnswers />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/library" element={<Library />} />
-          <Route path="/friends" element={<Friends />} />
-          <Route path="/groups" element={<Groups />} />
-          <Route path="/groups/:groupId" element={<GroupDetail />} />
-          <Route path="/generator" element={<Generator />} />
-          <Route path="/account" element={<Account />} />
-          <Route path="/privacy" element={<Privacy />} />
-          <Route path="/terms" element={<Terms />} />
-          <Route path="*" element={<Navigate to="/home" replace />} />
-        </Routes>
+        <ErrorBoundary key={location.pathname}>
+          <Routes>
+            <Route path="/" element={<Landing theme={theme} onToggleTheme={toggleTheme} />} />
+            <Route path="/home" element={<Home />} />
+            <Route path="/reviewer/:reviewerId" element={<ReviewerSetup />} />
+            <Route path="/quiz/:reviewerId" element={<Quiz />} />
+            <Route path="/results/:reviewerId" element={<Results />} />
+            <Route path="/review/:reviewerId" element={<ReviewAnswers />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/library" element={<Library />} />
+            <Route path="/friends" element={<Friends />} />
+            <Route path="/groups" element={<Groups />} />
+            <Route path="/groups/:groupId" element={<GroupDetail />} />
+            <Route path="/generator" element={<Generator />} />
+            <Route path="/account" element={<Account />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="*" element={<Navigate to="/home" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
     </AuthProvider>
   );

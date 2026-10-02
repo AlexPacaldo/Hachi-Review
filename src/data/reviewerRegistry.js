@@ -86,6 +86,16 @@ function withValidation(reviewer, source, storageStatus = source) {
   };
 }
 
+// A reviewer fetched on demand comes straight off the cloud, so it carries none
+// of the fields the registry attaches. Pages read reviewer.validation,
+// reviewer.source and reviewer.storageStatus, so anything that hands them a raw
+// row instead of a registry entry is handing them an object that is missing
+// those fields. This is that entry point, so the on-demand fetch and the cached
+// list path always produce the same shape.
+export function describeReviewer(reviewer, source = "cloud", storageStatus) {
+  return withValidation(reviewer, source, storageStatus);
+}
+
 export function getAllReviewers() {
   const cloudReviewers = getCloudReviewerCache().map((reviewer) => withValidation(reviewer, "cloud"));
   const localReviewers = getLocalReviewers().map((reviewer) => withValidation(reviewer, "local"));

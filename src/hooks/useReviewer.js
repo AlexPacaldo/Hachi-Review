@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { getReviewerById, isReviewerSummary } from "../data/reviewerRegistry.js";
+import { describeReviewer, getReviewerById, isReviewerSummary } from "../data/reviewerRegistry.js";
 import { getCloudReviewerById } from "../services/cloudReviewers.js";
 import { cacheCloudReviewer } from "../utils/storageUtils.js";
 
@@ -43,7 +43,14 @@ export function useReviewer(reviewerId, refreshKey = 0) {
         }
 
         cacheCloudReviewer(data);
-        setLoaded(data);
+        // Read back through the registry instead of using the fetched row. A row
+        // straight off the cloud has no source, storageStatus or validation on
+        // it, and pages read all three, so passing it through untouched threw on
+        // the first render of any reviewer this device had not opened yet and
+        // left the page blank until it was reloaded. Going back through the
+        // registry also keeps the merged local-plus-cloud case deciding its
+        // validity the same way it does on every later visit.
+        setLoaded(getReviewerById(summaryId) || describeReviewer(data, "cloud", "cloud"));
         setIsLoading(false);
       })
       .catch(() => {
