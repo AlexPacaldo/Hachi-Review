@@ -5,13 +5,23 @@ const STUDY_DAYS_TABLE = "reviewer_study_days";
 // carry a whole history of days at once.
 const MARK_BATCH_SIZE = 90;
 
-export async function listCloudStudyDays(userId) {
+// sinceDay trims the pull to days the device does not already have. Study days are
+// only ever added, never removed or edited, so anything at or below the newest day
+// this device holds is already known and asking for it again just spends egress.
+// A device with nothing yet sends no bound and takes the whole list.
+export async function listCloudStudyDays(userId, sinceDay) {
   if (!supabase || !userId) return { data: [], error: null };
 
-  const { data, error } = await supabase
+  const bound = /^\d{4}-\d{2}-\d{2}$/.test(String(sinceDay || "")) ? sinceDay : null;
+
+  let query = supabase
     .from(STUDY_DAYS_TABLE)
     .select("day")
     .eq("owner_id", userId);
+
+  if (bound) query = query.gt("day", bound);
+
+  const { data, error } = await query;
 
   if (error) return { data: [], error };
 

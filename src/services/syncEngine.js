@@ -21,6 +21,7 @@ import {
   getPendingStudyDays,
   getProgressTimestamp,
   getSyncQueue,
+  getStudyDays,
   cacheCloudReviewer,
   clearPendingStudyDays,
   mergeCloudAttempts,
@@ -350,17 +351,31 @@ export async function hydrateFromCloud() {
   // finished on another one is not sent back up again.
   dropProgressOlderThanAttempts();
 
-  // Pulled separately from progress and attempts. An account that has not had the
-  // study days table created yet simply reports an error here, which the caller
-  // already tolerates, and the local ledger keeps the streak working meanwhile.
-  const studyDaysResult = await listCloudStudyDays(activeUserId);
-  if (studyDaysResult.data.length) mergeCloudStudyDays(studyDaysResult.data);
-
   // Prunes only what has already synced and fallen out of the history window, so
   // it is safe to fire and forget alongside the pull.
   pruneOldCloudAttempts(activeUserId);
 
-  return { error: progressResult.error || attemptsResult.error || studyDaysResult.error || null };
+  return { error: progressResult.error || attemptsResult.error || null };
+}
+
+// Deliberately not part of hydrateFromCloud. That runs on a 60 second timer, and a
+// study day is recorded at most once a day, so pulling the whole list every minute
+// spent roughly 87 MB a month per learner sitting on the Home page for egress and
+// returned nothing new almost every time. This runs on sign-in and reconnect
+// instead, and only asks for days the device has not seen, which is normally none.
+//
+// An account without the table yet just reports an error, which syncAccount
+// already tolerates, and the local ledger keeps the streak working meanwhile.
+export async function hydrateStudyDaysFromCloud() {
+  if (!canWrite()) return { error: null };
+
+  const known = getStudyDays();
+  const sinceDay = known.length ? known[known.length - 1] : null;
+  const { data, error } = await listCloudStudyDays(activeUserId, sinceDay);
+
+  if (data.length) mergeCloudStudyDays(data);
+
+  return { error };
 }
 
 export async function pushUnsyncedLocalData() {
@@ -448,9 +463,10 @@ export async function syncAccount() {
   // After the merge, local holds the newer of the two records, so the push that
   // follows only ever carries real progress.
   const hydrated = await hydrateFromCloud();
+  const studyDays = await hydrateStudyDaysFromCloud();
   const pushed = await pushUnsyncedLocalData();
-  const studyDays = await pushStudyDaysToCloud();
+  const studyDayPush = await pushStudyDaysToCloud();
   const flushed = await flushSyncQueue();
 
-  return { ...deletes, ...pushed, ...studyDays, ...flushed, error: hydrated.error };
+  return { ...deletes, ...pushed, ...studyDays, ...studyDayPush, ...flushed, error: hydrated.error || studyDays.error };
 }
