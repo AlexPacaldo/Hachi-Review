@@ -851,10 +851,28 @@ grant select on public.reviewer_summaries to authenticated;
 -- Owner-only database usage readout. The size is checked inside the function
 -- rather than in the client, so the number is not available to any other
 -- account even by calling the function directly.
---
--- v_limit is the Free plan allowance. Raising it to 8 GB is the first thing to
--- change when this project moves to the Pro plan, otherwise the warning will
--- keep firing at 500 MB on a project that has room to spare.
+create or replace table public.admin_settings (
+  key text primary key,
+  value bigint not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.admin_settings enable row level security;
+revoke all on table public.admin_settings from anon, authenticated;
+
+-- The plan allowance lives here rather than inside the function below, so moving
+-- to the pro plan is one call instead of a code change that has to be remembered.
+-- do nothing on conflict so re-applying this file does not undo a change already
+-- made through admin_set_database_limit.
+insert into public.admin_settings (key, value)
+values ('database_limit_bytes', 500 * 1024 * 1024)
+on conflict (key) do nothing;
+
+-- Reports the database size against the stored limit, plus the reviewer storage
+-- that decides whether those numbers are fine. avgReviewerKb is the on disk size
+-- of a reviewer after Postgres has compressed it, so comparing it against the
+-- roughly 55 KB of a hundred question reviewer in JSON says whether the review
+-- storage is worth compressing any further.
 create or replace function public.admin_database_usage()
 returns jsonb
 language plpgsql
@@ -863,8 +881,11 @@ set search_path = public
 as $$
 declare
   v_email text;
-  v_limit bigint := 500 * 1024 * 1024;
+  v_limit bigint;
   v_used bigint;
+  v_reviewer_count bigint;
+  v_avg_kb numeric;
+  v_max_kb numeric;
 begin
   select lower(u.email) into v_email
   from auth.users u
@@ -874,18 +895,69 @@ begin
     return null;
   end if;
 
+  select value into v_limit
+  from public.admin_settings
+  where key = 'database_limit_bytes';
+
+  if v_limit is null or v_limit <= 0 then
+    v_limit := 500 * 1024 * 1024;
+  end if;
+
   v_used := pg_database_size(current_database());
+
+  select count(*), avg(pg_column_size(data)), max(pg_column_size(data))
+  into v_reviewer_count, v_avg_kb, v_max_kb
+  from public.reviewers;
 
   return jsonb_build_object(
     'usedBytes', v_used,
     'limitBytes', v_limit,
-    'percentUsed', round(v_used * 100.0 / v_limit, 1)
+    'percentUsed', round(v_used * 100.0 / v_limit, 1),
+    'reviewerCount', v_reviewer_count,
+    'avgReviewerKb', round(v_avg_kb / 1024.0, 1),
+    'maxReviewerKb', round(v_max_kb / 1024.0, 1),
+    'reviewerTableBytes', pg_total_relation_size('public.reviewers'::regclass)
   );
 end;
 $$;
 
 revoke execute on function public.admin_database_usage() from public, anon;
 grant execute on function public.admin_database_usage() to authenticated;
+
+-- Changes the limit the warning is measured against. Call this once after
+-- upgrading to the pro plan, otherwise the warning keeps firing at 500 MB on a
+-- project that has 8 GB to work with.
+create or replace function public.admin_set_database_limit(p_limit_bytes bigint)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_email text;
+begin
+  select lower(u.email) into v_email
+  from auth.users u
+  where u.id = auth.uid();
+
+  if v_email is distinct from '[redacted]' then
+    raise exception 'not allowed';
+  end if;
+
+  if p_limit_bytes is null or p_limit_bytes < 1048576 then
+    raise exception 'limit must be at least 1 MB';
+  end if;
+
+  insert into public.admin_settings (key, value, updated_at)
+  values ('database_limit_bytes', p_limit_bytes, now())
+  on conflict (key) do update set value = excluded.value, updated_at = now();
+
+  return p_limit_bytes;
+end;
+$$;
+
+revoke execute on function public.admin_set_database_limit(bigint) from public, anon;
+grant execute on function public.admin_set_database_limit(bigint) to authenticated;
 
 -- Realtime: instantly push friendship and share changes to signed-in clients.
 -- Requires re-apply of this file (or running this block) in the Supabase dashboard.

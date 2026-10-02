@@ -24,12 +24,32 @@ export async function getAdminDatabaseUsage({ force = false } = {}) {
   const usage = {
     usedBytes: Number(data.usedBytes) || 0,
     limitBytes: Number(data.limitBytes) || 0,
-    percentUsed: Number(data.percentUsed) || 0
+    percentUsed: Number(data.percentUsed) || 0,
+    reviewerCount: Number(data.reviewerCount) || 0,
+    avgReviewerKb: Number(data.avgReviewerKb) || 0,
+    maxReviewerKb: Number(data.maxReviewerKb) || 0,
+    reviewerTableBytes: Number(data.reviewerTableBytes) || 0
   };
 
   cached = usage;
   cachedAt = Date.now();
   return usage;
+}
+
+// The plan allowance is stored in the database rather than compiled in, so this
+// is a one time call after upgrading instead of a change to this file.
+export async function setAdminDatabaseLimit(limitBytes) {
+  if (!supabase) return { limitBytes: null, error: null };
+
+  const { data, error } = await supabase.rpc("admin_set_database_limit", {
+    p_limit_bytes: Math.round(limitBytes)
+  });
+  if (error) return { limitBytes: null, error };
+
+  cached = null;
+  cachedAt = 0;
+
+  return { limitBytes: Number(data) || null, error: null };
 }
 
 export function formatDatabaseSize(bytes) {
