@@ -5,11 +5,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests; script-src 'self' 'sha256-DPiKwbonEgT/iob0Ce0VUCW8OBn95lY8z3LXacfazCQ=' https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net https://*.googletagservices.com https://*.googleadservices.com https://securepubads.g.doubleclick.net https://ajax.googleapis.com https://*.monetag.com https://nap5k.com https://5gvci.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://picsum.photos; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'self' https://*.googlesyndication.com https://*.doubleclick.net https://*.googletagservices.com https://*.monetag.com https://nap5k.com https://5gvci.com https://fundingchoicesmessages.google.com; worker-src 'self' blob:; manifest-src 'self'"
-        },
-        {
-          "key": "Content-Security-Policy-Report-Only",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co"
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests; script-src 'self' 'sha256-DPiKwbonEgT/iob0Ce0VUCW8OBn95lY8z3LXacfazCQ=' https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net https://*.googletagservices.com https://*.googleadservices.com https://securepubads.g.doubleclick.net https://ajax.googleapis.com https://*.monetag.com https://nap5k.com https://5gvci.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com https://*.ggpht.com https://picsum.photos; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'self' https://*.googlesyndication.com https://*.doubleclick.net https://*.googletagservices.com https://*.monetag.com https://nap5k.com https://5gvci.com https://fundingchoicesmessages.google.com; worker-src 'self' blob:; manifest-src 'self'"
         },
         {
           "key": "X-Content-Type-Options",
