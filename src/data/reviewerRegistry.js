@@ -57,7 +57,27 @@ export const reviewers = [].map((reviewer) => ({
   validation: validateReviewer(reviewer)
 }));
 
+// The reviewer list is loaded as a summary with no questions, which is enough
+// to draw a card but not enough to validate or quiz. These are distinguished
+// from a broken reviewer so the list does not report every cloud reviewer as
+// invalid while its questions are still only one fetch away.
+export function isReviewerSummary(reviewer) {
+  return Boolean(reviewer?.reviewerId) && !Array.isArray(reviewer.questions);
+}
+
 function withValidation(reviewer, source, storageStatus = source) {
+  // Scoped to the cloud source on purpose. A local reviewer that arrived without
+  // questions is a broken import and should still say so.
+  if (source === "cloud" && isReviewerSummary(reviewer)) {
+    return {
+      ...reviewer,
+      isSummary: true,
+      source,
+      storageStatus,
+      validation: { isValid: true, errors: [], isSummary: true }
+    };
+  }
+
   return {
     ...reviewer,
     source,

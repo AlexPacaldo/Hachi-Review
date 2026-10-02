@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, BookOpen, Cloud, Eye, EyeOff, HardDrive, Layers, Play, Users, Zap } from "lucide-react";
-import { getReviewerById } from "../data/reviewerRegistry.js";
+import { ArrowLeft, BookOpen, Cloud, Eye, EyeOff, HardDrive, Layers, Loader2, Play, Users, Zap } from "lucide-react";
 import EmptyState from "../components/EmptyState.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import ReviewerMenu from "../components/ReviewerMenu.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
+import { useReviewer } from "../hooks/useReviewer.js";
 import { createQuizSession, getQuestionDifficulty, getQuestionStyle, getQuestionTypeOptions, getReviewerStyleCounts, getStoredQuestionTypes } from "../utils/quizUtils.js";
 import { clearQuizProgress, getLatestAttempt, loadQuizProgress, saveQuizProgress } from "../utils/storageUtils.js";
 import { pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
@@ -72,7 +72,7 @@ export default function ReviewerSetup() {
   const { configured, user } = useAuth();
   const [refreshKey, setRefreshKey] = useState(0);
   const [menuMessage, setMenuMessage] = useState(null);
-  const reviewer = useMemo(() => getReviewerById(reviewerId), [reviewerId, refreshKey]);
+  const { reviewer, hasQuestions, isLoading, loadError, reload } = useReviewer(reviewerId, refreshKey);
   const savedProgress = reviewer ? loadQuizProgress(reviewer.reviewerId) : null;
   const latestAttempt = reviewer ? getLatestAttempt(reviewer.reviewerId) : null;
   const [showStartOver, setShowStartOver] = useState(false);
@@ -116,8 +116,33 @@ export default function ReviewerSetup() {
     includeScenarioQuestions: true
   });
 
-  if (!reviewer || !reviewer.validation.isValid) {
+  if (!reviewer) {
     return <EmptyState title="Unable to load this reviewer." message={reviewer?.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />;
+  }
+
+  // The list only holds a summary, so the questions are fetched here on open.
+  if (isLoading) {
+    return (
+      <EmptyState
+        title="Loading this reviewer"
+        message="Fetching the questions for this reviewer."
+        action={<Loader2 className="spinner" size={20} aria-hidden="true" />}
+      />
+    );
+  }
+
+  if (!hasQuestions) {
+    return (
+      <EmptyState
+        title="Unable to load this reviewer."
+        message={loadError || "This reviewer has not been downloaded on this device. Open it while online to save it for later."}
+        action={<div className="button-row"><button className="button primary" type="button" onClick={reload}>Try again</button><Link className="button subtle" to="/home">Back to Reviewers</Link></div>}
+      />
+    );
+  }
+
+  if (!reviewer.validation.isValid) {
+    return <EmptyState title="Unable to load this reviewer." message={reviewer.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />;
   }
 
   const dogState = getReviewerDogState({ savedProgress, latestAttempt });

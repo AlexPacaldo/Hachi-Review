@@ -17,6 +17,7 @@ import {
 import {
   checkReviewerSharingReady,
   deleteCloudReviewer,
+  getCloudReviewerById,
   getMyCloudReviewer,
   updateCloudReviewerVisibility,
   upsertCloudReviewer
@@ -28,6 +29,7 @@ import { pushRemovedProgressToCloud, saveReviewerToAccount } from "../services/s
 import {
   deleteLocalReviewer,
   getCloudReviewerCache,
+  getLocalReviewers,
   saveCloudReviewerCache,
   saveLocalReviewer
 } from "../utils/storageUtils.js";
@@ -186,8 +188,11 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     );
     saveCloudReviewerCache(nextCache);
 
+    // The offline copy already holds the questions, so it is patched rather than
+    // rebuilt from a summary that no longer carries them.
     if (hasLocal) {
-      saveLocalReviewer({ ...reviewer, ...fields });
+      const offlineCopy = getLocalReviewers().find((item) => item.reviewerId === reviewer.reviewerId);
+      if (offlineCopy) saveLocalReviewer({ ...offlineCopy, ...fields });
     }
 
     onChanged();
@@ -417,10 +422,28 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   }
 
   async function saveOffline() {
-    saveLocalReviewer(reviewer);
+    // Cloud reviewers reach this menu as summaries, and saving a summary would
+    // replace the offline copy with one that has no questions.
+    let offlineReviewer = reviewer;
+    if (!Array.isArray(offlineReviewer?.questions)) {
+      const cachedFull = getCloudReviewerCache().find((item) => (
+        item.reviewerId === offlineReviewer?.reviewerId && Array.isArray(item.questions)
+      ));
+      const { data } = cachedFull
+        ? { data: cachedFull }
+        : await getCloudReviewerById(offlineReviewer?.reviewerId, user?.id);
+      offlineReviewer = data;
+    }
+
+    if (!offlineReviewer?.questions) {
+      onMessage({ type: "warning", text: "Could not download this reviewer. Try again in a moment." });
+      return;
+    }
+
+    saveLocalReviewer(offlineReviewer);
 
     if (user && isOwner) {
-      const { error } = await saveReviewerToAccount(user.id, reviewer);
+      const { error } = await saveReviewerToAccount(user.id, offlineReviewer);
       onMessage(error
         ? { type: "warning", text: `Saved on this device. Cloud save failed: ${error.message}` }
         : { type: "success", text: "Saved to your account and this device." });

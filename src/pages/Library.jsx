@@ -4,11 +4,12 @@ import { Cloud, Download, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from "
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { deleteCloudReviewer, getMyCloudReviewer, listVisibleCloudReviewers, upsertCloudReviewer } from "../services/cloudReviewers.js";
+import { deleteCloudReviewer, getCloudReviewerById, getMyCloudReviewer, listVisibleCloudReviewers, upsertCloudReviewer } from "../services/cloudReviewers.js";
 import {
   clearAllQuizProgress,
   clearAttemptHistory,
   clearGeneratorDraft,
+  cacheCloudReviewer,
   clearLocalReviewers,
   clearSyncQueue,
   deleteLocalReviewer,
@@ -21,6 +22,7 @@ import {
   getSyncQueue,
   queueReviewerForCloudSync,
   REVIEWER_DATA_CHANGED_EVENT,
+  mergeCloudReviewerCache,
   restoreLocalDataSnapshot,
   saveCloudReviewerCache,
   saveLocalReviewer,
@@ -211,7 +213,7 @@ export default function Library() {
 
     const ownItems = (data || []).filter((item) => item.owner_id === user.id);
     setCloudReviewers(ownItems);
-    saveCloudReviewerCache((data || []).map((item) => {
+    mergeCloudReviewerCache((data || []).map((item) => {
       const reviewerData = item.data || item;
       return {
         ...reviewerData,
@@ -236,7 +238,7 @@ export default function Library() {
     return localReviewers.some((reviewer) => reviewer.reviewerId === reviewerId);
   }
 
-  function saveCloudReviewerOffline(item) {
+  async function saveCloudReviewerOffline(item) {
     const reviewer = getCloudReviewerData(item);
     const key = getCloudReviewerKey(item);
 
@@ -248,7 +250,32 @@ export default function Library() {
       return;
     }
 
-    saveLocalReviewer(reviewer);
+    // Lists now arrive as summaries, so the questions have to be fetched before
+    // anything is written to local storage.
+    let offlineReviewer = reviewer;
+    if (!Array.isArray(offlineReviewer.questions)) {
+      setOfflineSaveStatus((current) => ({
+        ...current,
+        [key]: { type: "info", message: "Downloading this reviewer..." }
+      }));
+
+      const result = await getCloudReviewerById(offlineReviewer.reviewerId, user?.id);
+      if (!result.data?.questions) {
+        setOfflineSaveStatus((current) => ({
+          ...current,
+          [key]: { type: "error", message: result.error?.message || "Could not download this reviewer." }
+        }));
+        return;
+      }
+
+      offlineReviewer = result.data;
+      cacheCloudReviewer(offlineReviewer);
+      setCloudReviewers((current) => current.map((entry) => (
+        getCloudReviewerKey(entry) === key ? offlineReviewer : entry
+      )));
+    }
+
+    saveLocalReviewer(offlineReviewer);
     refreshLocalData();
     setOfflineSaveStatus((current) => ({
       ...current,
@@ -360,8 +387,20 @@ export default function Library() {
     }
 
     if (hasOfflineCopy) {
-      saveLocalReviewer(renamedReviewer);
-      refreshLocalData();
+      // Renaming a listed reviewer starts from a summary, so the questions have to
+      // come from the cache or a fetch before the offline copy is rewritten.
+      let offlineReviewer = renamedReviewer;
+      if (!Array.isArray(offlineReviewer.questions)) {
+        const cachedFull = getCloudReviewerCache().find((item) => (
+          item.reviewerId === offlineReviewer.reviewerId && Array.isArray(item.questions)
+        ));
+        offlineReviewer = cachedFull || { ...offlineReviewer, ...(await getCloudReviewerById(offlineReviewer.reviewerId, user?.id).then((r) => r.data || {})) };
+      }
+
+      if (Array.isArray(offlineReviewer.questions)) {
+        saveLocalReviewer(offlineReviewer);
+        refreshLocalData();
+      }
     }
 
     setCloudMessage({

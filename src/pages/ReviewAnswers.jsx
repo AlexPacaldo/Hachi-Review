@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import EmptyState from "../components/EmptyState.jsx";
-import { getReviewerById } from "../data/reviewerRegistry.js";
+import { useReviewer } from "../hooks/useReviewer.js";
 import { createQuizSession, getQuestionResult } from "../utils/quizUtils.js";
 import { getAttemptById, getLatestAttempt, saveQuizProgress } from "../utils/storageUtils.js";
 import { scheduleProgressSync } from "../services/syncEngine.js";
@@ -14,7 +14,7 @@ export default function ReviewAnswers() {
   const params = new URLSearchParams(location.search);
   const attemptId = params.get("attempt");
   const attempt = attemptId ? getAttemptById(attemptId) : getLatestAttempt(reviewerId);
-  const reviewer = getReviewerById(reviewerId);
+  const { reviewer, hasQuestions } = useReviewer(reviewerId);
 
   const reviewedQuestions = useMemo(() => {
     if (!attempt) return [];
@@ -39,8 +39,10 @@ export default function ReviewAnswers() {
     return <EmptyState title="No attempt found" message="There is no completed attempt to review." action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />;
   }
 
+  // A retry rebuilds a session from the reviewer's questions, which a summary
+  // does not carry, so it waits for the fetch rather than starting an empty quiz.
   function retryIncorrect() {
-    if (!reviewer || !attempt.incorrectQuestionIds.length) return;
+    if (!Array.isArray(reviewer?.questions) || !attempt.incorrectQuestionIds.length) return;
     const session = createQuizSession(
       reviewer,
       {
@@ -65,7 +67,7 @@ export default function ReviewAnswers() {
           <p className="muted">Compare your answers with the correct answers and explanations.</p>
         </div>
         <div className="button-row">
-          {attempt.incorrectQuestionIds.length ? <button className="button primary" type="button" onClick={retryIncorrect}>Retry Incorrect Questions</button> : null}
+          {attempt.incorrectQuestionIds.length ? <button className="button primary" type="button" onClick={retryIncorrect} disabled={!hasQuestions}>Retry Incorrect Questions</button> : null}
           <Link className="button subtle" to={`/results/${reviewerId}?attempt=${attempt.attemptId}`}>Back to Results</Link>
         </div>
       </section>

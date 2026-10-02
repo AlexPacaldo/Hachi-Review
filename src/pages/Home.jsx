@@ -9,7 +9,7 @@ import hachiDogExcited from "../assets/hachi-dog-excited.png";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { getAllReviewers } from "../data/reviewerRegistry.js";
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";
-import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemptHistory, REVIEWER_DATA_CHANGED_EVENT, saveCloudReviewerCache } from "../utils/storageUtils.js";
+import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemptHistory, mergeCloudReviewerCache, REVIEWER_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
 
 const WEEK_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 
@@ -92,7 +92,9 @@ export default function Home() {
           sharedGroups: Array.isArray(item.shared_groups) ? item.shared_groups : reviewerData.sharedGroups || null
         };
       });
-      saveCloudReviewerCache(cachedReviewers);
+      // Merged rather than replaced, so a reviewer already downloaded on this
+      // device keeps its questions until it is opened and fetched again.
+      mergeCloudReviewerCache(cachedReviewers);
       setReviewerList(getAllReviewers());
     }
 

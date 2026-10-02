@@ -1,15 +1,18 @@
 import { supabase } from "../lib/supabaseClient.js";
 
 const REVIEWERS_TABLE = "reviewers";
+const REVIEWER_SUMMARIES_VIEW = "reviewer_summaries";
 
+// Only the ids are needed here, to tell which device-only reviewers still have
+// to be uploaded. Selecting the whole row used to pull every question for every
+// reviewer on each sync.
 export async function listMyCloudReviewers(userId) {
   if (!supabase || !userId) return { data: [], error: null };
 
   const { data, error } = await supabase
     .from(REVIEWERS_TABLE)
-    .select("*")
-    .eq("owner_id", userId)
-    .order("updated_at", { ascending: false });
+    .select("reviewer_id")
+    .eq("owner_id", userId);
 
   return { data: data || [], error };
 }
@@ -175,7 +178,7 @@ export async function listVisibleCloudReviewers(userId) {
 
   const visibleOwnerIds = [...new Set([...friendIds, ...groupOwnerIds])];
 
-  const query = supabase.from(REVIEWERS_TABLE).select("*");
+  const query = supabase.from(REVIEWER_SUMMARIES_VIEW).select("*");
 
   const builtQuery = visibleOwnerIds.length
     ? query.or(`owner_id.eq.${userId},owner_id.in.(${visibleOwnerIds.join(",")})`)
@@ -208,16 +211,51 @@ export async function listVisibleCloudReviewers(userId) {
 
   const profilesById = new Map((profiles || []).map((profile) => [profile.id, profile]));
 
+  // The summary is flattened onto the row, so callers that used to read
+  // item.data keep working and simply see the lighter object. Questions are
+  // fetched later, per reviewer, by getCloudReviewerById.
   return {
     data: visibleRows.map((row) => {
       const profile = row.owner_id === userId ? null : profilesById.get(row.owner_id) || null;
 
       return {
-        ...row,
+        ...row.summary,
+        owner_id: row.owner_id,
+        reviewer_id: row.reviewer_id,
         ownerName: profile ? profile.display_name || profile.email || "A friend" : null,
         ownerProfile: profile
       };
     }),
+    error: null
+  };
+}
+
+// Fetches one reviewer in full, questions included, for when it is actually
+// opened. ownerId narrows the row because a reviewer id is only unique per owner.
+export async function getCloudReviewerById(reviewerId, ownerId) {
+  if (!supabase || !reviewerId) return { data: null, error: null };
+
+  const query = supabase
+    .from(REVIEWERS_TABLE)
+    .select("*")
+    .eq("reviewer_id", reviewerId);
+
+  const { data, error } = ownerId
+    ? await query.eq("owner_id", ownerId).maybeSingle()
+    : await query.limit(1).maybeSingle();
+
+  if (error || !data) return { data: null, error };
+
+  return {
+    data: {
+      ...data.data,
+      reviewerId: data.reviewer_id,
+      ownerId: data.owner_id,
+      visibility: data.visibility || data.data?.visibility || "friends",
+      sharedWith: data.shared_with || data.data?.sharedWith || null,
+      sharedGroups: data.shared_groups || data.data?.sharedGroups || null,
+      updatedAt: data.updated_at
+    },
     error: null
   };
 }

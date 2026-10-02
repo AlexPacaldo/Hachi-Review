@@ -33,6 +33,7 @@ import {
   updateGroup
 } from "../services/groups.js";
 import { listFriendships, searchProfiles } from "../services/social.js";
+import { getCloudReviewerById } from "../services/cloudReviewers.js";
 import {
   getAllProgress,
   getAttemptHistory,
@@ -186,8 +187,17 @@ export default function GroupDetail() {
       });
       const incomingIds = new Set(incoming.map((item) => item.reviewerId));
       const currentCache = getCloudReviewerCache();
+      const currentById = new Map(currentCache.map((item) => [item.reviewerId, item]));
+
+      // An incoming summary must not drop the questions of a reviewer this
+      // device has already downloaded, so the cached copy is carried over.
       const nextCache = [
-        ...incoming,
+        ...incoming.map((item) => {
+          const existing = currentById.get(item.reviewerId);
+          return existing && Array.isArray(existing.questions) && !Array.isArray(item.questions)
+            ? { ...existing, ...item, questions: existing.questions }
+            : item;
+        }),
         ...currentCache.filter((item) => !incomingIds.has(item.reviewerId))
       ];
 
@@ -447,8 +457,34 @@ export default function GroupDetail() {
     navigate("/groups");
   }
 
-  function saveReviewerOffline(reviewer) {
+  async function saveReviewerOffline(reviewer) {
     const payload = reviewer.data || reviewer;
+
+    // Group reviewers are listed as summaries, so the questions are downloaded
+    // before anything is written to local storage.
+    if (!Array.isArray(payload?.questions)) {
+      if (!payload?.reviewerId) {
+        setMessage({ type: "error", text: "This reviewer is missing a reviewer ID." });
+        return;
+      }
+
+      const cachedFull = getCloudReviewerCache().find((item) => (
+        item.reviewerId === payload.reviewerId && Array.isArray(item.questions)
+      ));
+      const { data } = cachedFull
+        ? { data: cachedFull }
+        : await getCloudReviewerById(payload.reviewerId, user?.id);
+
+      if (!data?.questions) {
+        setMessage({ type: "error", text: "Could not download this reviewer." });
+        return;
+      }
+
+      saveLocalReviewer(data);
+      setMessage({ type: "success", text: "Saved on this device." });
+      return;
+    }
+
     saveLocalReviewer(payload);
     setMessage({ type: "success", text: "Saved on this device." });
   }

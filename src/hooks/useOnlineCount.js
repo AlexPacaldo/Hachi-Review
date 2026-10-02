@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
-import { isSupabaseConfigured, supabase } from "../lib/supabaseClient.js";
-
-// Presence lives on a plain public channel, so signed-out visitors count too and no
-// database table or publication entry is needed. Supabase drops a member when its
-// socket closes, so the number stays honest without any server-side cleanup job.
-const CHANNEL = "landing-presence";
-const HEARTBEAT_MS = 25_000;
+import { isSupabaseConfigured } from "../lib/supabaseClient.js";
+import { POLL_MS, releasePresence, touchPresence } from "../services/cloudPresence.js";
 
 function sessionKey() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -14,51 +9,61 @@ function sessionKey() {
   return `guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// Counted from a heartbeat row rather than a presence channel, so a busy landing
+// page no longer needs a Realtime connection per visitor. The trade is a poll
+// instead of a socket, which is why a hidden tab stops pinging and picks the
+// count back up as soon as it is looked at again.
 export function useOnlineCount() {
   const [onlineCount, setOnlineCount] = useState(null);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return undefined;
+    if (!isSupabaseConfigured) return undefined;
 
     const key = sessionKey();
-    let mounted = true;
-    let channel = null;
+    let active = true;
+    let timer = null;
 
-    const publishCount = () => {
-      if (!mounted || !channel) return;
-      const state = channel.presenceState();
-      const total = state ? Object.keys(state).length : 0;
-      setOnlineCount(total > 0 ? total : null);
+    const schedule = () => {
+      if (!active) return;
+      timer = window.setTimeout(run, POLL_MS);
     };
 
-    channel = supabase.channel(CHANNEL, { config: { presence: { key } } });
-    channel
-      .on("presence", { event: "sync" }, publishCount)
-      .on("presence", { event: "join" }, publishCount)
-      .on("presence", { event: "leave" }, publishCount)
-      .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") {
-          await channel.track({ onlineAt: Date.now() });
-          publishCount();
-        }
-      });
+    async function run() {
+      if (!active) return;
 
-    // Re-tracking keeps the entry alive through proxies that hold the socket open
-    // long after the tab is actually gone.
-    const heartbeat = setInterval(() => {
-      channel.track({ onlineAt: Date.now() });
-    }, HEARTBEAT_MS);
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        schedule();
+        return;
+      }
 
-    const leave = () => {
-      if (channel) channel.untrack();
+      try {
+        const { count, error } = await touchPresence(key);
+        if (!active || error) return;
+        if (count) setOnlineCount(count);
+      } catch {
+        // A failed count just leaves the last good number on screen.
+      }
+
+      schedule();
+    }
+
+    run();
+
+    // Returning to the tab refreshes immediately rather than waiting out the
+    // poll, so a number left open overnight does not show a stale count.
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      if (timer) window.clearTimeout(timer);
+      run();
     };
-    window.addEventListener("pagehide", leave);
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      mounted = false;
-      clearInterval(heartbeat);
-      window.removeEventListener("pagehide", leave);
-      if (channel) supabase.removeChannel(channel);
+      active = false;
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      releasePresence(key);
     };
   }, []);
 

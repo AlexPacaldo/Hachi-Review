@@ -732,6 +732,122 @@ on public.reviewer_shares(recipient_id, created_at desc);
 create index if not exists reviewer_shares_owner_idx
 on public.reviewer_shares(owner_id, created_at desc);
 
+-- Landing page presence. This used to be a Realtime presence channel, where every
+-- visitor on the site held a connection and the free tier capped that at 200
+-- peak connections, so a busy landing page could exhaust the whole project's
+-- Realtime allowance on its own. A heartbeat row costs one short call instead,
+-- so the count no longer competes for connections.
+--
+-- The table is reachable only through the two functions below. They are
+-- SECURITY DEFINER because the rows are deliberately not readable by clients,
+-- and the key is shape checked so a caller cannot inflate the count with junk
+-- keys or grow the table without bound.
+create table if not exists public.presence_pings (
+  session_key text primary key,
+  last_seen timestamptz not null default now()
+);
+
+alter table public.presence_pings enable row level security;
+
+create index if not exists presence_pings_last_seen_idx
+on public.presence_pings(last_seen);
+
+revoke all on table public.presence_pings from anon, authenticated;
+
+-- Records the visit, expires rows nobody has pinged in a while, and returns the
+-- live total in one round trip.
+create or replace function public.touch_presence(p_key text, p_window_seconds integer default 150)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  if p_key is null or p_key !~ '^[A-Za-z0-9_-]{8,64}$' then
+    return 0;
+  end if;
+
+  insert into public.presence_pings (session_key, last_seen)
+  values (p_key, now())
+  on conflict (session_key) do update set last_seen = now();
+
+  -- Expired rows are collected here rather than on a timer, and last_seen is
+  -- indexed, so this stays a cheap scan of a small recent window.
+  delete from public.presence_pings where last_seen < now() - interval '10 minutes';
+
+  select count(*)::integer into v_count
+  from public.presence_pings
+  where last_seen > now() - make_interval(secs => greatest(p_window_seconds, 30));
+
+  return v_count;
+end;
+$$;
+
+-- Called when a visitor leaves, so the count drops immediately instead of waiting
+-- out the window.
+create or replace function public.release_presence(p_key text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.presence_pings where session_key = p_key;
+$$;
+
+revoke execute on function public.touch_presence(text, integer) from public;
+revoke execute on function public.release_presence(text) from public;
+
+grant execute on function public.touch_presence(text, integer) to anon, authenticated;
+grant execute on function public.release_presence(text) to anon, authenticated;
+
+-- Reviewer list view. The reviewer list is drawn on nearly every page, and data
+-- holds every question, so selecting it for the list moved roughly 100 KB per
+-- reviewer per page load and was the main thing pushing the project past its
+-- egress allowance. The list only needs the headline fields, which live in
+-- columns or can be lifted out of data without reading the questions, so the
+-- view carries those and the app fetches data for a reviewer only once it is
+-- actually opened.
+--
+-- security_invoker matters here. A Postgres view runs with its owner's rights
+-- by default, which would bypass the reviewer read policies and hand every
+-- reviewer to every caller, so the policies have to be applied instead.
+create or replace view public.reviewer_summaries with (security_invoker = true) as
+select
+  r.id,
+  r.owner_id,
+  r.reviewer_id,
+  r.title,
+  r.subject,
+  r.visibility,
+  r.shared_with,
+  r.shared_groups,
+  r.created_at,
+  r.updated_at,
+  jsonb_build_object(
+    'reviewerId', r.reviewer_id,
+    'title', r.title,
+    'subject', r.subject,
+    'coverage', r.data->'coverage',
+    'questionCount', case
+      when (r.data->>'questionCount') ~ '^[0-9]+$' then (r.data->>'questionCount')::int
+      when jsonb_typeof(r.data->'questions') = 'array' then jsonb_array_length(r.data->'questions')
+      else 0
+    end,
+    'questionType', r.data->'questionType',
+    'questionTypes', r.data->'questionTypes',
+    'choicesPerQuestion', r.data->'choicesPerQuestion',
+    'instructions', r.data->'instructions',
+    'visibility', r.visibility,
+    'sharedWith', r.shared_with,
+    'sharedGroups', r.shared_groups,
+    'updatedAt', r.updated_at
+  ) as summary
+from public.reviewers r;
+
+grant select on public.reviewer_summaries to authenticated;
+
 -- Realtime: instantly push friendship and share changes to signed-in clients.
 -- Requires re-apply of this file (or running this block) in the Supabase dashboard.
 do $$

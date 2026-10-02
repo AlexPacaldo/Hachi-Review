@@ -273,6 +273,37 @@ export function clearCloudReviewerCache() {
   notifyReviewerDataChanged();
 }
 
+// The list arrives as summaries, with no questions. Merging keeps the full
+// reviewer already cached for anything that has been opened, so a summary can
+// never strip questions a reviewer still needs offline.
+export function mergeCloudReviewerCache(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) return getCloudReviewerCache();
+
+  const byId = new Map(getCloudReviewerCache().map((reviewer) => [reviewer.reviewerId, reviewer]));
+
+  list.forEach((entry) => {
+    const id = entry?.reviewerId;
+    if (!id) return;
+
+    const existing = byId.get(id);
+    const keepsQuestions = Array.isArray(existing?.questions) && !Array.isArray(entry.questions);
+
+    byId.set(id, keepsQuestions ? { ...existing, ...entry, questions: existing.questions } : entry);
+  });
+
+  const next = [...byId.values()];
+  writeJson(KEYS.cloudReviewerCache, next);
+  notifyReviewerDataChanged();
+  return next;
+}
+
+// Called once a reviewer has been fetched in full, so reopening it works offline.
+export function cacheCloudReviewer(reviewer) {
+  if (!reviewer?.reviewerId) return getCloudReviewerCache();
+  return mergeCloudReviewerCache([reviewer]);
+}
+
 export function getGeneratorDraft() {
   return readJson(KEYS.generatorDraft, null);
 }
