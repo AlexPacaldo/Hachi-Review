@@ -7,8 +7,8 @@ import QuizQuestion from "../components/QuizQuestion.jsx";
 import QuestionNavigator from "../components/QuestionNavigator.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import { getReviewerById } from "../data/reviewerRegistry.js";
-import { clearQuizProgress, loadQuizProgress, saveAttempt, saveQuizProgress } from "../utils/storageUtils.js";
-import { cancelProgressSync, pushAttemptToCloud, pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
+import { clearQuizProgress, loadQuizProgress, markStudyDay, saveAttempt, saveQuizProgress } from "../utils/storageUtils.js";
+import { cancelProgressSync, pushAttemptToCloud, pushRemovedProgressToCloud, scheduleProgressSync, scheduleStudyDaySync } from "../services/syncEngine.js";
 import { createAttemptFromSession, formatDuration, getQuestionResult, getSessionElapsed, isTypedQuestion, pauseQuizSession, resumeQuizSession } from "../utils/quizUtils.js";
 
 function isTypingTarget(target) {
@@ -137,6 +137,14 @@ export default function Quiz() {
   }
 
   function patchSession(patch) {
+    // Answering, revealing a card, or typing an answer is what counts as study.
+    // Moving between questions is not, so a learner who only clicks through the
+    // navigation does not quietly bank a day. Marking here covers every mode,
+    // including a session resumed on a later day.
+    if (patch.answers || patch.submittedQuestions) {
+      markStudyDay();
+      scheduleStudyDaySync();
+    }
     setSession((current) => ({ ...current, ...patch }));
   }
 

@@ -8,6 +8,7 @@ export default function Privacy() {
         <h1>Privacy Policy</h1>
         <p>This privacy policy describes how we handle data for our website and advertising services.</p>
         <p>Hachi stores reviewer data on this device for offline use and, when you sign in, can sync your reviewers to your Supabase account. When you are signed in, quiz progress and completed attempt history are also uploaded to your account so they follow you to your other devices.</p>
+        <p>Your account also keeps a study streak. To do that we store one record per day you studied, holding only the calendar date and nothing about the questions. Unlike your answer history, which is deleted after two weeks, these day records are kept so your streak and your longest run stay accurate.</p>
         
         <h2>Advertising & Tracking</h2>
         <p>We work with third-party advertising networks (such as Monetag and PropellerAds) to display ads on our website. These networks may:</p>

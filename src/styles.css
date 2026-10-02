@@ -5884,6 +5884,24 @@ strong {
   color: #06170c;
 }
 
+/* Today gets a ring rather than a fill, so which day is "now" is legible
+   without competing with a day that was actually studied. */
+.streak-week span.today {
+  border-color: color-mix(in srgb, var(--success) 70%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 34%, transparent);
+}
+
+.streak-week span.today.filled {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* A day that has not arrived yet is dimmed so an unfilled circle for Saturday is
+   not read as a miss. */
+.streak-week span.upcoming {
+  opacity: 0.45;
+}
+
 .streak-week svg {
   flex: none;
   margin-left: 2px;

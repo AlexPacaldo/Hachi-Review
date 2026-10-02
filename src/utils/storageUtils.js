@@ -1,4 +1,5 @@
 import { restoreQuizQuestions } from "./quizUtils.js";
+import { normalizeStudyDays, toStudyDayKey } from "./studyStats.js";
 
 const KEYS = {
   progress: "reviewer_quiz_progress",
@@ -11,6 +12,8 @@ const KEYS = {
   syncQueue: "reviewer_sync_queue",
   pendingDeletes: "reviewer_pending_deletes",
   lastUserId: "reviewer_last_user_id",
+  studyDays: "reviewer_study_days",
+  pendingStudyDays: "reviewer_study_days_pending",
   errorLog: "reviewer_error_log"
 };
 
@@ -266,6 +269,71 @@ export function dropProgressOlderThanAttempts(attempts = getAttemptHistory()) {
 
 export function getLocalReviewers() {
   return readJson(KEYS.localReviewers, []);
+}
+
+// The study streak used to be worked out from the attempt history, which meant it
+// could never be right for two reasons: only finished quizzes counted, and the
+// attempt table prunes itself after 14 days, so any record of a longer run was
+// deleted before it could be shown. These are the days the learner actually
+// studied, kept as plain day keys in a ledger of their own.
+export function getStudyDays() {
+  return normalizeStudyDays(readJson(KEYS.studyDays, []));
+}
+
+export function getPendingStudyDays() {
+  return normalizeStudyDays(readJson(KEYS.pendingStudyDays, []));
+}
+
+// Recorded for today as soon as the learner actually does something, so a session
+// that is started and abandoned still counts. Written locally straight away and
+// queued for the account separately, so the streak is never lost because the
+// upload had not happened yet.
+export function markStudyDay(day = toStudyDayKey(new Date())) {
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return getStudyDays();
+
+  const days = new Set(getStudyDays());
+  if (days.has(day)) return [...days].sort();
+  days.add(day);
+
+  const pending = new Set(getPendingStudyDays());
+  pending.add(day);
+
+  const next = [...days].sort();
+  writeJson(KEYS.studyDays, next);
+  writeJson(KEYS.pendingStudyDays, [...pending].sort());
+  notifyReviewerDataChanged();
+  return next;
+}
+
+// Additive on purpose. A studied day is a habit record rather than answer data,
+// so it is never removed here, and clearing quiz history leaves the streak alone.
+export function mergeCloudStudyDays(cloudDays) {
+  const days = new Set(getStudyDays());
+  let changed = false;
+
+  normalizeStudyDays(cloudDays).forEach((day) => {
+    if (days.has(day)) return;
+    days.add(day);
+    changed = true;
+  });
+
+  if (!changed) return getStudyDays();
+
+  const next = [...days].sort();
+  writeJson(KEYS.studyDays, next);
+  notifyReviewerDataChanged();
+  return next;
+}
+
+// Called once the account has accepted the days, so they are not re-uploaded on
+// every sign-in. Only ever removes from the pending list.
+export function clearPendingStudyDays(days) {
+  const confirmed = new Set(normalizeStudyDays(days));
+  if (!confirmed.size) return getPendingStudyDays();
+
+  const pending = getPendingStudyDays().filter((day) => !confirmed.has(day));
+  writeJson(KEYS.pendingStudyDays, pending);
+  return pending;
 }
 
 export function saveLocalReviewer(reviewer) {

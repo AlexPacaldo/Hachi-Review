@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { isSupabaseConfigured, supabase } from "../lib/supabaseClient.js";
 import { ensureMyProfile } from "../services/social.js";
-import { flushPendingProgress, hydrateFromCloud, setSyncUser, syncAccount } from "../services/syncEngine.js";
+import { flushPendingProgress, flushPendingStudyDays, hydrateFromCloud, setSyncUser, syncAccount } from "../services/syncEngine.js";
 
 const CLOUD_PULL_INTERVAL_MS = 60000;
 
@@ -78,16 +78,19 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // Progress is debounced, so save whatever is still pending before the tab
-    // is backgrounded or closed instead of waiting out the timer.
+    // is backgrounded or closed instead of waiting out the timer. Study days are
+    // debounced on their own and pushed the same way.
     const flushOnHide = () => {
-      if (document.visibilityState === "hidden") flushPendingProgress();
+      if (document.visibilityState !== "hidden") return;
+      flushPendingProgress();
+      flushPendingStudyDays();
     };
 
     document.addEventListener("visibilitychange", flushOnHide);
-    window.addEventListener("pagehide", flushPendingProgress);
+    window.addEventListener("pagehide", flushOnHide);
     return () => {
       document.removeEventListener("visibilitychange", flushOnHide);
-      window.removeEventListener("pagehide", flushPendingProgress);
+      window.removeEventListener("pagehide", flushOnHide);
     };
   }, []);
 

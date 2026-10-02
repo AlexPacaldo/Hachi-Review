@@ -602,6 +602,58 @@ revoke execute on function public.prune_reviewer_attempts(uuid, integer) from pu
 
 grant execute on function public.prune_reviewer_attempts(uuid, integer) to authenticated;
 
+-- One row per day the learner studied, so the streak survives across devices.
+-- Deliberately its own table instead of being worked out from reviewer_attempts:
+-- attempts prune themselves after 14 days, so a run longer than that could never
+-- be reported, and they only exist once a quiz is finished. This records the day
+-- a session starts or an answer is given, so an abandoned session still counts.
+--
+-- The stored day is the learner's own calendar date rather than a timestamp, so a
+-- streak does not shift when a device sits in a different timezone. Rows are tiny
+-- and there is at most one per day, so this is not worth pruning.
+create table if not exists public.reviewer_study_days (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  day date not null,
+  created_at timestamptz not null default now(),
+  primary key (owner_id, day)
+);
+
+alter table public.reviewer_study_days enable row level security;
+
+grant select, insert, update, delete on public.reviewer_study_days to authenticated;
+
+drop policy if exists "Users can read own study days" on public.reviewer_study_days;
+create policy "Users can read own study days"
+on public.reviewer_study_days
+for select
+to authenticated
+using (auth.uid() = owner_id);
+
+drop policy if exists "Users can insert own study days" on public.reviewer_study_days;
+create policy "Users can insert own study days"
+on public.reviewer_study_days
+for insert
+to authenticated
+with check (auth.uid() = owner_id);
+
+drop policy if exists "Users can update own study days" on public.reviewer_study_days;
+create policy "Users can update own study days"
+on public.reviewer_study_days
+for update
+to authenticated
+using (auth.uid() = owner_id)
+with check (auth.uid() = owner_id);
+
+drop policy if exists "Users can delete own study days" on public.reviewer_study_days;
+create policy "Users can delete own study days"
+on public.reviewer_study_days
+for delete
+to authenticated
+using (auth.uid() = owner_id);
+
+create index if not exists reviewer_study_days_owner_day_idx
+on public.reviewer_study_days(owner_id, day desc);
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique,

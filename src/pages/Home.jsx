@@ -9,39 +9,8 @@ import hachiDogExcited from "../assets/hachi-dog-excited.png";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { getAllReviewers } from "../data/reviewerRegistry.js";
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";
-import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemptHistory, mergeCloudReviewerCache, REVIEWER_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
-
-const WEEK_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
-
-function toLocalDateKey(date) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function getStudySnapshot(allAttempts) {
-  const studiedDays = new Set();
-  allAttempts.forEach((attempt) => {
-    if (attempt.date) studiedDays.add(toLocalDateKey(new Date(attempt.date)));
-  });
-
-  let streakDays = 0;
-  const cursor = new Date();
-  if (!studiedDays.has(toLocalDateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
-  while (studiedDays.has(toLocalDateKey(cursor))) {
-    streakDays += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  const today = new Date();
-  const mondayOffset = (today.getDay() + 6) % 7;
-  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - mondayOffset);
-  const week = WEEK_LABELS.map((label, index) => {
-    const day = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + index);
-    return { label, studied: studiedDays.has(toLocalDateKey(day)) };
-  });
-
-  return { streakDays, week };
-}
+import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemptHistory, getStudyDays, mergeCloudReviewerCache, REVIEWER_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
+import { getStudySnapshot } from "../utils/studyStats.js";
 
 export default function Home() {
   const { configured, loading, user } = useAuth();
@@ -50,12 +19,23 @@ export default function Home() {
   const [reviewerList, setReviewerList] = useState(getAllReviewers);
   const [pendingRemove, setPendingRemove] = useState(null);
   const [cloudLoadMessage, setCloudLoadMessage] = useState("");
+  // Bumped by the storage listener so the memoised streak recomputes when the
+  // study day ledger changes, which happens while a quiz is open elsewhere.
+  const [studyDaysVersion, setStudyDaysVersion] = useState(0);
   const progress = getAllProgress();
   const allAttempts = getAttemptHistory();
   const recentAttempts = allAttempts.slice(0, 5);
-  const { streakDays, week } = useMemo(() => getStudySnapshot(allAttempts), [allAttempts]);
-  const streakNote = streakDays === 0 ? "Start a streak today!" : streakDays < 3 ? "Keep it going!" : "You're on a roll!";
+  // From the study day ledger rather than the attempt history, so a session that
+  // was never finished still counts and a long run is not lost to attempt pruning.
+  const { currentStreak, longestStreak, week, note: streakNote } = useMemo(
+    () => getStudySnapshot(getStudyDays()),
+    [studyDaysVersion]
+  );
   const completedReviewerIds = useMemo(() => new Set(allAttempts.map((attempt) => attempt.reviewerId).filter(Boolean)), [allAttempts]);
+
+  // The filled circles are the only thing carrying this for a screen reader, so
+  // the days are spelled out rather than left to colour alone.
+  const weekSummary = `This week: ${week.map((day) => `${day.label}${day.studied ? " studied" : day.isFuture ? " upcoming" : " not studied"}`).join(", ")}. Current streak ${currentStreak} ${currentStreak === 1 ? "day" : "days"}, best run ${longestStreak} ${longestStreak === 1 ? "day" : "days"}.`;
 
   useEffect(() => {
     let isMounted = true;
@@ -106,7 +86,10 @@ export default function Home() {
   }, [configured, loading, user?.id]);
 
   useEffect(() => {
-    const refreshReviewers = () => setReviewerList(getAllReviewers());
+    const refreshReviewers = () => {
+      setReviewerList(getAllReviewers());
+      setStudyDaysVersion((value) => value + 1);
+    };
 
     window.addEventListener(REVIEWER_DATA_CHANGED_EVENT, refreshReviewers);
     window.addEventListener("storage", refreshReviewers);
@@ -228,15 +211,20 @@ export default function Home() {
               <span className="hero-stat-icon"><Flame size={24} aria-hidden="true" /></span>
               <span className="hero-stat-text">
                 <small>Study Streak</small>
-                <strong>{streakDays} {streakDays === 1 ? "day" : "days"}</strong>
+                <strong>{currentStreak} {currentStreak === 1 ? "day" : "days"}</strong>
                 <em>{streakNote}</em>
               </span>
             </div>
-            <div className="streak-week" aria-hidden="true">
+            <div className="streak-week" aria-label={weekSummary}>
               {week.map((day, index) => (
-                <span className={day.studied ? "filled" : ""} key={`${day.label}-${index}`}>{day.label}</span>
+                <span
+                  className={`${day.studied ? "filled" : ""} ${day.isToday ? "today" : ""} ${day.isFuture ? "upcoming" : ""}`}
+                  key={`${day.key}-${index}`}
+                >
+                  {day.label}
+                </span>
               ))}
-              <PawPrint size={20} />
+              <PawPrint size={20} aria-hidden="true" />
             </div>
           </article>
           <article className="hero-stat reviewers">

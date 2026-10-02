@@ -10,6 +10,7 @@ import {
   upsertCloudProgress
 } from "./cloudProgress.js";
 import { listCloudReviewersByIds, listMyCloudReviewers, upsertCloudReviewer } from "./cloudReviewers.js";
+import { listCloudStudyDays, markCloudStudyDays } from "./cloudStudyDays.js";
 import {
   getAttemptHistory,
   getCloudReviewerCache,
@@ -17,11 +18,14 @@ import {
   getLocalReviewers,
   getAllProgress,
   getPendingDeletesForUser,
+  getPendingStudyDays,
   getProgressTimestamp,
   getSyncQueue,
   cacheCloudReviewer,
+  clearPendingStudyDays,
   mergeCloudAttempts,
   mergeCloudProgress,
+  mergeCloudStudyDays,
   dropProgressOlderThanAttempts,
   dropConflictingQueueItems,
   queuePendingDelete,
@@ -33,9 +37,11 @@ import {
 } from "../utils/storageUtils.js";
 
 const PROGRESS_DEBOUNCE_MS = 4000;
+const STUDY_DAY_DEBOUNCE_MS = 8000;
 const DELETE_TYPES = new Set(["delete-progress", "clear-progress", "clear-attempts"]);
 
 let activeUserId = null;
+let studyDayTimer = null;
 const pendingProgress = new Map();
 
 export function setSyncUser(userId) {
@@ -142,6 +148,52 @@ export async function pushClearedHistoryToCloud() {
     payload: null,
     write: () => clearCloudAttempts(activeUserId)
   });
+}
+
+// Study days are uploaded on their own rather than riding along with progress, so
+// the streak is never lost when a session is cleared or a quiz is finished. A
+// failure leaves them pending, so they are retried on the next sync instead of
+// being dropped.
+export async function pushStudyDaysToCloud() {
+  if (!canWrite()) return { studyDays: 0, error: null };
+
+  const pending = getPendingStudyDays();
+  if (!pending.length) return { studyDays: 0, error: null };
+
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return { studyDays: 0, queued: true, error: null };
+  }
+
+  const { error } = await markCloudStudyDays(activeUserId, pending);
+  if (error) return { studyDays: 0, error };
+
+  clearPendingStudyDays(pending);
+  return { studyDays: pending.length, error: null };
+}
+
+// The pending list is durable in local storage, so a day is never lost even if
+// this never fires. Debounced anyway so the streak reaches the other devices
+// during a session instead of waiting for the next sign-in, and skipped
+// entirely when there is nothing new to send.
+export function scheduleStudyDaySync() {
+  if (!canWrite()) return;
+  if (!getPendingStudyDays().length) return;
+
+  if (studyDayTimer) window.clearTimeout(studyDayTimer);
+  studyDayTimer = window.setTimeout(() => {
+    studyDayTimer = null;
+    pushStudyDaysToCloud();
+  }, STUDY_DAY_DEBOUNCE_MS);
+}
+
+export function flushPendingStudyDays() {
+  if (studyDayTimer) {
+    window.clearTimeout(studyDayTimer);
+    studyDayTimer = null;
+  }
+
+  if (!getPendingStudyDays().length) return;
+  pushStudyDaysToCloud();
 }
 
 export function scheduleProgressSync(session) {
@@ -298,11 +350,17 @@ export async function hydrateFromCloud() {
   // finished on another one is not sent back up again.
   dropProgressOlderThanAttempts();
 
+  // Pulled separately from progress and attempts. An account that has not had the
+  // study days table created yet simply reports an error here, which the caller
+  // already tolerates, and the local ledger keeps the streak working meanwhile.
+  const studyDaysResult = await listCloudStudyDays(activeUserId);
+  if (studyDaysResult.data.length) mergeCloudStudyDays(studyDaysResult.data);
+
   // Prunes only what has already synced and fallen out of the history window, so
   // it is safe to fire and forget alongside the pull.
   pruneOldCloudAttempts(activeUserId);
 
-  return { error: progressResult.error || attemptsResult.error || null };
+  return { error: progressResult.error || attemptsResult.error || studyDaysResult.error || null };
 }
 
 export async function pushUnsyncedLocalData() {
@@ -391,7 +449,8 @@ export async function syncAccount() {
   // follows only ever carries real progress.
   const hydrated = await hydrateFromCloud();
   const pushed = await pushUnsyncedLocalData();
+  const studyDays = await pushStudyDaysToCloud();
   const flushed = await flushSyncQueue();
 
-  return { ...deletes, ...pushed, ...flushed, error: hydrated.error };
+  return { ...deletes, ...pushed, ...studyDays, ...flushed, error: hydrated.error };
 }

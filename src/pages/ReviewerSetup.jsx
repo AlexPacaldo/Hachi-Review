@@ -7,8 +7,8 @@ import ReviewerMenu from "../components/ReviewerMenu.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useReviewer } from "../hooks/useReviewer.js";
 import { countNegativeStemQuestions, createQuizSession, findChoiceBalanceIssues, getQuestionDifficulty, getQuestionStyle, getQuestionTypeOptions, getReviewerStyleCounts, getStoredQuestionTypes } from "../utils/quizUtils.js";
-import { clearQuizProgress, getLatestAttempt, loadQuizProgress, saveQuizProgress } from "../utils/storageUtils.js";
-import { pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
+import { clearQuizProgress, getLatestAttempt, loadQuizProgress, markStudyDay, saveQuizProgress } from "../utils/storageUtils.js";
+import { pushRemovedProgressToCloud, scheduleProgressSync, scheduleStudyDaySync } from "../services/syncEngine.js";
 import hachiDogCurious from "../assets/hachi-dog-curious.png";
 import hachiDogExcited from "../assets/hachi-dog-excited.png";
 import hachiDogFocused from "../assets/hachi-dog-focused.png";
@@ -154,6 +154,11 @@ export default function ReviewerSetup() {
     const nextSettings = { ...settings, ...overrides };
     nextSettings.questionCount = Math.min(nextSettings.questionCount, countAvailableQuestions(reviewer.questions, nextSettings));
     const session = createQuizSession(reviewer, nextSettings, retryIds);
+    // Opening a reviewer counts as studying. Recording it here as well as on the
+    // first answer means a session that is started and then put away still shows
+    // up in the streak instead of looking like a day with nothing done on it.
+    markStudyDay();
+    scheduleStudyDaySync();
     saveQuizProgress(session);
     scheduleProgressSync(session);
     navigate(`/quiz/${reviewer.reviewerId}`);
