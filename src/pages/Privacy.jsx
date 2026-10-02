@@ -17,13 +17,19 @@ export default function Privacy() {
         <p>Data kept in this browser is readable by anything with access to your browser profile or by an extension with permission to read site storage. If you use a shared computer, sign out when you are finished.</p>
 
         <h2>Advertising & Tracking</h2>
-        <p>This site carries advertising. We use Google AdSense and Monetag. These networks may:</p>
+        <p>This site carries advertising, and this is how it is kept separate from your study data.</p>
+        <p>We use Google AdSense, Monetag, and one further ad network. Their scripts have to run on this page to load an ad. We limit that as far as we can, but not completely:</p>
+        <ul>
+          <li>A Content Security Policy lists every script host we permit. Anything not on that list is refused by your browser before it runs, so an advert cannot quietly load additional code of its own.</li>
+          <li>Your reviewers, answers, history, and streak are held in your browser and behind your account. None of them can be read through the ad networks.</li>
+          <li>Signing in keeps a session token in your browser's storage, which any script on the page is able to read. That is how the app stays signed in without asking you every visit. If you are on a shared or untrusted computer, sign out when you are finished.</li>
+        </ul>
+        <p>These networks may still:</p>
         <ul>
           <li>Use cookies and similar technologies to serve and measure ads.</li>
           <li>Collect your IP address, browser type, and the pages you view.</li>
           <li>Build an interest profile from that activity and share it with their partners.</li>
         </ul>
-        <p>Neither reads your reviewers, your quiz answers, or your account, and we do not send them anything about your study activity.</p>
         <p>You can opt-out of targeted advertising by visiting <a href="https://optout.aboutads.info/" target="_blank" rel="noreferrer">About Ads Opt-out</a> or <a href="https://www.youronlinechoices.com/" target="_blank" rel="noreferrer">Your Online Choices</a>.</p>
 
         <h3>Cookies</h3>
