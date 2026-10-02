@@ -126,7 +126,7 @@ export async function listMyGroups(userId) {
     ...new Set((memberships || []).map((m) => m.added_by).filter((id) => id && id !== userId))
   ];
   const { data: adderProfiles } = adderIds.length
-    ? await supabase.from(PROFILES_TABLE).select("id, email, display_name").in("id", adderIds)
+    ? await supabase.from(PROFILES_TABLE).select("id, display_name, avatar_url").in("id", adderIds)
     : { data: [] };
   const addersById = mapById(adderProfiles);
 
@@ -145,7 +145,7 @@ export async function listMyGroups(userId) {
         joinedAt: membership.created_at,
         addedBy: membership.added_by || null,
         addedByName: adder
-          ? adder.display_name || adder.email || "Someone"
+          ? adder.display_name || "Someone"
           : membership.added_by === userId
             ? "You"
             : null,
@@ -351,7 +351,7 @@ export async function addGroupMember(groupId, profile, addedBy) {
   if (!supabase) return NOT_CONFIGURED();
   if (!groupId || !profile?.id) return { error: new Error("Choose someone to add.") };
 
-  const name = profile.display_name || profile.email;
+  const name = profile.display_name || "Someone";
 
   const { data: existing } = await supabase
     .from(MEMBERS_TABLE)
@@ -434,7 +434,7 @@ export async function listGroupReviewers(groupId) {
 
   const ownerIds = [...new Set(matches.map((row) => row.owner_id))];
   const { data: profiles, error: profilesError } = ownerIds.length
-    ? await supabase.from(PROFILES_TABLE).select("id, email, display_name").in("id", ownerIds)
+    ? await supabase.from(PROFILES_TABLE).select("id, display_name, avatar_url").in("id", ownerIds)
     : { data: [], error: null };
 
   if (profilesError) return { data: [], error: profilesError };
@@ -446,7 +446,6 @@ export async function listGroupReviewers(groupId) {
       .map((row) => ({
         ...row,
         ownerName: profilesById.get(row.owner_id)?.display_name
-          || profilesById.get(row.owner_id)?.email
           || "A member"
       }))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),

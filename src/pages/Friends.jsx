@@ -17,7 +17,7 @@ import { SOCIAL_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
 const POLL_INTERVAL_MS = 30000;
 
 function getProfileName(profile) {
-  return profile?.display_name || profile?.email || "Hachi user";
+  return profile?.display_name || "Hachi user";
 }
 
 export default function Friends() {
@@ -36,11 +36,11 @@ export default function Friends() {
   const outgoingRequests = friendships.filter((friendship) => friendship.status === "pending" && friendship.requester_id === user?.id);
 
   const normalizedFriendQuery = friendQuery.trim().toLowerCase();
-  const filteredFriends = acceptedFriends.filter((friendship) => {
-    const name = getProfileName(friendship.otherProfile).toLowerCase();
-    const email = (friendship.otherProfile?.email || "").toLowerCase();
-    return name.includes(normalizedFriendQuery) || email.includes(normalizedFriendQuery);
-  });
+  // Names only. Filtering your own friends by address used to read the address
+  // off their profile, which is not something Hachi stores any more.
+  const filteredFriends = acceptedFriends.filter((friendship) => (
+    getProfileName(friendship.otherProfile).toLowerCase().includes(normalizedFriendQuery)
+  ));
 
   useEffect(() => {
     if (!configured || !user) return;
@@ -211,7 +211,7 @@ export default function Friends() {
               <article className="library-row" key={profile.id}>
                 <div>
                   <h3>{getProfileName(profile)}</h3>
-                  <p className="muted">{profile.email}</p>
+                  <p className="muted">Search matched by name or address</p>
                 </div>
                 <button className="button subtle" type="button" onClick={() => requestFriend(profile)}>
                   <UserPlus size={17} aria-hidden="true" />
@@ -278,7 +278,7 @@ export default function Friends() {
         {acceptedFriends.length ? (
           <>
             <form className="friend-search-form" onSubmit={(event) => event.preventDefault()}>
-              <input value={friendQuery} onChange={(event) => setFriendQuery(event.target.value)} placeholder="Search friends by name or email" />
+              <input value={friendQuery} onChange={(event) => setFriendQuery(event.target.value)} placeholder="Search friends by name" />
             </form>
             {filteredFriends.length ? (
               <div className="library-list">
@@ -286,7 +286,7 @@ export default function Friends() {
                   <article className="library-row" key={friendship.id}>
                     <div>
                       <h3>{getProfileName(friendship.otherProfile)}</h3>
-                      <p className="muted">{friendship.otherProfile?.email || "No email"}</p>
+                      <p className="muted">Friends since {new Date(friendship.created_at).toLocaleDateString()}</p>
                     </div>
                     <button className="button subtle danger-text" type="button" onClick={() => setPendingRemove(friendship)}>
                       <Trash2 size={17} aria-hidden="true" />

@@ -13,11 +13,14 @@ function mapById(items) {
 }
 
 export async function ensureMyProfile(user) {
-  if (!supabase || !user?.id || !user?.email) return { data: null, error: null };
+  if (!supabase || !user?.id) return { data: null, error: null };
 
+  // email is not written here. It used to be, and because the profiles select
+  // policy was open to every signed-in account that put every registered address
+  // in reach of "select email from profiles". Supabase keeps the address in
+  // auth.users, which clients cannot read, so the copy here was only a liability.
   const payload = {
     id: user.id,
-    email: user.email.toLowerCase(),
     display_name: getDisplayName(user),
     avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
     updated_at: new Date().toISOString()
@@ -33,11 +36,10 @@ export async function ensureMyProfile(user) {
 }
 
 export async function updateMyProfile(user, updates) {
-  if (!supabase || !user?.id || !user?.email) return { data: null, error: new Error("Supabase is not configured.") };
+  if (!supabase || !user?.id) return { data: null, error: new Error("Supabase is not configured.") };
 
   const payload = {
     id: user.id,
-    email: user.email.toLowerCase(),
     display_name: String(updates.displayName || "").trim() || null,
     avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
     updated_at: new Date().toISOString()
@@ -60,6 +62,7 @@ export async function deleteMyCloudAppData(userId) {
     supabase.from(FRIENDSHIPS_TABLE).delete().or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
     supabase.from("reviewer_progress").delete().eq("owner_id", userId),
     supabase.from("reviewer_attempts").delete().eq("owner_id", userId),
+    supabase.from("reviewer_study_streak").delete().eq("owner_id", userId),
     supabase.from("reviewers").delete().eq("owner_id", userId),
     supabase.from(PROFILES_TABLE).delete().eq("id", userId)
   ];
@@ -70,19 +73,21 @@ export async function deleteMyCloudAppData(userId) {
   return { error };
 }
 
+// Routed through find_people rather than querying profiles. The profiles table is
+// closed to anyone you have no relationship with, and this used to do a substring
+// match on email across the whole table, which returned up to ten people's
+// addresses for any two characters typed. The function matches an address
+// exactly, matches names by prefix only, and returns nothing but a name.
 export async function searchProfiles(query, currentUserId) {
   if (!supabase || !currentUserId) return { data: [], error: null };
 
   const term = String(query || "").trim();
   if (term.length < 2) return { data: [], error: null };
 
-  const sanitizedTerm = term.replaceAll("%", "").replaceAll(",", " ");
-  const { data, error } = await supabase
-    .from(PROFILES_TABLE)
-    .select("*")
-    .or(`email.ilike.%${sanitizedTerm}%,display_name.ilike.%${sanitizedTerm}%`)
-    .neq("id", currentUserId)
-    .limit(10);
+  const { data, error } = await supabase.rpc("find_people", {
+    p_term: term,
+    p_limit: 10
+  });
 
   return { data: data || [], error };
 }

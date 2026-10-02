@@ -35,7 +35,7 @@ import {
 } from "../utils/storageUtils.js";
 
 function getProfileName(profile) {
-  return profile?.display_name || profile?.email || "Hachi user";
+  return profile?.display_name || "Hachi user";
 }
 
 export default function ReviewerMenu({ reviewer, user, configured, onMessage, onChanged }) {
@@ -743,7 +743,7 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
                     />
                     <span>
                       <strong>{getProfileName(friendship.otherProfile)}</strong>
-                      <small>{friendship.otherProfile?.email || "No email"}</small>
+                      <small>Friend</small>
                     </span>
                     <span className="friend-picker-check" aria-hidden="true">
                       {selectedFriends.includes(friendship.otherUserId) ? <Check size={14} /> : null}

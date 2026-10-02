@@ -52,7 +52,7 @@ const ROLE_LABELS = {
 };
 
 function getProfileName(profile) {
-  return profile?.display_name || profile?.email || "Hachi user";
+  return profile?.display_name || "Hachi user";
 }
 
 // Saving the cloud cache announces a reviewer data change, and this page
@@ -611,7 +611,7 @@ export default function GroupDetail() {
                           {getProfileName(member.profile)}
                           {isMe ? " (you)" : ""}
                         </strong>
-                        <small>{member.profile?.email || "No email"}</small>
+                        <small>{member.role === "owner" ? "Owner" : member.role === "admin" ? "Admin" : "Member"}</small>
                       </span>
 
                       {member.role === "owner" ? (
@@ -672,7 +672,6 @@ export default function GroupDetail() {
                         <div className="group-menu-row" key={profile.id}>
                           <span className="group-menu-name">
                             <strong>{getProfileName(profile)}</strong>
-                            <small>{profile.email}</small>
                           </span>
                           <button
                             className="button subtle small"

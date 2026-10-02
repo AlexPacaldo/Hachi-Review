@@ -9,7 +9,7 @@ import hachiDogExcited from "../assets/hachi-dog-excited.png";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { getAllReviewers } from "../data/reviewerRegistry.js";
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";
-import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemptHistory, getStudyDays, mergeCloudReviewerCache, REVIEWER_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
+import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemptHistory, getStudyStreak, mergeCloudReviewerCache, REVIEWER_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
 import { getStudySnapshot } from "../utils/studyStats.js";
 
 export default function Home() {
@@ -25,10 +25,11 @@ export default function Home() {
   const progress = getAllProgress();
   const allAttempts = getAttemptHistory();
   const recentAttempts = allAttempts.slice(0, 5);
-  // From the study day ledger rather than the attempt history, so a session that
-  // was never finished still counts and a long run is not lost to attempt pruning.
+  // From the study streak record rather than the attempt history, so a session
+  // that was never finished still counts and a long run is not lost to the
+  // 14 day attempt pruning.
   const { currentStreak, longestStreak, week, note: streakNote } = useMemo(
-    () => getStudySnapshot(getStudyDays()),
+    () => getStudySnapshot(getStudyStreak()),
     [studyDaysVersion]
   );
   const completedReviewerIds = useMemo(() => new Set(allAttempts.map((attempt) => attempt.reviewerId).filter(Boolean)), [allAttempts]);

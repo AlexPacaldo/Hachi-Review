@@ -225,7 +225,7 @@ export async function listVisibleCloudReviewers(userId) {
 
   const ownerIds = [...new Set(visibleRows.map((row) => row.owner_id))];
   const { data: profiles, error: profilesError } = ownerIds.length
-    ? await supabase.from("profiles").select("id, email, display_name").in("id", ownerIds)
+    ? await supabase.from("profiles").select("id, display_name, avatar_url").in("id", ownerIds)
     : { data: [], error: null };
 
   if (profilesError) return { data: [], error: profilesError };
@@ -243,7 +243,7 @@ export async function listVisibleCloudReviewers(userId) {
         ...row.summary,
         owner_id: row.owner_id,
         reviewer_id: row.reviewer_id,
-        ownerName: profile ? profile.display_name || profile.email || "A friend" : null,
+        ownerName: profile ? profile.display_name || "A friend" : null,
         ownerProfile: profile
       };
     }),

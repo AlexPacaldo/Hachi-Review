@@ -12,7 +12,7 @@ const POLL_INTERVAL_MS = 60_000;
 const MAX_SEEN = 300;
 
 function getFriendName(profile) {
-  return profile?.display_name || profile?.email || "A friend";
+  return profile?.display_name || "A friend";
 }
 
 function readState() {

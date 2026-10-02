@@ -102,6 +102,118 @@ $$;
 revoke all on function public.is_group_member(uuid, uuid) from public;
 revoke all on function public.is_group_owner_or_admin(uuid, uuid) from public;
 revoke all on function public.is_group_owner(uuid, uuid) from public;
+
+-- The profiles select policy needs these three to decide who already has a
+-- relationship. They are SECURITY DEFINER for the same reason as the group
+-- helpers above: a policy on a table cannot query that same table, and here the
+-- subqueries also have to see rows the caller legitimately cannot list.
+
+create or replace function public.is_friend(a uuid, b uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.friendships
+    where (requester_id = a and addressee_id = b)
+       or (requester_id = b and addressee_id = a)
+  );
+$$;
+
+-- True when the two users share any group, regardless of who is in it.
+create or replace function public.shares_group_with(a uuid, b uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.group_members mine
+    join public.group_members theirs on theirs.group_id = mine.group_id
+    where mine.user_id = a and theirs.user_id = b
+  );
+$$;
+
+-- True when a reviewer has been shared directly between the two of them, which
+-- is how the interface labels a reviewer "Shared with you by ...".
+create or replace function public.owns_shared_reviewer_with(a uuid, b uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.reviewer_shares
+    where (owner_id = a and recipient_id = b)
+       or (owner_id = b and recipient_id = a)
+  );
+$$;
+
+revoke all on function public.is_friend(uuid, uuid) from public;
+revoke all on function public.shares_group_with(uuid, uuid) from public;
+revoke all on function public.owns_shared_reviewer_with(uuid, uuid) from public;
+
+-- Finding somebody you have not met yet. This has to exist because the profiles
+-- policy above is deliberately closed, and it must not become a way back in:
+--
+--   * an address only matches exactly, never as a substring, so the function
+--     cannot be used to walk the user list one character at a time
+--   * only id, display_name and avatar_url come back, so it cannot leak anything
+--     a profile no longer carries
+--   * results are capped, so a common name cannot be used to page through people
+--
+-- Looking someone up by address is still enough to learn whether an address has
+-- an account here, which is inherent to inviting people by address and is how
+-- most social apps behave. It is a far smaller surface than dumping the table.
+create or replace function public.find_people(p_term text, p_limit integer default 10)
+returns table (id uuid, display_name text, avatar_url text)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_term text := btrim(coalesce(p_term, ''));
+  v_capped integer := least(greatest(coalesce(p_limit, 10), 1), 10);
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null or length(v_term) < 2 then
+    return;
+  end if;
+
+  if v_term ilike '%@%' then
+    -- An address is matched exactly against auth.users, which no client can read
+    -- directly, and only that single person is returned.
+    return query
+      select p.id, p.display_name, p.avatar_url
+      from auth.users u
+      join public.profiles p on p.id = u.id
+      where lower(u.email) = lower(v_term)
+        and u.id <> v_uid
+      limit 1;
+    return;
+  end
+
+  return query
+    select p.id, p.display_name, p.avatar_url
+    from public.profiles p
+    where lower(p.display_name) like lower(v_term) || '%'
+      and p.id <> v_uid
+    order by p.display_name
+    limit v_capped;
+end;
+$$;
+
+revoke all on function public.find_people(text, integer) from public, anon;
+
+grant execute on function public.find_people(text, integer) to authenticated;
 grant execute on function public.is_group_member(uuid, uuid) to authenticated;
 grant execute on function public.is_group_owner_or_admin(uuid, uuid) to authenticated;
 grant execute on function public.is_group_owner(uuid, uuid) to authenticated;
@@ -602,61 +714,178 @@ revoke execute on function public.prune_reviewer_attempts(uuid, integer) from pu
 
 grant execute on function public.prune_reviewer_attempts(uuid, integer) to authenticated;
 
--- One row per day the learner studied, so the streak survives across devices.
--- Deliberately its own table instead of being worked out from reviewer_attempts:
--- attempts prune themselves after 14 days, so a run longer than that could never
--- be reported, and they only exist once a quiz is finished. This records the day
--- a session starts or an answer is given, so an abandoned session still counts.
+-- Superseded by the single row below. Dropped rather than left in place so an
+-- account that already ran the earlier version stops paying for it.
+drop table if exists public.reviewer_study_days;
+
+-- The study streak, as ONE row per account rather than one row per day.
 --
--- The stored day is the learner's own calendar date rather than a timestamp, so a
--- streak does not shift when a device sits in a different timezone. Rows are tiny
--- and there is at most one per day, so this is not worth pruning.
-create table if not exists public.reviewer_study_days (
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  day date not null,
-  created_at timestamptz not null default now(),
-  primary key (owner_id, day)
+-- A day per row was the first attempt and it was the wrong shape: a streak is a
+-- single number, so storing 365 rows to describe it cost roughly 400 times more
+-- than it needed to, and the figure grew forever. Everything the interface
+-- actually shows is derivable from these counters:
+--
+--   current_streak  read together with last_study_day, so the client can tell
+--                   whether the run still reaches today or yesterday and show 0
+--                   when it does not, without replaying any history
+--   longest_streak  a high water mark, so a broken streak does not erase it
+--   total_days      lifetime studied days
+--   recent_days     a short, bounded window, all the strip ever needs, because the
+--                   week view can never look further than seven days back
+--
+-- The streak still survives the 14 day attempt pruning that made it unreportable
+-- when it was derived from reviewer_attempts, and it still counts a session that
+-- was started and abandoned rather than only finished quizzes.
+create table if not exists public.reviewer_study_streak (
+  owner_id uuid primary key references auth.users(id) on delete cascade,
+  current_streak integer not null default 0,
+  longest_streak integer not null default 0,
+  total_days integer not null default 0,
+  last_study_day date,
+  recent_days date[] not null default '{}',
+  updated_at timestamptz not null default now()
 );
 
-alter table public.reviewer_study_days enable row level security;
+alter table public.reviewer_study_streak enable row level security;
 
-grant select, insert, update, delete on public.reviewer_study_days to authenticated;
+grant select, insert, update, delete on public.reviewer_study_streak to authenticated;
 
-drop policy if exists "Users can read own study days" on public.reviewer_study_days;
-create policy "Users can read own study days"
-on public.reviewer_study_days
+drop policy if exists "Users can read own study streak" on public.reviewer_study_streak;
+create policy "Users can read own study streak"
+on public.reviewer_study_streak
 for select
 to authenticated
 using (auth.uid() = owner_id);
 
-drop policy if exists "Users can insert own study days" on public.reviewer_study_days;
-create policy "Users can insert own study days"
-on public.reviewer_study_days
+drop policy if exists "Users can insert own study streak" on public.reviewer_study_streak;
+create policy "Users can insert own study streak"
+on public.reviewer_study_streak
 for insert
 to authenticated
 with check (auth.uid() = owner_id);
 
-drop policy if exists "Users can update own study days" on public.reviewer_study_days;
-create policy "Users can update own study days"
-on public.reviewer_study_days
+drop policy if exists "Users can update own study streak" on public.reviewer_study_streak;
+create policy "Users can update own study streak"
+on public.reviewer_study_streak
 for update
 to authenticated
 using (auth.uid() = owner_id)
 with check (auth.uid() = owner_id);
 
-drop policy if exists "Users can delete own study days" on public.reviewer_study_days;
-create policy "Users can delete own study days"
-on public.reviewer_study_days
+drop policy if exists "Users can delete own study streak" on public.reviewer_study_streak;
+create policy "Users can delete own study streak"
+on public.reviewer_study_streak
 for delete
 to authenticated
 using (auth.uid() = owner_id);
 
-create index if not exists reviewer_study_days_owner_day_idx
-on public.reviewer_study_days(owner_id, day desc);
+-- The day arithmetic lives here rather than in the client so two devices
+-- reporting the same day cannot corrupt each other, and so the caller cannot set
+-- a streak number directly. SECURITY DEFINER because the upsert needs to run in
+-- one statement; it still writes only the caller's own row, taken from auth.uid().
+create or replace function public.mark_study_day(p_day date)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_row public.reviewer_study_streak%rowtype;
+  v_current integer;
+  v_total integer;
+  v_recent date[];
+  v_is_new_day boolean := false;
+begin
+  if v_uid is null or p_day is null then
+    return null;
+  end if;
 
+  -- Held for the duration of the call so a second device reporting at the same
+  -- moment waits rather than reading a half applied row.
+  select * into v_row
+  from public.reviewer_study_streak
+  where owner_id = v_uid
+  for update;
+
+  if v_row.owner_id is null then
+    v_current := 1;
+    v_total := 1;
+    v_is_new_day := true;
+  elsif v_row.last_study_day = p_day then
+    -- Already counted. Repeats are normal, since every answer marks the day.
+    v_current := v_row.current_streak;
+    v_total := v_row.total_days;
+  elsif p_day < v_row.last_study_day then
+    -- An older day arriving late, or a device whose clock is behind. It cannot
+    -- extend the run but it still belongs in the week strip.
+    v_current := v_row.current_streak;
+    v_total := v_row.total_days;
+  elsif p_day = v_row.last_study_day + 1 then
+    v_current := v_row.current_streak + 1;
+    v_total := v_row.total_days + 1;
+    v_is_new_day := true;
+  else
+    -- A gap, so this is a fresh run.
+    v_current := 1;
+    v_total := v_row.total_days + 1;
+    v_is_new_day := true;
+  end if;
+
+  select coalesce(array_agg(day order by day), '{}')
+  into v_recent
+  from (
+    select distinct unnest(v_row.recent_days || p_day) as day
+  ) kept
+  where day > p_day - 14;
+
+  insert into public.reviewer_study_streak as t (
+    owner_id, current_streak, longest_streak, total_days, last_study_day, recent_days, updated_at
+  )
+  values (
+    v_uid,
+    v_current,
+    greatest(coalesce(v_row.longest_streak, 0), v_current),
+    v_total,
+    greatest(v_row.last_study_day, p_day),
+    v_recent,
+    now()
+  )
+  on conflict (owner_id) do update set
+    current_streak = excluded.current_streak,
+    longest_streak = excluded.longest_streak,
+    total_days = excluded.total_days,
+    last_study_day = excluded.last_study_day,
+    recent_days = excluded.recent_days,
+    updated_at = excluded.updated_at
+  where t.last_study_day is distinct from excluded.last_study_day
+     or t.recent_days is distinct from excluded.recent_days
+     or t.current_streak is distinct from excluded.current_streak;
+
+  return jsonb_build_object(
+    'currentStreak', v_current,
+    'longestStreak', greatest(coalesce(v_row.longest_streak, 0), v_current),
+    'totalDays', v_total,
+    'lastStudyDay', greatest(v_row.last_study_day, p_day),
+    'recentDays', to_jsonb(v_recent),
+    'newDay', v_is_new_day
+  );
+end;
+$$;
+
+revoke all on function public.mark_study_day(date) from public, anon;
+
+grant execute on function public.mark_study_day(date) to authenticated;
+
+
+-- email is deliberately absent. It used to live here with a select policy of
+-- using (true), which meant any signed-in account could run
+-- "select email from profiles" and enumerate every registered address, and the
+-- friend search did exactly that with a substring match. Supabase already keeps
+-- the address in auth.users, where no other user can read it, so nothing is lost
+-- by not duplicating it here.
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  email text not null unique,
   display_name text,
   avatar_url text,
   updated_at timestamptz not null default now()
@@ -666,12 +895,22 @@ alter table public.profiles enable row level security;
 
 grant select, insert, update, delete on public.profiles to authenticated;
 
+-- Closed to signed-in users rather than open to them, because a display name is
+-- still a person's name. Readable when you are the person, or when you share a
+-- relationship that already means you have met: a friendship, a group, or a
+-- reviewer that has been shared between you. Finding somebody you have not met
+-- yet goes through find_people below instead.
 drop policy if exists "Users can read profiles" on public.profiles;
 create policy "Users can read profiles"
 on public.profiles
 for select
 to authenticated
-using (true);
+using (
+  auth.uid() = id
+  or public.is_friend(auth.uid(), id)
+  or public.shares_group_with(auth.uid(), id)
+  or public.owns_shared_reviewer_with(auth.uid(), id)
+);
 
 drop policy if exists "Users can insert own profile" on public.profiles;
 create policy "Users can insert own profile"
@@ -695,8 +934,9 @@ for delete
 to authenticated
 using (auth.uid() = id);
 
-create index if not exists profiles_email_idx
-on public.profiles(lower(email));
+-- profiles_display_name_idx supports the prefix match in find_people.
+create index if not exists profiles_display_name_idx
+on public.profiles(lower(display_name));
 
 drop policy if exists "Users can read own friendships" on public.friendships;
 create policy "Users can read own friendships"

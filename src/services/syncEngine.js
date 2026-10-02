@@ -10,7 +10,7 @@ import {
   upsertCloudProgress
 } from "./cloudProgress.js";
 import { listCloudReviewersByIds, listMyCloudReviewers, upsertCloudReviewer } from "./cloudReviewers.js";
-import { listCloudStudyDays, markCloudStudyDays } from "./cloudStudyDays.js";
+import { getCloudStudyStreak, markCloudStudyDays } from "./cloudStudyDays.js";
 import {
   getAttemptHistory,
   getCloudReviewerCache,
@@ -21,12 +21,11 @@ import {
   getPendingStudyDays,
   getProgressTimestamp,
   getSyncQueue,
-  getStudyDays,
   cacheCloudReviewer,
   clearPendingStudyDays,
   mergeCloudAttempts,
   mergeCloudProgress,
-  mergeCloudStudyDays,
+  mergeCloudStudyStreak,
   dropProgressOlderThanAttempts,
   dropConflictingQueueItems,
   queuePendingDelete,
@@ -165,17 +164,25 @@ export async function pushStudyDaysToCloud() {
     return { studyDays: 0, queued: true, error: null };
   }
 
-  const { error } = await markCloudStudyDays(activeUserId, pending);
+  const { streak, error } = await markCloudStudyDays(activeUserId, pending);
   if (error) return { studyDays: 0, error };
 
   clearPendingStudyDays(pending);
+
+  // The function saw every pending day plus whatever the account already held, so
+  // its answer is the real run length. Two devices holding half a run each cannot
+  // work out the shared stretch between them offline, and adopting this is what
+  // closes that gap rather than leaving both one day short.
+  if (streak) mergeCloudStudyStreak(streak);
+
   return { studyDays: pending.length, error: null };
 }
 
 // The pending list is durable in local storage, so a day is never lost even if
 // this never fires. Debounced anyway so the streak reaches the other devices
 // during a session instead of waiting for the next sign-in, and skipped
-// entirely when there is nothing new to send.
+// entirely when there is nothing new to send. Every answer reports the same day,
+// so without this a long quiz would send one request per question.
 export function scheduleStudyDaySync() {
   if (!canWrite()) return;
   if (!getPendingStudyDays().length) return;
@@ -359,21 +366,17 @@ export async function hydrateFromCloud() {
 }
 
 // Deliberately not part of hydrateFromCloud. That runs on a 60 second timer, and a
-// study day is recorded at most once a day, so pulling the whole list every minute
-// spent roughly 87 MB a month per learner sitting on the Home page for egress and
-// returned nothing new almost every time. This runs on sign-in and reconnect
-// instead, and only asks for days the device has not seen, which is normally none.
+// study day is recorded at most once a day, so pulling the whole record every
+// minute spent egress and returned nothing new almost every time. This runs on
+// sign-in and reconnect instead, and it is a single row.
 //
 // An account without the table yet just reports an error, which syncAccount
-// already tolerates, and the local ledger keeps the streak working meanwhile.
-export async function hydrateStudyDaysFromCloud() {
+// already tolerates, and the local record keeps the streak working meanwhile.
+export async function hydrateStudyStreakFromCloud() {
   if (!canWrite()) return { error: null };
 
-  const known = getStudyDays();
-  const sinceDay = known.length ? known[known.length - 1] : null;
-  const { data, error } = await listCloudStudyDays(activeUserId, sinceDay);
-
-  if (data.length) mergeCloudStudyDays(data);
+  const { streak, error } = await getCloudStudyStreak(activeUserId);
+  if (streak) mergeCloudStudyStreak(streak);
 
   return { error };
 }
@@ -463,10 +466,10 @@ export async function syncAccount() {
   // After the merge, local holds the newer of the two records, so the push that
   // follows only ever carries real progress.
   const hydrated = await hydrateFromCloud();
-  const studyDays = await hydrateStudyDaysFromCloud();
+  const studyStreak = await hydrateStudyStreakFromCloud();
   const pushed = await pushUnsyncedLocalData();
   const studyDayPush = await pushStudyDaysToCloud();
   const flushed = await flushSyncQueue();
 
-  return { ...deletes, ...pushed, ...studyDays, ...studyDayPush, ...flushed, error: hydrated.error || studyDays.error };
+  return { ...deletes, ...pushed, ...studyStreak, ...studyDayPush, ...flushed, error: hydrated.error || studyStreak.error };
 }

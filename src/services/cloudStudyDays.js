@@ -1,61 +1,58 @@
 import { supabase } from "../lib/supabaseClient.js";
 
-const STUDY_DAYS_TABLE = "reviewer_study_days";
-// Upserts are sent in small groups because a first sign-in on a new device can
-// carry a whole history of days at once.
-const MARK_BATCH_SIZE = 90;
+const STREAK_TABLE = "reviewer_study_streak";
 
-// sinceDay trims the pull to days the device does not already have. Study days are
-// only ever added, never removed or edited, so anything at or below the newest day
-// this device holds is already known and asking for it again just spends egress.
-// A device with nothing yet sends no bound and takes the whole list.
-export async function listCloudStudyDays(userId, sinceDay) {
-  if (!supabase || !userId) return { data: [], error: null };
-
-  const bound = /^\d{4}-\d{2}-\d{2}$/.test(String(sinceDay || "")) ? sinceDay : null;
-
-  let query = supabase
-    .from(STUDY_DAYS_TABLE)
-    .select("day")
-    .eq("owner_id", userId);
-
-  if (bound) query = query.gt("day", bound);
-
-  const { data, error } = await query;
-
-  if (error) return { data: [], error };
-
-  // Postgres hands dates back as YYYY-MM-DD, which is already the shape the
-  // client stores, but a configured client can be asked for a different format.
-  const days = (data || [])
-    .map((row) => String(row?.day || "").slice(0, 10))
-    .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day));
-
-  return { data: days, error: null };
-}
-
+// The day arithmetic is done by mark_study_day in the schema, not here. Two
+// devices can report the same day at the same moment, and letting each of them
+// work out its own counters would let the two disagree or double count. The
+// function holds the row while it writes and returns what it decided, so the
+// client adopts the same answer.
 export async function markCloudStudyDays(userId, days) {
-  if (!supabase || !userId) return { error: new Error("Supabase is not configured.") };
+  if (!supabase || !userId) return { streak: null, error: new Error("Supabase is not configured.") };
 
-  const unique = [...new Set((days || []).map(String).filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)))];
-  if (!unique.length) return { error: null };
+  const unique = [...new Set((days || []).map(String).filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)))].sort();
+  if (!unique.length) return { streak: null, error: null };
 
+  let streak = null;
   let lastError = null;
 
-  for (let index = 0; index < unique.length; index += MARK_BATCH_SIZE) {
-    const batch = unique.slice(index, index + MARK_BATCH_SIZE);
+  // Oldest first, so a device catching up on several offline days walks the run
+  // forward in order rather than jumping straight to the newest one. Each call
+  // reports the record as it stands, so the last reply is the settled answer.
+  for (const day of unique) {
+    const { data, error } = await supabase.rpc("mark_study_day", { p_day: day });
 
-    // ignoreDuplicates keeps this a no-op for a day the account already has, so
-    // re-uploading a history is safe and needs no read first.
-    const { error } = await supabase
-      .from(STUDY_DAYS_TABLE)
-      .upsert(
-        batch.map((day) => ({ owner_id: userId, day })),
-        { onConflict: "owner_id,day", ignoreDuplicates: true }
-      );
+    if (error) {
+      lastError = error;
+      continue;
+    }
 
-    if (error) lastError = error;
+    if (data) streak = data;
   }
 
-  return { error: lastError };
+  return { streak, error: lastError };
+}
+
+export async function getCloudStudyStreak(userId) {
+  if (!supabase || !userId) return { streak: null, error: null };
+
+  const { data, error } = await supabase
+    .from(STREAK_TABLE)
+    .select("current_streak, longest_streak, total_days, last_study_day, recent_days")
+    .eq("owner_id", userId)
+    .maybeSingle();
+
+  if (error) return { streak: null, error };
+  if (!data) return { streak: null, error: null };
+
+  return {
+    streak: {
+      currentStreak: data.current_streak,
+      longestStreak: data.longest_streak,
+      totalDays: data.total_days,
+      lastStudyDay: data.last_study_day,
+      recentDays: data.recent_days
+    },
+    error: null
+  };
 }
