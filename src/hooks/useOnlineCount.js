@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 import { isSupabaseConfigured } from "../lib/supabaseClient.js";
-import { POLL_MS, releasePresence, touchPresence } from "../services/cloudPresence.js";
-
-function sessionKey() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
+import { getPresenceKey, POLL_MS, releasePresence, touchPresence } from "../services/cloudPresence.js";
 
 // Counted from a heartbeat row rather than a presence channel, so a busy landing
 // page no longer needs a Realtime connection per visitor. The trade is a poll
@@ -19,7 +12,7 @@ export function useOnlineCount() {
   useEffect(() => {
     if (!isSupabaseConfigured) return undefined;
 
-    const key = sessionKey();
+    const key = getPresenceKey();
     let active = true;
     let timer = null;
 

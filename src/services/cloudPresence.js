@@ -7,13 +7,6 @@ import { supabase } from "../lib/supabaseClient.js";
 const POLL_MS = 60_000;
 const WINDOW_SECONDS = 150;
 
-function sessionKey() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
 // One call records the visit and returns the current total, so the number stays
 // live without a second round trip.
 export async function touchPresence(key) {
@@ -28,11 +21,14 @@ export async function touchPresence(key) {
   return { count: typeof data === "number" ? data : null, error: null };
 }
 
-// Best effort, so closing the tab drops the count right away instead of waiting
-// for the window to expire. Nothing depends on it succeeding.
+// Best effort, so navigating away from the landing page drops the count right
+// away instead of waiting for the window to expire. This is not used when a tab
+// closes, since the request would not finish in time, which is why a stable key
+// matters. Nothing depends on it succeeding.
 export async function releasePresence(key) {
   if (!supabase || !key) return;
   await supabase.rpc("release_presence", { p_key: key });
 }
 
 export { POLL_MS };
+export { getPresenceKey } from "./presenceKey.js";
