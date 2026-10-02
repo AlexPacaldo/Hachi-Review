@@ -1,8 +1,10 @@
 import { supabase } from "../lib/supabaseClient.js";
+import { toCompactQuizRecord } from "../utils/quizUtils.js";
 
 const PROGRESS_TABLE = "reviewer_progress";
 const ATTEMPTS_TABLE = "reviewer_attempts";
 const MAX_SYNCED_ATTEMPTS = 500;
+const ATTEMPT_RETENTION_DAYS = 180;
 
 export async function listCloudProgress(userId) {
   if (!supabase || !userId) return { data: [], error: null };
@@ -30,7 +32,9 @@ export async function upsertCloudProgress(userId, session) {
   const payload = {
     owner_id: userId,
     reviewer_id: session.reviewerId,
-    data: session,
+    // The questions are stored once on the reviewer, so the session keeps only
+    // the ordered ids it used. syncEngine restores them on the way back down.
+    data: toCompactQuizRecord(session),
     updated_at: new Date().toISOString()
   };
 
@@ -83,7 +87,7 @@ export async function upsertCloudAttempt(userId, attempt) {
     owner_id: userId,
     attempt_id: attempt.attemptId,
     reviewer_id: attempt.reviewerId,
-    data: attempt,
+    data: toCompactQuizRecord(attempt),
     completed_at: attempt.date || new Date().toISOString()
   };
 
@@ -94,6 +98,21 @@ export async function upsertCloudAttempt(userId, attempt) {
     .single();
 
   return { data, error };
+}
+
+// Attempt rows are never pruned on their own, so without this one heavy quiz
+// history grows without bound and eats the whole database quota. Each user trims
+// their own old rows during sync, which keeps it to a single indexed delete and
+// needs no scheduled job.
+export async function pruneOldCloudAttempts(userId, days = ATTEMPT_RETENTION_DAYS) {
+  if (!supabase || !userId || !(Number(days) > 0)) return { deleted: 0, error: null };
+
+  const { data, error } = await supabase.rpc("prune_reviewer_attempts", {
+    p_owner: userId,
+    p_older_than_days: Math.round(Number(days))
+  });
+
+  return { deleted: Number(data) || 0, error };
 }
 
 export async function clearCloudProgress(userId) {

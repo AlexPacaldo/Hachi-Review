@@ -1,3 +1,5 @@
+import { restoreQuizQuestions } from "./quizUtils.js";
+
 const KEYS = {
   progress: "reviewer_quiz_progress",
   history: "reviewer_attempt_history",
@@ -134,7 +136,7 @@ export function getProgressTimestamp(session) {
   return Number.isFinite(started) ? started : 0;
 }
 
-export function mergeCloudProgress(cloudSessions) {
+export function mergeCloudProgress(cloudSessions, reviewersById = new Map()) {
   const sessions = Array.isArray(cloudSessions) ? cloudSessions : [];
   if (!sessions.length) return getAllProgress();
 
@@ -143,9 +145,13 @@ export function mergeCloudProgress(cloudSessions) {
 
   sessions.forEach((session) => {
     if (!session?.reviewerId) return;
+    const restored = restoreQuizQuestions(session, reviewersById.get(session.reviewerId));
+    // A record whose reviewer is not on this device stays out rather than
+    // replacing good local progress with a session that has no questions.
+    if (!restored) return;
     const existing = progress[session.reviewerId];
     if (existing && getProgressTimestamp(existing) >= getProgressTimestamp(session)) return;
-    progress[session.reviewerId] = session;
+    progress[session.reviewerId] = restored;
     changed = true;
   });
 
@@ -180,7 +186,7 @@ function getAttemptTimestamp(attempt) {
   return 0;
 }
 
-export function mergeCloudAttempts(cloudRows) {
+export function mergeCloudAttempts(cloudRows, reviewersById = new Map()) {
   const rows = Array.isArray(cloudRows) ? cloudRows : [];
   if (!rows.length) return getAttemptHistory();
 
@@ -192,8 +198,12 @@ export function mergeCloudAttempts(cloudRows) {
 
   const before = byId.size;
   rows.forEach((row) => {
-    const attempt = row?.data || row;
-    if (!attempt?.attemptId) return;
+    const raw = row?.data || row;
+    if (!raw?.attemptId) return;
+    // Same rule as progress: an attempt is only merged once its questions can be
+    // rebuilt, so ReviewAnswers never sees a record it cannot display.
+    const attempt = restoreQuizQuestions(raw, reviewersById.get(raw.reviewerId));
+    if (!attempt) return;
     const existing = byId.get(attempt.attemptId);
     if (existing && getAttemptTimestamp(existing) >= getAttemptTimestamp(attempt)) return;
     byId.set(attempt.attemptId, attempt);

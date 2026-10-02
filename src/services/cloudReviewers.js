@@ -30,6 +30,20 @@ function getGroupScope(reviewer) {
   return ids.length ? ids : null;
 }
 
+export async function listCloudReviewersByIds(reviewerIds) {
+  const ids = [...new Set((reviewerIds || []).map(String).filter(Boolean))];
+  if (!supabase || !ids.length) return { data: [], error: null };
+
+  // No owner filter on purpose: a synced record can belong to a reviewer a
+  // friend shared, and the read policies already decide who may see it.
+  const { data, error } = await supabase
+    .from(REVIEWERS_TABLE)
+    .select("reviewer_id, data")
+    .in("reviewer_id", ids);
+
+  return { data: data || [], error };
+}
+
 export async function upsertCloudReviewer(userId, reviewer) {
   if (!supabase || !userId) {
     return { data: null, error: new Error("Supabase is not configured.") };

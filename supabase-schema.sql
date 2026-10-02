@@ -573,6 +573,31 @@ on public.reviewer_attempts(owner_id, completed_at desc);
 create index if not exists reviewer_attempts_owner_reviewer_idx
 on public.reviewer_attempts(owner_id, reviewer_id);
 
+-- An attempt row is by far the heaviest record a user accumulates, and nothing
+-- reads one once it drops out of the synced history window. The app calls this on
+-- its own sync, so trimming needs no scheduled job and stays off every other
+-- user's query path. Security invoker keeps the delete under the owner's own
+-- delete policy.
+create or replace function public.prune_reviewer_attempts(p_owner uuid, p_older_than_days integer default 180)
+returns integer
+language sql
+security invoker
+set search_path = public
+as $$
+  with removed as (
+    delete from public.reviewer_attempts
+    where owner_id = p_owner
+      and completed_at is not null
+      and completed_at < now() - make_interval(days => greatest(p_older_than_days, 1))
+    returning 1
+  )
+  select count(*)::integer from removed;
+$$;
+
+revoke execute on function public.prune_reviewer_attempts(uuid, integer) from public, anon;
+
+grant execute on function public.prune_reviewer_attempts(uuid, integer) to authenticated;
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique,

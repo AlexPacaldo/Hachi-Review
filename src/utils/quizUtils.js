@@ -141,19 +141,8 @@ export function isAnswerCorrect(question, selectedAnswer) {
   return selectedAnswer === question.correctAnswer;
 }
 
-export function buildSessionQuestions(questions, settings, retryQuestionIds = null) {
-  let pool = retryQuestionIds?.length
-    ? questions.filter((question) => retryQuestionIds.includes(question.id))
-    : [...questions];
-
-  pool = resolveDifficultyForSession(pool, settings.difficulty);
-  pool = resolveStyleForSession(pool, settings.includeScenarioQuestions);
-  pool = resolveQuestionTypesForSession(pool, settings.questionTypes);
-
-  if (settings.questionOrder === "random") pool = shuffleItems(pool);
-  pool = pool.slice(0, settings.questionCount);
-
-  return pool.map((question) => ({
+function toSessionQuestion(question, settings) {
+  return {
     id: question.id,
     type: question.type || "multiple_choice",
     difficulty: getQuestionDifficulty(question),
@@ -167,7 +156,30 @@ export function buildSessionQuestions(questions, settings, retryQuestionIds = nu
       settings.choiceOrder === "shuffle"
         ? shuffleItems(normalizeChoices(question.choices))
         : normalizeChoices(question.choices)
-  }));
+  };
+}
+
+function applyChoiceOrder(choices, order) {
+  return [...choices].sort((a, b) => {
+    const rankA = order.indexOf(a.value);
+    const rankB = order.indexOf(b.value);
+    return (rankA === -1 ? order.length : rankA) - (rankB === -1 ? order.length : rankB);
+  });
+}
+
+export function buildSessionQuestions(questions, settings, retryQuestionIds = null) {
+  let pool = retryQuestionIds?.length
+    ? questions.filter((question) => retryQuestionIds.includes(question.id))
+    : [...questions];
+
+  pool = resolveDifficultyForSession(pool, settings.difficulty);
+  pool = resolveStyleForSession(pool, settings.includeScenarioQuestions);
+  pool = resolveQuestionTypesForSession(pool, settings.questionTypes);
+
+  if (settings.questionOrder === "random") pool = shuffleItems(pool);
+  pool = pool.slice(0, settings.questionCount);
+
+  return pool.map((question) => toSessionQuestion(question, settings));
 }
 
 export function createQuizSession(reviewer, settings, retryQuestionIds = null) {
@@ -324,6 +336,65 @@ export function createAttemptFromSession(session) {
     questions: session.questions,
     answers: session.answers
   };
+}
+
+// A session and an attempt both carry the whole question list they were built
+// from, which is the single biggest thing stored in a user's account. Those
+// questions already live in the reviewer the record points at, so a cloud record
+// only needs the ordered ids, plus the choice order when it was shuffled, to put
+// the exact same list back together. Everything else about the record is kept.
+export function toCompactQuizRecord(record) {
+  const questions = record?.questions;
+  if (!Array.isArray(questions)) return record;
+
+  const choiceOrders = record.settings?.choiceOrder === "shuffle"
+    ? questions.map((question) => (question.choices || []).map((choice) => choice.value))
+    : null;
+
+  const { questions: _questions, ...rest } = record;
+
+  return {
+    ...rest,
+    questionIds: questions.map((question) => question.id),
+    ...(choiceOrders ? { choiceOrders } : {})
+  };
+}
+
+// Rebuilds the questions a compact record was written with. Returns null when the
+// record still carries its own questions, and also when the reviewer cannot
+// supply every one of them, so a caller can skip the record instead of storing a
+// session that would mis-score or break on resume.
+export function restoreQuizQuestions(record, reviewer) {
+  if (!record || Array.isArray(record.questions)) return record || null;
+
+  const ids = Array.isArray(record.questionIds) ? record.questionIds : null;
+  if (!ids?.length || !Array.isArray(reviewer?.questions)) return null;
+
+  const byId = new Map(reviewer.questions.map((question) => [question.id, question]));
+  const ordered = [];
+
+  for (const id of ids) {
+    const source = byId.get(id);
+    if (!source) return null;
+    ordered.push(source);
+  }
+
+  const settings = record.settings || {};
+  // The settings decide a session question's type, sometimes overriding what the
+  // reviewer stored, so the same pass has to run again here. Skipping it would
+  // grade a flashcard question as multiple choice on the next device.
+  const typed = resolveQuestionTypesForSession(ordered, settings.questionTypes);
+  if (typed.length !== ordered.length) return null;
+
+  const orders = Array.isArray(record.choiceOrders) ? record.choiceOrders : null;
+  const questions = typed.map((source, index) => {
+    const built = toSessionQuestion(source, { ...settings, choiceOrder: "as-stored" });
+    const order = orders?.[index];
+    return order?.length ? { ...built, choices: applyChoiceOrder(built.choices, order) } : built;
+  });
+
+  const { questionIds: _ids, choiceOrders: _orders, ...rest } = record;
+  return { ...rest, questions };
 }
 
 export function getPerformanceMessage(percentage) {

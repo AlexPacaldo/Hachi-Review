@@ -5,10 +5,11 @@ import {
   deleteCloudProgress,
   listCloudAttempts,
   listCloudProgress,
+  pruneOldCloudAttempts,
   upsertCloudAttempt,
   upsertCloudProgress
 } from "./cloudProgress.js";
-import { listMyCloudReviewers, upsertCloudReviewer } from "./cloudReviewers.js";
+import { listCloudReviewersByIds, listMyCloudReviewers, upsertCloudReviewer } from "./cloudReviewers.js";
 import {
   getAttemptHistory,
   getCloudReviewerCache,
@@ -219,6 +220,29 @@ export async function flushSyncQueue() {
   };
 }
 
+// Progress and attempts arrive without their questions, so every reviewer they
+// point at has to be in hand before they can be merged into local storage.
+async function resolveReviewerMap(reviewerIds) {
+  const byId = new Map();
+
+  [...getCloudReviewerCache(), ...getLocalReviewers()].forEach((reviewer) => {
+    if (reviewer?.reviewerId) byId.set(reviewer.reviewerId, reviewer);
+  });
+
+  const missing = [...new Set(reviewerIds.filter((id) => id && !byId.has(id)))];
+  if (!missing.length) return byId;
+
+  // A record synced from another device can turn up before its reviewer has ever
+  // been opened here, so fetch the missing ones instead of dropping the record.
+  const { data } = await listCloudReviewersByIds(missing);
+  (data || []).forEach((row) => {
+    if (!row?.reviewer_id) return;
+    byId.set(row.reviewer_id, { ...row.data, reviewerId: row.reviewer_id });
+  });
+
+  return byId;
+}
+
 export async function hydrateFromCloud() {
   if (!canWrite()) return { error: null };
 
@@ -227,8 +251,17 @@ export async function hydrateFromCloud() {
     listCloudAttempts(activeUserId)
   ]);
 
-  if (progressResult.data.length) mergeCloudProgress(progressResult.data);
-  if (attemptsResult.data.length) mergeCloudAttempts(attemptsResult.data);
+  const reviewersById = await resolveReviewerMap([
+    ...progressResult.data.map((session) => session?.reviewerId),
+    ...attemptsResult.data.map((row) => row?.data?.reviewerId || row?.reviewerId)
+  ]);
+
+  if (progressResult.data.length) mergeCloudProgress(progressResult.data, reviewersById);
+  if (attemptsResult.data.length) mergeCloudAttempts(attemptsResult.data, reviewersById);
+
+  // Prunes only what has already synced and fallen out of the history window, so
+  // it is safe to fire and forget alongside the pull.
+  pruneOldCloudAttempts(activeUserId);
 
   return { error: progressResult.error || attemptsResult.error || null };
 }
