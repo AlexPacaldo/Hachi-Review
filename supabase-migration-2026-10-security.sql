@@ -120,6 +120,14 @@ revoke all on function public.is_friend(uuid, uuid) from public;
 revoke all on function public.shares_group_with(uuid, uuid) from public;
 revoke all on function public.owns_shared_reviewer_with(uuid, uuid) from public;
 
+-- Needed. Revoking from PUBLIC removes the execute privilege a function has by
+-- default, and a policy expression runs as the querying user, so omitting these
+-- grants makes every profiles read fail with "permission denied for function
+-- is_friend".
+grant execute on function public.is_friend(uuid, uuid) to authenticated;
+grant execute on function public.shares_group_with(uuid, uuid) to authenticated;
+grant execute on function public.owns_shared_reviewer_with(uuid, uuid) to authenticated;
+
 -- 3. Finding somebody you have not met. An address matches exactly, never as a
 --    substring, so this cannot be used to walk the user list. Names match by
 --    prefix and are capped.

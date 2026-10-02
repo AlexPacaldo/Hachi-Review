@@ -160,6 +160,14 @@ revoke all on function public.is_friend(uuid, uuid) from public;
 revoke all on function public.shares_group_with(uuid, uuid) from public;
 revoke all on function public.owns_shared_reviewer_with(uuid, uuid) from public;
 
+-- The grant is not optional. Revoking from PUBLIC removes the execute privilege
+-- every function has by default, and a policy expression is evaluated as the
+-- querying user, so without this the profiles policy fails with
+-- "permission denied for function is_friend" on every read.
+grant execute on function public.is_friend(uuid, uuid) to authenticated;
+grant execute on function public.shares_group_with(uuid, uuid) to authenticated;
+grant execute on function public.owns_shared_reviewer_with(uuid, uuid) to authenticated;
+
 -- Finding somebody you have not met yet. This has to exist because the profiles
 -- policy above is deliberately closed, and it must not become a way back in:
 --
