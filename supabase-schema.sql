@@ -851,7 +851,7 @@ grant select on public.reviewer_summaries to authenticated;
 -- Owner-only database usage readout. The size is checked inside the function
 -- rather than in the client, so the number is not available to any other
 -- account even by calling the function directly.
-create or replace table public.admin_settings (
+create table if not exists public.admin_settings (
   key text primary key,
   value bigint not null,
   updated_at timestamptz not null default now()
