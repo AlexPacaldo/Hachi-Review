@@ -8181,3 +8181,56 @@ strong {
     min-height: 320px;
   }
 }
+/* Owner-only database usage warning. Follows the same language as the offline
+   update banner: a temporary surface, so a shadow is allowed, with the tone
+   coming from the shared warning and danger tokens rather than a new colour. */
+.usage-banner {
+  position: sticky;
+  top: 72px;
+  z-index: 19;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 16px;
+  color: var(--text);
+  background: var(--warning-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
+  font-weight: 800;
+}
+
+.usage-banner.danger {
+  background: var(--danger-soft);
+  border-bottom-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+}
+
+.usage-banner .banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  color: var(--warning);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--warning) 26%, var(--border));
+}
+
+.usage-banner.danger .banner-icon {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 26%, var(--border));
+}
+
+.usage-banner .banner-note {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+@media (min-width: 900px) {
+  .usage-banner {
+    top: 0;
+    margin-left: 300px;
+  }
+}

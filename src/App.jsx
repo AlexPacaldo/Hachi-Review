@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import Navbar from "./components/Navbar.jsx";
+import AdminUsageBanner from "./components/AdminUsageBanner.jsx";
 import { NotificationToasts } from "./components/NotificationCenter.jsx";
 import SocialNotificationWatcher from "./components/SocialNotificationWatcher.jsx";
 import TopActions from "./components/TopActions.jsx";
@@ -114,6 +115,7 @@ function AppShell() {
           </button>
         </div>
       ) : null}
+      {isLanding ? null : <AdminUsageBanner />}
       {isLanding ? null : <div className="top-pill-spacer" aria-hidden="true" />}
       <main className={isLanding ? "landing-main" : undefined}>
         <Routes>

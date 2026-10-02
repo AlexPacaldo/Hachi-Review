@@ -848,6 +848,45 @@ from public.reviewers r;
 
 grant select on public.reviewer_summaries to authenticated;
 
+-- Owner-only database usage readout. The size is checked inside the function
+-- rather than in the client, so the number is not available to any other
+-- account even by calling the function directly.
+--
+-- v_limit is the Free plan allowance. Raising it to 8 GB is the first thing to
+-- change when this project moves to the Pro plan, otherwise the warning will
+-- keep firing at 500 MB on a project that has room to spare.
+create or replace function public.admin_database_usage()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_email text;
+  v_limit bigint := 500 * 1024 * 1024;
+  v_used bigint;
+begin
+  select lower(u.email) into v_email
+  from auth.users u
+  where u.id = auth.uid();
+
+  if v_email is distinct from '[redacted]' then
+    return null;
+  end if;
+
+  v_used := pg_database_size(current_database());
+
+  return jsonb_build_object(
+    'usedBytes', v_used,
+    'limitBytes', v_limit,
+    'percentUsed', round(v_used * 100.0 / v_limit, 1)
+  );
+end;
+$$;
+
+revoke execute on function public.admin_database_usage() from public, anon;
+grant execute on function public.admin_database_usage() to authenticated;
+
 -- Realtime: instantly push friendship and share changes to signed-in clients.
 -- Requires re-apply of this file (or running this block) in the Supabase dashboard.
 do $$
