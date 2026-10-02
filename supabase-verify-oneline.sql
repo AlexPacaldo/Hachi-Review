@@ -1,18 +1,22 @@
 -- Single-glance status for the security migration. One result set, one row per
--- check. Reads only, changes nothing. Run it whenever you want to confirm state.
+-- check. Reads only, changes nothing.
 --
 -- Every result should read 'ok'.
+--
+-- Note the two identifier columns are named item and result. "check" cannot be
+-- used here because CHECK is a reserved word in Postgres, which is what broke an
+-- earlier version of this query.
 
-with checks as (
+with report as (
 
-  -- 1. The leak itself: no email column to read.
-  select 1 as ord, 'email column gone' as check,
+  -- 1. The leak itself: no email column left to read.
+  select 1 as ord, 'email column gone' as item,
     case when not exists (
       select 1 from information_schema.columns
       where table_schema = 'public' and table_name = 'profiles' and column_name = 'email'
     ) then 'ok' else 'STILL PRESENT - leak is open' end as result
 
-  -- 2. The signed-in role can run every function the policies and app call.
+  -- 2. The signed-in role can run every function the policies and the app call.
   --    A missing grant here is what caused "permission denied for function is_friend".
   union all
   select 2, 'can run ' || fn.proname,
@@ -29,7 +33,7 @@ with checks as (
     case when to_regclass('public.reviewer_study_streak') is not null then 'ok'
          else 'MISSING - streak will not sync' end
 
-  -- 4. The day-per-row table is gone.
+  -- 4. The old day-per-row table is gone.
   union all
   select 4, 'old day table removed',
     case when to_regclass('public.reviewer_study_days') is null then 'ok'
@@ -44,7 +48,7 @@ with checks as (
         and policyname = 'Users can read profiles' and qual = 'true'
     ) then 'ok' else 'STILL OPEN to every account' end
 
-  -- 6. Your own data survived the column drop.
+  -- 6. Profiles kept their name and picture through the column drop.
   union all
   select 6, 'profiles kept name and picture',
     case when (select count(*) from public.profiles) > 0
@@ -52,4 +56,4 @@ with checks as (
          then 'ok' else 'check this' end
 )
 
-select check, result from checks order by ord;
+select item, result from report order by ord;
