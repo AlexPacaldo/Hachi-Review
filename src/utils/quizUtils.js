@@ -25,6 +25,16 @@ export function getQuestionDifficulty(question) {
   return ["easy", "medium", "hard"].includes(question?.difficulty) ? question.difficulty : "medium";
 }
 
+// "Which among the following is NOT ...?" is the odd-one-out form that roughly a
+// quarter of a real preliminary examination uses. It looks like plain recall
+// because it opens with "Which of the following", but it still asks the learner
+// to discriminate between close concepts, so it belongs in the exam-style pool
+// and survives the Direct Questions Only filter out. Checked before the recall
+// patterns below so a stem like "Which of the following is NOT true?" is never
+// filed as a definition question. The [^?]* guard keeps the negation inside one
+// question, in case a caller passes a stem that carries its answer text too.
+const NEGATIVE_STEM_PATTERN = /^(?:which|what)\b[^?]*\b(?:not|never|except|least likely|cannot)\b/i;
+
 // Reviewers created before the generator tagged question style, and hand-built
 // ones, carry no style field. Their wording still says which kind of question it
 // is, so the exam-style filter works on them without a regeneration. The API
@@ -43,6 +53,8 @@ export function inferQuestionStyle(questionText) {
   const text = String(questionText || "").trim();
   if (!text) return "direct";
 
+  if (isNegativeStem(text)) return "scenario";
+
   if (RECALL_QUESTION_PATTERN.test(text) || DEFINING_QUESTION_PATTERN.test(text)) return "direct";
 
   const articleMatch = text.match(ARTICLE_SCENARIO_PATTERN);
@@ -50,6 +62,18 @@ export function inferQuestionStyle(questionText) {
   if (articleMatch && !NON_VERB_CONNECTORS.has(articleMatch[1].toLowerCase())) return "scenario";
 
   return APPLICATION_MARKER_PATTERN.test(text) ? "scenario" : "direct";
+}
+
+export function isNegativeStemQuestion(question) {
+  return isNegativeStem(question?.question ?? question);
+}
+
+function isNegativeStem(questionText) {
+  return NEGATIVE_STEM_PATTERN.test(String(questionText || "").trim());
+}
+
+export function countNegativeStemQuestions(questions) {
+  return (questions || []).filter(isNegativeStemQuestion).length;
 }
 
 export function getQuestionStyle(question) {

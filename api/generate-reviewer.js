@@ -90,7 +90,8 @@ QUESTION STRUCTURE:
 - When the material contains easily confused concepts, write scenarios that force the learner to tell them apart (for example macro vs micro vs super-macro, B2C vs B2B vs B2G, buyer vs user, demographic vs psychographic vs behavioral vs geographic segmentation, feature vs benefit, problem identification vs solution validation, design thinking vs lean startup, persist vs refine vs pivot).
 
 EXAM-LIKE WORDING:
-- Use concise, formal phrasing such as "Which of the following BEST...", "Which of the following MOST appropriately...", "What concept is being demonstrated?", "Which approach is being applied?", "Which requirement is being addressed?", "What does this situation indicate?", "Which factor is primarily responsible?", "Which type of ... is being used?", and "What outcome is demonstrated?"
+- Use concise, formal phrasing such as "Which among the following is...", "Which of the following BEST...", "Which of these factors...", "Who among the following commonly deals with...", "What concept is being demonstrated?", "Which approach is being applied?", "Which requirement is being addressed?", "What does this situation indicate?", "Which factor is primarily responsible?", "Which type of ... is being used?", and "What outcome is demonstrated?"
+- Prefer "Which among the following ..." over "Which of the following ...". It is the wording most real preliminary examinations use.
 - Use words such as BEST, MOST appropriate, MOST likely, BEST explains, BEST resolves, and BEST describes, but only where they fit naturally. Do not force them into every question.
 - Never use conversational wording such as "What do you think?", "What would you probably do?", or "Can you figure out...?".
 
@@ -99,6 +100,41 @@ DIFFICULTY LEVELS:
 - medium: requires choosing the right concept, cause, process stage, or comparison from closely related alternatives.
 - hard: requires applying the concept to an unfamiliar situation, resolving a tricky-but-fair distinction, or combining two or more ideas from the material.
 - A hard question must still be answerable from the study material. Difficulty comes from the reasoning required, never from an unfair or missing detail.`;
+// Roughly a quarter of a real preliminary examination is the odd-one-out form,
+// "Which among the following is NOT a ...?", so the generator gets the form
+// spelled out. It inverts the usual rule: three choices genuinely belong to the
+// category and only one does not, which is the easiest way to ship three weak
+// distractors without noticing.
+const NEGATIVE_STEM_INSTRUCTIONS = `NEGATIVE-STEM QUESTIONS ("WHICH IS NOT"):
+- Real exams lean on the odd-one-out form. Real examples: "Which among the following is NOT a business model in the software industry?", "Which among the following is NOT a common situation of deliberate deviations?", "Which among the following is NOT a coding error?", "Which among the following is NOT a subfactor of reliability?", "Which among the following is NOT a product revision factor?".
+- Aim for roughly 20-25% of the multiple-choice questions to use this form, and spread them across the reviewer instead of clustering them in one section.
+- Use the wordings examiners use: "Which among the following is NOT ...?", "Which of the following is NOT ...?", and "Which of the following is least likely to be ...?".
+- Always tag a negative-stem question with style "scenario", never "direct". It discriminates between close concepts, so it belongs with the exam-style pool. A position the plan tags "scenario" is satisfied by a negative-stem question.
+
+HOW TO BUILD A NEGATIVE-STEM QUESTION:
+- Name one category, group, or list that the material actually teaches, then ask which choice does NOT belong to it.
+- Exactly three choices must genuinely belong to that category and exactly one must not.
+- Draw the three true choices from the same family the material names: sibling factors, sibling subfactors, sibling error types, sibling roles, sibling model components, sibling tasks. Never invent members to reach three.
+- The single false choice must be a real concept from the same subject area that belongs to a different category. It must not be invented, absurd, or a term nobody would ever offer.
+- A negative-stem question is not a positive question with NOT stamped on it. Rewriting "Which factor improves portability?" into "Which factor does NOT improve portability?" does not count.
+- Never ask the same category twice, and never pair a negative-stem question with the positive version of that category.
+
+CATEGORY NOUNS EXAMINERS USE:
+- "a type of", "a kind of", "a factor", "a subfactor of", "a component of", "an element of", "a level", "an example of", "a task", "a role", "a stage or phase", "a model", "an error", "a deviation", "a culture", "a situational factor".
+
+WORKED SHAPE:
+- Question: "Which among the following is NOT a subfactor of reliability?"
+- Correct answer: the one option that belongs to a different family, for example "Hardware failure recovery".
+- The other three choices are genuine subfactors named in the material, for example "Learning and training ability", "System and application reliability", and "Failure recovery".
+- The explanation must teach why each of the three real subfactors belongs to reliability and why the odd one out is a different concept.
+
+NEGATIVE-STEM PITFALLS:
+- The explanation must teach why the three true choices DO belong and why the odd one out does not. The usual "here is why the correct answer fits this question" wording fails a NOT question.
+- Keep NOT honest. Never write a stem whose NOT reverses the meaning, such as "Which of the following is NOT recommended?" when the answer is a recommendation the material actually gives.
+- Never use "None of the above", "All of the above", "Both A and B", or similar giveaways in a negative-stem question. Three of the four choices must be defensibly correct for the NOT reading to work.
+- A negative-stem question is a discrimination task, so it is normally "medium" or "hard". Do not force one into an "easy" position unless the material makes the odd one out unmistakable.
+- If the material cannot support three genuine members of a category, do not write the negative-stem question at all. Pick a different form instead of inventing members.
+- Never repeat the stem's category inside the choices, and never let the three true choices read as obviously weaker or more vague than the odd one out.`;
 const EXPLANATION_INSTRUCTIONS = `EXPLANATION QUALITY - CRITICAL:
 - An explanation must TEACH the concept behind the answer. It must never simply repeat or paraphrase the correct answer.
 - Every explanation should do at least 2-3 of the following: explain the underlying concept; explain why the correct answer fits this question; connect the concept to the scenario; explain the relationship between the ideas; clarify the distinction from a closely related concept; explain why the situation leads to this answer; give a simple example when useful.
@@ -127,6 +163,7 @@ const QUESTION_TYPE_INSTRUCTIONS = {
   multiple_choice: {
     label: "multiple-choice",
     choicesPerQuestion: 4,
+    allowNegativeStems: true,
     instructions: `MULTIPLE-CHOICE RULES:
 - Every question must have exactly 4 choices: A, B, C, and D.
 - Every question must have exactly one correct answer.
@@ -186,6 +223,7 @@ ANSWER POSITION RULES:
   identification: {
     label: "identification",
     choicesPerQuestion: 0,
+    allowNegativeStems: false,
     instructions: `IDENTIFICATION RULES:
 - Ask direct questions where the user types the answer.
 - correctAnswer must be "TEXT".
@@ -197,6 +235,7 @@ ANSWER POSITION RULES:
   true_false: {
     label: "true/false",
     choicesPerQuestion: 2,
+    allowNegativeStems: false,
     instructions: `TRUE/FALSE RULES:
 - Every question must be a statement that is clearly true or false from the material.
 - choices must be A: "True", B: "False", C: "", and D: "".
@@ -208,6 +247,7 @@ ANSWER POSITION RULES:
   flashcard: {
     label: "flashcard",
     choicesPerQuestion: 0,
+    allowNegativeStems: false,
     instructions: `FLASHCARD RULES:
 - Write each question as the front of a flashcard.
 - answerText must be the back of the flashcard.
@@ -390,6 +430,24 @@ function getQuestionTypeConfig(questionType) {
   return QUESTION_TYPE_INSTRUCTIONS[questionType] || QUESTION_TYPE_INSTRUCTIONS.multiple_choice;
 }
 
+// "Which among the following is NOT ...?" only has a home in a four-choice
+// question, so true/false, identification, and flashcard reviewers never see
+// these rules and cannot be pushed into an odd-one-out item they cannot support.
+function getNegativeStemInstruction(questionType) {
+  return getQuestionTypeConfig(questionType).allowNegativeStems ? NEGATIVE_STEM_INSTRUCTIONS : "";
+}
+
+// Kept beside the rules it audits so the two stay in step, and scoped the same
+// way so a true/false or typed reviewer is never told to hunt for odd-one-out
+// choices it cannot contain.
+function getNegativeStemAudit(questionType, isCompletion = false) {
+  if (!getQuestionTypeConfig(questionType).allowNegativeStems) return "";
+  const duplicateGuard = isCompletion
+    ? " Do not reuse a category an existing question already asks about."
+    : "";
+  return `- NEGATIVE-STEM AUDIT: for every question whose stem contains "NOT" or "least likely", confirm that exactly one choice fails the stem and the other three genuinely satisfy it, that those three are real members of one category named in the material rather than invented to balance the item, that the odd one out is a real concept from the same subject area, and that the explanation teaches why the three belong and why the odd one out does not. If any of that fails, rewrite the question as a positive stem instead.${duplicateGuard}`;
+}
+
 // The model reliably writes good questions but not reliably the number of hard
 // ones asked for, so the prompt now carries an explicit per-position plan. A
 // small seeded shuffle keeps the levels interleaved instead of a block of easy
@@ -462,6 +520,8 @@ function buildPrompt({ sourceText, title, subject, instructions, questionCount, 
   const questionTypeConfig = getQuestionTypeConfig(questionType);
   const plan = buildQuestionPlan(questionCount);
   const planInstruction = getQuestionPlanInstruction(questionCount);
+  const negativeStemInstruction = getNegativeStemInstruction(questionType);
+  const negativeStemAudit = getNegativeStemAudit(questionType);
 
   return `Create a complete ${questionTypeConfig.label} reviewer from ONLY the study material below.
 
@@ -491,6 +551,8 @@ IF THE MATERIAL IS A HANDOUT, MODULE, OR STUDY MATERIAL:
 - Only create fewer questions when the source is truly too short or unreadable, and never invent facts.
 
 ${EXAM_STYLE_INSTRUCTIONS}
+
+${negativeStemInstruction}
 
 ${planInstruction}
 ${formatQuestionPlan(plan)}
@@ -532,6 +594,7 @@ FINAL SELF-CHECK BEFORE RETURNING JSON:
 - For generated questions, correct-answer positions are reasonably balanced and not patterned.
 - No question gives the answer away in its own wording.
 - CHOICE AUDIT: for every multiple-choice question, ask whether a student could pick the correct answer without knowing the material, just by choosing the longest or most detailed option. The answer must be no. If the correct answer is the longest, the most technical, the only positive-sounding option, the only complete sentence, or the only one carrying more examples than the rest, rewrite the choices and keep the same correct concept.
+${negativeStemAudit}
 - EXPLANATION AUDIT: for every question, hide the correct choice and read the explanation on its own. If it no longer teaches anything useful about the concept, rewrite it. An explanation that only rearranges the answer choice's own words has failed.
 - EXPLANATION SUPPORT: no explanation introduces a fact that the study material does not contain.
 
@@ -556,6 +619,8 @@ function buildCompletionPrompt({ sourceText, title, subject, instructions, diffi
   const questionTypeConfig = getQuestionTypeConfig(questionType);
   const plan = buildQuestionPlan(missingCount);
   const planInstruction = getQuestionPlanInstruction(missingCount);
+  const negativeStemInstruction = getNegativeStemInstruction(questionType);
+  const completionNegativeStemAudit = getNegativeStemAudit(questionType, true);
 
   return `You are completing a ${questionTypeConfig.label} reviewer that came back with too few questions.
 
@@ -569,6 +634,8 @@ SOURCE RULES:
 - Every new question must be source-supported.
 
 ${EXAM_STYLE_INSTRUCTIONS}
+
+${negativeStemInstruction}
 
 ${planInstruction}
 ${formatQuestionPlan(plan)}
@@ -593,6 +660,7 @@ JSON RULES:
 - Use question IDs starting at 1 inside this completion response.
 - questionCount must equal ${missingCount}.
 - For every multiple-choice question, run the answer choice audit and rewrite the choices if the correct answer is the longest, the most technical, the only positive-sounding option, or the only one carrying more examples than the rest.
+${completionNegativeStemAudit}
 - For every question, run the explanation audit. Hide the correct choice and read the explanation alone; if it teaches nothing beyond the answer's own wording, rewrite it.
 
 Reviewer details:

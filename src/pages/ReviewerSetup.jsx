@@ -6,7 +6,7 @@ import ConfirmModal from "../components/ConfirmModal.jsx";
 import ReviewerMenu from "../components/ReviewerMenu.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useReviewer } from "../hooks/useReviewer.js";
-import { createQuizSession, getQuestionDifficulty, getQuestionStyle, getQuestionTypeOptions, getReviewerStyleCounts, getStoredQuestionTypes } from "../utils/quizUtils.js";
+import { countNegativeStemQuestions, createQuizSession, getQuestionDifficulty, getQuestionStyle, getQuestionTypeOptions, getReviewerStyleCounts, getStoredQuestionTypes } from "../utils/quizUtils.js";
 import { clearQuizProgress, getLatestAttempt, loadQuizProgress, saveQuizProgress } from "../utils/storageUtils.js";
 import { pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
 import hachiDogCurious from "../assets/hachi-dog-curious.png";
@@ -97,6 +97,7 @@ export default function ReviewerSetup() {
   const questionTypeOptions = useMemo(() => (reviewer ? getQuestionTypeOptions(reviewer) : []), [reviewer]);
   const defaultQuestionTypes = useMemo(() => (reviewer ? getStoredQuestionTypes(reviewer) : []), [reviewer]);
   const styleCounts = useMemo(() => getReviewerStyleCounts(reviewer?.questions || []), [reviewer]);
+  const negativeStemCount = useMemo(() => countNegativeStemQuestions(reviewer?.questions || []), [reviewer]);
   const difficultyCounts = useMemo(() => {
     return (reviewer?.questions || []).reduce((counts, question) => {
       const level = ["easy", "medium", "hard"].includes(question?.difficulty) ? question.difficulty : "medium";
@@ -378,6 +379,10 @@ export default function ReviewerSetup() {
             {settings.includeScenarioQuestions
               ? `This reviewer has ${styleCounts.scenario} exam-style and ${styleCounts.direct} direct questions.`
               : `${styleCounts.direct} direct questions available in this reviewer.`}
+          </p>
+          <p className="muted">
+            Exam-style covers the "Which among the following is NOT..." odd-one-out questions as well
+            {negativeStemCount > 0 ? `: this reviewer has ${negativeStemCount} of them.` : ": this reviewer has none."}
           </p>
         </fieldset>
 
