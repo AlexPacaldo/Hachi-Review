@@ -6,7 +6,7 @@ import EmptyState from "../components/EmptyState.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import ReviewerMenu from "../components/ReviewerMenu.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { createQuizSession, getQuestionTypeOptions, getStoredQuestionTypes } from "../utils/quizUtils.js";
+import { createQuizSession, getQuestionDifficulty, getQuestionStyle, getQuestionTypeOptions, getReviewerStyleCounts, getStoredQuestionTypes } from "../utils/quizUtils.js";
 import { clearQuizProgress, getLatestAttempt, loadQuizProgress, saveQuizProgress } from "../utils/storageUtils.js";
 import { pushRemovedProgressToCloud, scheduleProgressSync } from "../services/syncEngine.js";
 import hachiDogCurious from "../assets/hachi-dog-curious.png";
@@ -22,6 +22,19 @@ const QUESTION_TYPE_LABELS = {
 };
 
 const FLASHCARD_LIMIT_OPTIONS = [10, 20, 50, "all"];
+
+// Mirrors the pool that createQuizSession builds, so the slider never asks for
+// more questions than the chosen difficulty and style can supply. An empty pool
+// falls back to the whole reviewer, the same way the session does.
+function countAvailableQuestions(questions, settings) {
+  const pool = (questions || []).filter((question) => {
+    if (settings.difficulty && settings.difficulty !== "mixed" && getQuestionDifficulty(question) !== settings.difficulty) return false;
+    if (settings.includeScenarioQuestions === false && getQuestionStyle(question) === "scenario") return false;
+    return true;
+  });
+
+  return pool.length || (questions || []).length || 1;
+}
 
 function getReviewerDogState({ savedProgress, latestAttempt }) {
   if (savedProgress) {
@@ -83,6 +96,14 @@ export default function ReviewerSetup() {
 
   const questionTypeOptions = useMemo(() => (reviewer ? getQuestionTypeOptions(reviewer) : []), [reviewer]);
   const defaultQuestionTypes = useMemo(() => (reviewer ? getStoredQuestionTypes(reviewer) : []), [reviewer]);
+  const styleCounts = useMemo(() => getReviewerStyleCounts(reviewer?.questions || []), [reviewer]);
+  const difficultyCounts = useMemo(() => {
+    return (reviewer?.questions || []).reduce((counts, question) => {
+      const level = ["easy", "medium", "hard"].includes(question?.difficulty) ? question.difficulty : "medium";
+      counts[level] += 1;
+      return counts;
+    }, { easy: 0, medium: 0, hard: 0 });
+  }, [reviewer]);
 
   const [settings, setSettings] = useState({
     questionCount: defaultQuestionCount,
@@ -91,7 +112,8 @@ export default function ReviewerSetup() {
     mode: "practice",
     timeLimitMinutes: 15,
     questionTypes: defaultQuestionTypes.length ? defaultQuestionTypes : ["multiple_choice"],
-    difficulty: "all"
+    difficulty: "mixed",
+    includeScenarioQuestions: true
   });
 
   if (!reviewer || !reviewer.validation.isValid) {
@@ -103,6 +125,7 @@ export default function ReviewerSetup() {
 
   const startQuiz = (retryIds = null, overrides = {}) => {
     const nextSettings = { ...settings, ...overrides };
+    nextSettings.questionCount = Math.min(nextSettings.questionCount, countAvailableQuestions(reviewer.questions, nextSettings));
     const session = createQuizSession(reviewer, nextSettings, retryIds);
     saveQuizProgress(session);
     scheduleProgressSync(session);
@@ -294,11 +317,43 @@ export default function ReviewerSetup() {
         <fieldset>
           <legend>Difficulty</legend>
           <div className="segmented">
-            <button type="button" className={settings.difficulty === "all" ? "active" : ""} onClick={() => updateSetting("difficulty", "all")}>All</button>
+            <button type="button" className={settings.difficulty === "mixed" ? "active" : ""} onClick={() => updateSetting("difficulty", "mixed")}>Mixed</button>
             <button type="button" className={settings.difficulty === "easy" ? "active" : ""} onClick={() => updateSetting("difficulty", "easy")}>Easy</button>
             <button type="button" className={settings.difficulty === "medium" ? "active" : ""} onClick={() => updateSetting("difficulty", "medium")}>Medium</button>
             <button type="button" className={settings.difficulty === "hard" ? "active" : ""} onClick={() => updateSetting("difficulty", "hard")}>Hard</button>
           </div>
+          <p className="muted">
+            {settings.difficulty === "mixed"
+              ? `Mixed uses every level in this reviewer: ${difficultyCounts.easy} easy, ${difficultyCounts.medium} medium, ${difficultyCounts.hard} hard.`
+              : `Uses the ${settings.difficulty} questions only. ${difficultyCounts[settings.difficulty]} available in this reviewer.`}
+          </p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Question Style</legend>
+          <div className="mode-options">
+            <button
+              type="button"
+              className={`mode-card ${settings.includeScenarioQuestions ? "active" : ""}`}
+              onClick={() => updateSetting("includeScenarioQuestions", true)}
+            >
+              <strong>Include Exam-style</strong>
+              <span>Keeps the scenario and application questions alongside the rest of the reviewer.</span>
+            </button>
+            <button
+              type="button"
+              className={`mode-card ${!settings.includeScenarioQuestions ? "active" : ""}`}
+              onClick={() => updateSetting("includeScenarioQuestions", false)}
+            >
+              <strong>Direct Questions Only</strong>
+              <span>Leaves out the scenarios and drills the definitions, facts, and comparisons.</span>
+            </button>
+          </div>
+          <p className="muted">
+            {settings.includeScenarioQuestions
+              ? `This reviewer has ${styleCounts.scenario} exam-style and ${styleCounts.direct} direct questions.`
+              : `${styleCounts.direct} direct questions available in this reviewer.`}
+          </p>
         </fieldset>
 
         <fieldset>

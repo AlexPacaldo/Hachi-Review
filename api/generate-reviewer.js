@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { inferQuestionStyle } from "../src/utils/quizUtils.js";
 
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -63,6 +64,41 @@ const DIFFICULTY_INSTRUCTIONS = {
   mixed: "Use a balanced mix of recall, concept, scenario, and application questions.",
   hard: "Favor deeper application, scenario analysis, tricky-but-fair distinctions, and synthesis across related ideas."
 };
+const QUESTION_STYLES = ["scenario", "direct"];
+const DIFFICULTY_LEVELS = ["easy", "medium", "hard"];
+// A generated reviewer is tagged across all three levels so that a learner who
+// filters to Hard still gets a real exam-length set instead of a handful of
+// items, while the remaining questions stay reachable under Easy and Medium.
+const DIFFICULTY_MIX = { easy: 0.3, medium: 0.4, hard: 0.3 };
+const SCENARIO_MIX = 0.65;
+const EXAM_STYLE_INSTRUCTIONS = `EXAM QUESTION STYLE:
+- Write questions the way a real college preliminary examination would, not like a flashcard list.
+- Do not let the set collapse into simple definition questions such as "What is X?", "Which of the following defines X?", or "What does X stand for?".
+- Prefer questions that ask how to APPLY a concept, principle, technology, process, framework, or term from the material.
+
+APPLICATION OVER MEMORIZATION:
+- For each major concept the material allows, prefer an application question over a recall question.
+- For example, instead of "What is Problem-Solution Fit?", ask: "A team checks whether a proposed solution actually addresses the root cause of a customer's problem. What concept is being evaluated?"
+- Not every question has to be scenario-based. Keep a deliberate mixture of scenario/application questions, concept identification, definitions, comparisons, numerical or factual questions, process and stage questions, terminology questions, and cause-and-effect questions.
+- Tag each question with style "scenario" when it puts the concept in a situation and asks the learner to apply or identify it, or style "direct" when it asks for a fact, term, definition, or comparison straight from the material.
+
+QUESTION STRUCTURE:
+- Whenever appropriate, open with a short realistic scenario involving a student, technician, developer, programmer, system administrator, business owner, entrepreneur, startup team, user, organization, customer, company, or project team.
+- Then ask which concept, solution, principle, technology, standard, framework, or approach BEST applies to the situation.
+- Keep scenarios to 1-3 sentences. Do not turn every question into a long story.
+- A scenario must give enough information to identify the answer without naming the concept outright.
+- When the material contains easily confused concepts, write scenarios that force the learner to tell them apart (for example macro vs micro vs super-macro, B2C vs B2B vs B2G, buyer vs user, demographic vs psychographic vs behavioral vs geographic segmentation, feature vs benefit, problem identification vs solution validation, design thinking vs lean startup, persist vs refine vs pivot).
+
+EXAM-LIKE WORDING:
+- Use concise, formal phrasing such as "Which of the following BEST...", "Which of the following MOST appropriately...", "What concept is being demonstrated?", "Which approach is being applied?", "Which requirement is being addressed?", "What does this situation indicate?", "Which factor is primarily responsible?", "Which type of ... is being used?", and "What outcome is demonstrated?"
+- Use words such as BEST, MOST appropriate, MOST likely, BEST explains, BEST resolves, and BEST describes, but only where they fit naturally. Do not force them into every question.
+- Never use conversational wording such as "What do you think?", "What would you probably do?", or "Can you figure out...?".
+
+DIFFICULTY LEVELS:
+- easy: single fact, term, or definition stated directly in the material.
+- medium: requires choosing the right concept, cause, process stage, or comparison from closely related alternatives.
+- hard: requires applying the concept to an unfamiliar situation, resolving a tricky-but-fair distinction, or combining two or more ideas from the material.
+- A hard question must still be answerable from the study material. Difficulty comes from the reasoning required, never from an unfair or missing detail.`;
 const QUESTION_TYPE_INSTRUCTIONS = {
   multiple_choice: {
     label: "multiple-choice",
@@ -70,13 +106,24 @@ const QUESTION_TYPE_INSTRUCTIONS = {
     instructions: `MULTIPLE-CHOICE RULES:
 - Every question must have exactly 4 choices: A, B, C, and D.
 - Every question must have exactly one correct answer.
-- Wrong answers must be believable, related to the same topic, and clearly incorrect according to the material.
-- Do not use "All of the above", "None of the above", or "Both A and B" unless those exact choices already exist in an original quiz.
-- correctAnswer must be only "A", "B", "C", or "D".
-- answerText must exactly match choices[correctAnswer].
 - Include a short, source-supported explanation for every question.
 
+CHOICE PARITY RULES (CRITICAL - THE STUDENT MUST NOT BE ABLE TO GUESS):
+- All four choices must be similar in topic, in level of specificity, and in grammatical structure.
+- Keep the four choices close in length. The correct answer must never be the longest, the shortest, or the only noticeably longer or more detailed choice. Aim for all four within a few words of each other.
+- Every choice must be a real concept taken from the same subject area of the material. A learner who half-understood the lesson must find all four plausible.
+- Never make the correct answer the only choice that uses technical terminology, the only professionally worded choice, or the only one written as a full sentence when the others are fragments.
+- Never use "All of the above", "None of the above", "Both A and B", or similar giveaways unless those exact choices already exist in an original quiz.
+- Never use absurd or joke distractors. A distractor must be something a confused learner would genuinely write.
+- Never repeat the correct choice's wording inside the question stem. The stem must not hint at which choice is right.
+- Distractors must be clearly incorrect according to the material, and they must be wrong for a defensible reason rather than obviously out of scope.
+
+DISTRACTOR DESIGN EXAMPLE:
+- If the answer is "Demographic segmentation", the other choices should be "Behavioral segmentation", "Psychographic segmentation", and "Geographic segmentation": four real methods from the same topic, only one of which fits the scenario.
+
 ANSWER POSITION RULES:
+- correctAnswer must be only "A", "B", "C", or "D".
+- answerText must exactly match choices[correctAnswer].
 - If you are generating new questions from study material, randomize correct answer positions.
 - Use A, B, C, and D throughout the reviewer.
 - Distribute correct answers as evenly as reasonably possible.
@@ -141,6 +188,7 @@ const reviewerSchema = {
           id: { type: "INTEGER" },
           type: { type: "STRING" },
           difficulty: { type: "STRING" },
+          style: { type: "STRING" },
           topic: { type: "STRING" },
           question: { type: "STRING" },
           choices: {
@@ -157,7 +205,7 @@ const reviewerSchema = {
           answerText: { type: "STRING" },
           explanation: { type: "STRING" }
         },
-        required: ["id", "type", "difficulty", "topic", "question", "choices", "correctAnswer", "answerText", "explanation"]
+        required: ["id", "type", "difficulty", "style", "topic", "question", "choices", "correctAnswer", "answerText", "explanation"]
       }
     }
   },
@@ -291,10 +339,78 @@ function getQuestionTypeConfig(questionType) {
   return QUESTION_TYPE_INSTRUCTIONS[questionType] || QUESTION_TYPE_INSTRUCTIONS.multiple_choice;
 }
 
+// The model reliably writes good questions but not reliably the number of hard
+// ones asked for, so the prompt now carries an explicit per-position plan. A
+// small seeded shuffle keeps the levels interleaved instead of a block of easy
+// items followed by a block of hard ones, which makes the reviewer feel varied
+// when it is read top to bottom.
+function createSeededRandom(seed) {
+  let state = (seed * 1103515245 + 12345) % 2147483648;
+  return () => {
+    state = (state * 48271) % 2147483647;
+    return state / 2147483647;
+  };
+}
+
+function getDifficultyCounts(count) {
+  const easy = Math.round(count * DIFFICULTY_MIX.easy);
+  const hard = Math.round(count * DIFFICULTY_MIX.hard);
+  return { easy, medium: Math.max(0, count - easy - hard), hard };
+}
+
+function buildQuestionPlan(count) {
+  const total = Math.max(1, Math.min(150, Math.round(Number(count) || 0)));
+  const { easy, medium, hard } = getDifficultyCounts(total);
+  const scenario = Math.round(total * SCENARIO_MIX);
+  const difficulties = shuffleWithRandom(
+    [...Array(easy).fill("easy"), ...Array(medium).fill("medium"), ...Array(hard).fill("hard")],
+    createSeededRandom(total)
+  );
+  const styles = shuffleWithRandom(
+    [...Array(scenario).fill("scenario"), ...Array(total - scenario).fill("direct")],
+    createSeededRandom(total + 7)
+  );
+
+  return difficulties.map((difficulty, index) => ({ position: index + 1, difficulty, style: styles[index] }));
+}
+
+function shuffleWithRandom(items, random) {
+  for (let index = items.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [items[index], items[swapIndex]] = [items[swapIndex], items[index]];
+  }
+  return items;
+}
+
+function formatQuestionPlan(plan) {
+  if (!plan?.length) return "";
+  const lines = plan.map((entry) => `${entry.position}. difficulty "${entry.difficulty}" | style "${entry.style}"`);
+  return `NUMBERING AND MIX PLAN (follow it exactly, one line per question, in order):
+${lines.join("\n")}`;
+}
+
+function getQuestionPlanInstruction(count) {
+  const target = Math.max(1, Math.min(150, Math.round(Number(count) || 0)));
+  return `DIFFICULTY AND STYLE MIX:
+- Roughly ${Math.round(DIFFICULTY_MIX.easy * 100)}% of the questions must be tagged "easy", ${Math.round(DIFFICULTY_MIX.medium * 100)}% "medium", and ${Math.round(DIFFICULTY_MIX.hard * 100)}% "hard", so a learner who filters to Hard still gets a full set.
+- Roughly ${Math.round(SCENARIO_MIX * 100)}% of the questions must be tagged style "scenario" (application or situation based) and the rest style "direct" (definition, fact, terminology, comparison, process, number).
+- The plan below is authoritative. Apply the difficulty and style listed for each question position instead of guessing, and keep the levels spread across the whole reviewer rather than clustered.`;
+}
+
+// Reviewers that predate the style tag, and hand-written ones, have nothing to
+// read, so the scenario wording itself decides the bucket.
+function resolveQuestionStyle(question) {
+  const raw = String(question?.style || "").trim().toLowerCase();
+  if (QUESTION_STYLES.includes(raw)) return raw;
+  return inferQuestionStyle(question?.question);
+}
+
 function buildPrompt({ sourceText, title, subject, instructions, questionCount, difficulty, questionType, fileName }) {
   const questionCountInstruction = getQuestionCountInstruction(questionCount);
   const difficultyInstruction = getDifficultyInstruction(difficulty);
   const questionTypeConfig = getQuestionTypeConfig(questionType);
+  const plan = buildQuestionPlan(questionCount);
+  const planInstruction = getQuestionPlanInstruction(questionCount);
 
   return `Create a complete ${questionTypeConfig.label} reviewer from ONLY the study material below.
 
@@ -318,16 +434,21 @@ IF THE MATERIAL IS ALREADY A QUIZ:
 
 IF THE MATERIAL IS A HANDOUT, MODULE, OR STUDY MATERIAL:
 - Create a useful exam reviewer, not copied sentences.
-- Include a mixture of definitions, concepts, comparisons, scenarios, applications, processes, stages, examples, frameworks, important numbers, people, dates, technologies, and terminology.
 - ${questionCountInstruction}
 - Do not stop after a short sample. Produce the complete questions array requested by the selected question count whenever the material supports it.
 - If the selected question count is a number, treat that number as the required final size of the questions array.
 - Only create fewer questions when the source is truly too short or unreadable, and never invent facts.
 
+${EXAM_STYLE_INSTRUCTIONS}
+
+${planInstruction}
+${formatQuestionPlan(plan)}
+
 DIFFICULTY:
 - ${difficultyInstruction}
-- Tag every question with a difficulty value from exactly "easy", "medium", or "hard".
-- For a mixed reviewer, aim for roughly 50% easy, 30% medium, and 20% hard questions spread across the whole reviewer.
+- Set each question's difficulty to exactly the value listed for its position in the plan above.
+- Set each question's style to exactly "scenario" or "direct" as listed for its position in the plan above.
+- Never leave difficulty or style empty, and never use any value other than "easy", "medium", "hard", "scenario", or "direct".
 - Keep every question fair and answerable from the study material.
 
 QUESTION TYPE RULES:
@@ -349,13 +470,15 @@ FINAL SELF-CHECK BEFORE RETURNING JSON:
 - Valid JSON syntax.
 - questionCount matches the number of questions.
 - IDs are sequential with no duplicates.
-- Every question includes a valid difficulty value ("easy", "medium", or "hard").
+- Every question includes difficulty ("easy", "medium", or "hard") and style ("scenario" or "direct") matching its position in the plan.
 - Every question follows the selected question type rules.
 - For multiple-choice and true/false questions, every answerText exactly equals choices[correctAnswer].
 - For identification and flashcard questions, correctAnswer is "TEXT" and answerText is not empty.
 - Every question has a topic and explanation.
 - No obvious duplicate questions.
 - For generated questions, correct-answer positions are reasonably balanced and not patterned.
+- For every multiple-choice question, all four choices are the same kind of thing: comparable in length, comparable in specificity, and grammatically parallel. The correct answer must not stand out by being longer, shorter, more technical, or better worded than the distractors.
+- No question gives the answer away in its own wording.
 
 Reviewer details:
 - Title: ${title || "Generated Reviewer"}
@@ -376,6 +499,8 @@ function buildCompletionPrompt({ sourceText, title, subject, instructions, diffi
     .slice(0, 16000);
   const difficultyInstruction = getDifficultyInstruction(difficulty);
   const questionTypeConfig = getQuestionTypeConfig(questionType);
+  const plan = buildQuestionPlan(missingCount);
+  const planInstruction = getQuestionPlanInstruction(missingCount);
 
   return `You are completing a ${questionTypeConfig.label} reviewer that came back with too few questions.
 
@@ -388,10 +513,16 @@ SOURCE RULES:
 - Do not duplicate or rephrase the existing questions listed below.
 - Every new question must be source-supported.
 
+${EXAM_STYLE_INSTRUCTIONS}
+
+${planInstruction}
+${formatQuestionPlan(plan)}
+
 DIFFICULTY:
 - ${difficultyInstruction}
-- Tag every question with a difficulty value from exactly "easy", "medium", or "hard".
-- For a mixed reviewer, aim for roughly 50% easy, 30% medium, and 20% hard questions spread across the whole reviewer.
+- Set each question's difficulty to exactly the value listed for its position in the plan above.
+- Set each question's style to exactly "scenario" or "direct" as listed for its position in the plan above.
+- Never leave difficulty or style empty, and never use any value other than "easy", "medium", "hard", "scenario", or "direct".
 - Keep every question fair and answerable from the study material.
 
 QUESTION TYPE RULES:
@@ -404,6 +535,7 @@ JSON RULES:
 - The returned questions array must contain exactly ${missingCount} new questions.
 - Use question IDs starting at 1 inside this completion response.
 - questionCount must equal ${missingCount}.
+- For every multiple-choice question, all four choices must be comparable in length, specificity, and grammatical structure. The correct answer must never be the longest or the only technically worded choice.
 
 Reviewer details:
 - Title: ${title || "Generated Reviewer"}
@@ -456,7 +588,8 @@ function normalizeGeneratedReviewer(reviewer, fallback = {}) {
     return {
       id: index + 1,
       type,
-      difficulty: ["easy", "medium", "hard"].includes(question?.difficulty) ? String(question.difficulty).trim() : "medium",
+      difficulty: DIFFICULTY_LEVELS.includes(question?.difficulty) ? String(question.difficulty).trim() : "medium",
+      style: resolveQuestionStyle(question),
       topic: String(question?.topic || fallback.subject || "Generated Reviewer").trim(),
       question: String(question?.question || "").trim(),
       choices: normalizedChoices,
@@ -502,6 +635,33 @@ function mergeReviewers(baseReviewer, additionalReviewer, requestedCount) {
     questionCount: mergedQuestions.length,
     questions: mergedQuestions
   };
+}
+
+function getDifficultyMix(questions) {
+  const mix = { easy: 0, medium: 0, hard: 0, scenario: 0, direct: 0 };
+
+  (questions || []).forEach((question) => {
+    const difficulty = DIFFICULTY_LEVELS.includes(question?.difficulty) ? question.difficulty : "medium";
+    mix[difficulty] += 1;
+    mix[resolveQuestionStyle(question)] += 1;
+  });
+
+  return mix;
+}
+
+// A reviewer that lands far off the planned mix is still usable, but the
+// learner will hit an empty Hard filter later, so say so instead of failing.
+function getDifficultyMixWarning(reviewer) {
+  const total = reviewer?.questions?.length || 0;
+
+  if (total < 10) return null;
+
+  const mix = getDifficultyMix(reviewer.questions);
+  const sparse = DIFFICULTY_LEVELS.filter((level) => mix[level] / total < DIFFICULTY_MIX[level] * 0.5);
+
+  if (!sparse.length) return null;
+
+  return `Difficulty mix came back thin (${sparse.map((level) => `${mix[level]} ${level}`).join(", ")} out of ${total}). Filtering to ${sparse.join(" or ")} in the reviewer will return fewer questions than expected.`;
 }
 
 async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs }) {
@@ -895,9 +1055,13 @@ export default async function handler(request, response) {
         requestedQuestionCount: requestedCount,
         generatedQuestionCount: reviewer.questions.length,
         addedQuestionCount: Math.max(0, reviewer.questions.length - baseReviewer.questions.length),
-        warning: reviewer.questions.length < requestedCount
-          ? `${servedProvider} added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - baseReviewer.questions.length} requested new questions.`
-          : null
+        difficultyMix: getDifficultyMix(reviewer.questions),
+        warning: [
+          reviewer.questions.length < requestedCount
+            ? `${servedProvider} added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - baseReviewer.questions.length} requested new questions.`
+            : null,
+          getDifficultyMixWarning(reviewer)
+        ].filter(Boolean).join(" ") || null
       });
     } catch (error) {
       console.error(`[${requestId}] Reviewer extension failed:`, {
@@ -1006,15 +1170,19 @@ export default async function handler(request, response) {
       reviewer = mergeReviewers(reviewer, additionalReviewer, requestedCount);
     }
 
-    const warning = requestedCount && reviewer.questions.length < requestedCount
-      ? `${servedProvider} generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
-      : null;
+    const warning = [
+      requestedCount && reviewer.questions.length < requestedCount
+        ? `${servedProvider} generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
+        : null,
+      getDifficultyMixWarning(reviewer)
+    ].filter(Boolean).join(" ") || null;
 
     return sendJson(response, 200, {
       reviewer,
       provider: servedProvider,
       requestedQuestionCount: requestedCount || "comprehensive",
       generatedQuestionCount: reviewer.questions.length,
+      difficultyMix: getDifficultyMix(reviewer.questions),
       warning
     });
   } catch (error) {

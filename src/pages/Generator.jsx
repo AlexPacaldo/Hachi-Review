@@ -5,12 +5,14 @@ import { useAuth } from "../contexts/AuthContext.jsx";
 import { validateReviewer } from "../data/reviewerRegistry.js";
 import { upsertCloudReviewer } from "../services/cloudReviewers.js";
 import { clearGeneratorDraft, getCloudReviewerCache, getGeneratorDraft, saveCloudReviewerCache, saveGeneratorDraft, saveLocalReviewer } from "../utils/storageUtils.js";
+import { inferQuestionStyle } from "../utils/quizUtils.js";
 import { logClientError } from "../utils/errorLogger.js";
 
 const emptyQuestion = {
   type: "multiple_choice",
   topic: "",
   difficulty: "easy",
+  style: "direct",
   question: "",
   A: "",
   B: "",
@@ -47,6 +49,7 @@ const MORE_QUESTION_COUNT_OPTIONS = [
   { value: "20", label: "+20" },
   { value: "50", label: "+50" }
 ];
+const QUESTION_STYLES = ["scenario", "direct"];
 
 function isPdfFile(file) {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
@@ -72,6 +75,7 @@ function buildReviewer({ title, subject, instructions }, questions) {
       id: index + 1,
       type,
       difficulty,
+      style: QUESTION_STYLES.includes(question.style) ? question.style : inferQuestionStyle(question.question),
       topic: question.topic.trim(),
       question: question.question.trim(),
       explanation: question.explanation.trim()
@@ -157,6 +161,7 @@ function normalizeReviewerJson(reviewer, options = {}) {
       id: question.id || index + 1,
       type,
       difficulty: ["easy", "medium", "hard"].includes(question.difficulty) ? question.difficulty : "medium",
+      style: QUESTION_STYLES.includes(question.style) ? question.style : inferQuestionStyle(question.question),
       topic: question.topic || "Generated Reviewer",
       question: question.question || "",
       choices: normalizedChoices,
@@ -749,6 +754,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       setGenerationStats({
         requested: data.requestedQuestionCount || targetQuestionCount,
         generated: data.generatedQuestionCount || reviewer.questions.length,
+        difficultyMix: data.difficultyMix || null,
         warning: data.warning || ""
       });
       setGenerationMessage(data.warning
@@ -854,6 +860,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       setGenerationStats({
         requested: data.requestedQuestionCount || reviewer.questions.length,
         generated: data.generatedQuestionCount || reviewer.questions.length,
+        difficultyMix: data.difficultyMix || null,
         warning: data.warning || ""
       });
       setGenerationMessage(data.warning
@@ -1034,6 +1041,11 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
                       Requested {generationStats.requested}; generated {generationStats.generated}
                     </span>
                   ) : null}
+                  {generationStats?.difficultyMix ? (
+                    <span>
+                      {generationStats.difficultyMix.easy} easy / {generationStats.difficultyMix.medium} medium / {generationStats.difficultyMix.hard} hard &middot; {generationStats.difficultyMix.scenario} exam-style / {generationStats.difficultyMix.direct} direct
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
               <div className="more-question-tools">
@@ -1170,8 +1182,15 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
                     <option value="hard">Hard</option>
                   </select>
                 </label>
+                <label>
+                  <span>Question Style</span>
+                  <select value={questionDraft.style} onChange={(event) => updateQuestion("style", event.target.value)}>
+                    <option value="scenario">Exam-style scenario</option>
+                    <option value="direct">Direct</option>
+                  </select>
+                </label>
                 <span className="generator-note manual-difficulty-note">
-                  Difficulty tags each question, just like AI-generated reviewers, so the quiz setup can filter by level.
+                  Difficulty tags each question, just like AI-generated reviewers, so the quiz setup can filter by level. Question style controls the exam-style filter in the reviewer view.
                 </span>
               </div>
 
