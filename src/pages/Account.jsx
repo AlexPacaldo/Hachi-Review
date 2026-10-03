@@ -42,6 +42,11 @@ export default function Account() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
 
+  // Only a hint about where to look. The database decides who can actually read
+  // the statistics, and refuses anyone else, so hiding the link is a
+  // convenience rather than the control that keeps the numbers private.
+  const isOwner = user?.app_metadata?.admin === true;
+
   useEffect(() => {
     setProfileName(getUserName(user));
   }, [user?.id]);
@@ -276,6 +281,12 @@ export default function Account() {
       )}
 
       <footer className="account-legal-links">
+        {isOwner ? (
+          <>
+            <Link to="/admin/stats">Statistics</Link>
+            <span aria-hidden="true">/</span>
+          </>
+        ) : null}
         <Link to="/about">About</Link>
         <span aria-hidden="true">/</span>
         <Link to="/contact">Contact</Link>

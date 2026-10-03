@@ -44,6 +44,41 @@ Then replace the existing `sha256-...` value in the `script-src` directive in
 (Get-Content vercel.json -Raw) -match [regex]::Escape($computed)
 ```
 
+## Ad networks and the CSP
+
+Three networks are loaded from `index.html`: Google AdSense, and two popunder
+networks (`nap5k.com` and `5gvci.com`). Each one needs its own hosts in
+`vercel.json`, and getting this wrong is silent, so the rule is that a network is
+only considered working once a real browser shows its beacons returning 200.
+
+What each directive actually permits, because it decides how wide a grant has to
+be:
+
+- `script-src` lets a host run arbitrary JavaScript on the page. This is the only
+  directive that grants code execution, so keep it as narrow as possible.
+- `connect-src` only allows `fetch`, XHR, beacons and websockets. It can send
+  data out but cannot execute anything.
+- `img-src` only allows image loads. Useful for tracking pixels, harmless
+  otherwise.
+- `frame-src` only allows framing, and the framed document stays on its own
+  origin.
+
+Ad creatives are served as images from `*.googlesyndication.com` and
+`*.doubleclick.net`, so an `img-src` without them renders a filled ad as an
+empty box. The popunder tags cannot report anything at all unless their beacon
+hosts are in `connect-src`; `my.rtmark.net` is a fingerprinting library and
+`jhnwr.com` is a zone beacon, and both were blocked at one point, which is why
+the tag loaded but no ad ever appeared.
+
+AdSense also injects a runtime inline script that cannot be pinned by hash,
+because its contents are generated per page load. It stays blocked. That is
+expected and is not worth adding `'unsafe-inline'` for.
+
+The AdSense grants are kept even while the account is unapproved, so the site is
+ready the moment approval lands. Do not assume the presence of these hosts means
+AdSense is earning: the account has to be approved and Auto ads enabled, and
+`ads.txt` only authorises Google, not the popunder networks.
+
 ## AI generation
 
 The provider keys are on free tiers with no billing attached, so the harm from

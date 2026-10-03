@@ -8140,3 +8140,148 @@ strong {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Admin statistics. Same rules as the rest of the app: Nunito, the shared
+   radius scale, and borders for separation rather than shadows. The only
+   shadow in this file is on the refresh button, which is not a surface. */
+
+.admin-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 8px;
+}
+
+.admin-head h1 {
+  margin: 6px 0 8px;
+}
+
+.admin-head .muted {
+  max-width: 52ch;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.admin-section {
+  margin-top: 34px;
+}
+
+.admin-tile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.stat-tile {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.stat-tile-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.stat-tile-value {
+  color: var(--text);
+  font-size: 1.9rem;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.stat-tile-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.admin-chart {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.admin-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 168px;
+}
+
+.admin-chart-col {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+
+.admin-chart-bar {
+  width: 100%;
+  min-height: 2px;
+  background: var(--surface-2);
+  border-radius: 6px 6px 3px 3px;
+}
+
+.admin-chart-bar.has-signups {
+  background: var(--accent);
+}
+
+.admin-chart-axis {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.admin-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 40px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-foot .back-link,
+.admin-foot .muted {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+@media (min-width: 560px) {
+  .admin-tile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .admin-tile-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .admin-chart-bar {
+    transition: height 220ms ease;
+  }
+}

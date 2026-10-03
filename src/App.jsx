@@ -17,6 +17,7 @@ import History from "./pages/History.jsx";
 import Library from "./pages/Library.jsx";
 import Generator from "./pages/Generator.jsx";
 import Account from "./pages/Account.jsx";
+import AdminStats from "./pages/AdminStats.jsx";
 import Friends from "./pages/Friends.jsx";
 import Groups from "./pages/Groups.jsx";
 import GroupDetail from "./pages/GroupDetail.jsx";
@@ -159,6 +160,7 @@ function AppShell() {
             <Route path="/groups/:groupId" element={<GroupDetail />} />
             <Route path="/generator" element={<Generator />} />
             <Route path="/account" element={<Account />} />
+            <Route path="/admin/stats" element={<AdminStats />} />
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/privacy" element={<Privacy />} />
