@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { CHOICE_LETTERS, findChoiceBalanceIssues, getChoiceBalanceIssue, inferQuestionStyle } from "../src/utils/quizUtils.js";
 
@@ -52,13 +53,58 @@ const AI_PROVIDERS = [
 ];
 const MAX_SOURCE_LENGTH = 45000;
 const MAX_FILE_BASE64_LENGTH = 4200000;
+// Three top-up rounds. This was briefly lowered to one to cap AI spend, which cost
+// real output: the model regularly returns short of the requested count on long
+// material, and the top-ups are what close the gap. Restore it.
 const MAX_COMPLETION_ATTEMPTS = 3;
 const MAX_REQUEST_BODY_LENGTH = 5200000;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 8;
+// Anonymous callers may still generate, so trying the app does not require an
+// account, but they get a smaller share because one person can be many addresses
+// while one signed-in account is one person. This is the main thing keeping
+// anonymous traffic from eating the free tier's daily quota.
+const ANON_RATE_LIMIT_MAX_REQUESTS = 3;
+// Runaway guard, not a quality dial. A full request legitimately spends 5 upstream
+// calls (generate, three top-ups, one choice-rebalance pass), and each of those can
+// walk the fallback chain, so 12 leaves headroom for several provider failures
+// without ever biting during normal use. It exists to stop a loop that never ends,
+// not to ration output. Raise it before lowering it.
+const UPSTREAM_CALL_BUDGET = 12;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 90000;
+const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const TURNSTILE_TIMEOUT_MS = 8000;
+// Sent to the browser in place of a provider's own error text. Provider messages
+// name the vendor and sometimes the model, which is free reconnaissance for anyone
+// holding a script, and they can echo back fragments of the request.
+const GENERIC_AI_FAILURE_MESSAGE = "The AI could not generate a reviewer right now. Try again in a moment, or paste the study material as text if a file upload is involved.";
+
+// Errors opt into being shown by setting isClientSafe. Everything else is replaced
+// with the generic line, because most errors that reach here came from a provider.
+function toClientErrorMessage(error) {
+  if (error?.isClientSafe) return error?.message || GENERIC_AI_FAILURE_MESSAGE;
+  return GENERIC_AI_FAILURE_MESSAGE;
+}
 const rateLimitStore = globalThis.__hachiRateLimitStore || new Map();
 globalThis.__hachiRateLimitStore = rateLimitStore;
+
+// Counts the calls this request may still make to a paid provider. Passed into
+// requestReviewerWithFallback rather than read from a global, so two requests
+// handled by the same warm instance cannot share a budget.
+function createUpstreamBudget(maxCalls = UPSTREAM_CALL_BUDGET) {
+  let remaining = Math.max(1, Number(maxCalls) || UPSTREAM_CALL_BUDGET);
+
+  return {
+    get remaining() {
+      return remaining;
+    },
+    take() {
+      if (remaining <= 0) return false;
+      remaining -= 1;
+      return true;
+    }
+  };
+}
 const DIFFICULTY_INSTRUCTIONS = {
   easy: "Favor direct recall, simple definitions, and straightforward concept checks.",
   mixed: "Use a balanced mix of recall, concept, scenario, and application questions.",
@@ -386,10 +432,20 @@ function getRequestId() {
   return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Only for logging and abuse signals. x-forwarded-for is deliberately ignored:
+// it is client controlled unless a trusted proxy overwrites it, so trusting it
+// would let a caller pick their own identity for any per-address decision. Vercel
+// sets x-vercel-forwarded-for itself, and there is no rate limit keyed on this
+// value any more, so the worst a spoofed header can do here is spoil a log line.
 function getClientIpKey(request) {
-  const forwardedFor = request.headers["x-forwarded-for"];
-  const firstForwardedIp = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor?.split(",")[0];
-  return `ip:${firstForwardedIp?.trim() || request.socket?.remoteAddress || "unknown"}`;
+  const vercelForwardedFor = request.headers["x-vercel-forwarded-for"];
+  const realIp = request.headers["x-real-ip"];
+  const candidate = (Array.isArray(vercelForwardedFor) ? vercelForwardedFor[0] : vercelForwardedFor)
+    || (Array.isArray(realIp) ? realIp[0] : realIp)
+    || request.socket?.remoteAddress
+    || "unknown";
+
+  return String(candidate).trim() || "unknown";
 }
 
 function getBearerToken(request) {
@@ -398,32 +454,115 @@ function getBearerToken(request) {
   return match?.[1] || "";
 }
 
-async function getRateLimitKey(request, requestId) {
-  const token = getBearerToken(request);
+// One client per request, carrying the caller's own Authorization header when they
+// sent one.
+//
+// This is the whole reason auth.uid() works inside consume_ai_rate_limit. Calling
+// the RPC on a plain anon client resolves to the anon role in Postgres, where
+// auth.uid() is null, so the function would refuse every call and every request
+// would quietly fall back to the per-instance limit. Passing the header through
+// makes the call execute as the signed-in user.
+function getCallerSupabaseClient(token) {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-  if (!token || !supabaseUrl || !supabaseAnonKey) {
-    return getClientIpKey(request);
+  if (!supabaseUrl || !supabaseAnonKey) return null;
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+}
+
+// Anonymous callers are keyed on a hash of the address, so the table never holds a
+// raw one and a log line cannot reconstruct who used it.
+function getIpHash(remoteIp) {
+  const salt = process.env.AI_RATE_LIMIT_IP_SALT || "hachi";
+  return `ip:${createHash("sha256").update(`${salt}:${remoteIp}`).digest("hex")}`;
+}
+
+// Resolves the caller when there is a session, and reports a bad one. Returns null
+// for anonymous, which is allowed to generate at the lower cap.
+async function resolveCaller(supabase, token, requestId) {
+  if (!token) return null;
+
+  if (!supabase) {
+    const error = new Error("Sign-in is not configured on this deployment.");
+    error.statusCode = 503;
+    throw error;
   }
 
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false
-      }
-    });
     const { data, error } = await supabase.auth.getUser(token);
-
-    if (!error && data?.user?.id) {
-      return `user:${data.user.id}`;
-    }
+    if (!error && data?.user?.id) return data.user;
   } catch (error) {
-    console.warn(`[${requestId}] Could not verify Supabase user for rate limit. Falling back to IP.`, error?.message || error);
+    console.warn(`[${requestId}] Could not verify the session: ${error?.message || error}`);
   }
 
-  return getClientIpKey(request);
+  // The session was presented and did not hold up. Returning null here would turn a
+  // stale token into the anonymous cap rather than telling the person to sign in
+  // again, so this is a hard stop.
+  const error = new Error("Your session expired. Sign in again to keep your higher generation limit.");
+  error.statusCode = 401;
+  throw error;
+}
+
+// Spends one unit from the caller's window in Postgres. The counter is keyed on
+// auth.uid() for a signed-in caller and on an address hash otherwise, both chosen
+// here in the database rather than taken from the client. It is shared by every
+// instance on the fleet and survives a cold start.
+async function consumeRateLimit({ supabase, isSignedIn, remoteIp, requestId }) {
+  const maxRequests = isSignedIn
+    ? (Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS) || RATE_LIMIT_MAX_REQUESTS)
+    : (Number(process.env.AI_ANON_RATE_LIMIT_MAX_REQUESTS) || ANON_RATE_LIMIT_MAX_REQUESTS);
+  const windowSeconds = Math.round(RATE_LIMIT_WINDOW_MS / 1000);
+
+  if (!supabase) {
+    console.error(`[${requestId}] Supabase is not configured, so the shared rate limit is unavailable.`);
+    return { ...checkRateLimit(`fallback:${remoteIp}`), shared: false };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc("consume_ai_rate_limit", {
+      // Only sent for anonymous. The function ignores it entirely when the caller
+      // has a session, so it cannot be used to borrow another account's allowance.
+      p_ip_hash: isSignedIn ? null : getIpHash(remoteIp),
+      p_max_requests: maxRequests,
+      p_window_seconds: windowSeconds
+    });
+
+    if (error) throw new Error(error.message || "rpc failed");
+
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result || typeof result.allowed !== "boolean") {
+      throw new Error("unexpected rpc payload");
+    }
+
+    return {
+      allowed: result.allowed,
+      remaining: Math.max(0, Number(result.remaining) || 0),
+      resetMs: Math.max(0, Number(result.resetMs) || 0),
+      limit: maxRequests,
+      shared: true
+    };
+  } catch (error) {
+    console.error(
+      `[${requestId}] Shared rate limit unavailable, using the per-instance fallback: ${error?.message || error}. Run supabase-migration-2026-10-ai-abuse.sql if this keeps happening.`
+    );
+
+    // Keyed on the address for anonymous and on the session subject otherwise, so
+    // the fallback still holds within one warm instance. It does not hold across
+    // the fleet, which is why the error above is worth reading rather than
+    // dismissing.
+    return {
+      ...checkRateLimit(`fallback:${isSignedIn ? "user" : "ip"}:${remoteIp}`),
+      limit: maxRequests,
+      shared: false
+    };
+  }
 }
 
 function pruneRateLimitStore(now) {
@@ -916,7 +1055,7 @@ function applyChoiceRepairs(reviewer, rawRepair, issues) {
 // is measured instead and only the give-away items are sent back for a rewrite.
 // Best effort by design: a reviewer with one long distractor beats a failed
 // request, so any error here returns the reviewer untouched.
-async function rebalanceReviewerChoices({ reviewer, sourceText, requestId }) {
+async function rebalanceReviewerChoices({ reviewer, sourceText, requestId, budget }) {
   const issues = findChoiceBalanceIssues(reviewer?.questions);
   if (!issues.length) return { reviewer, repairedCount: 0, unresolvedCount: 0 };
 
@@ -926,7 +1065,8 @@ async function rebalanceReviewerChoices({ reviewer, sourceText, requestId }) {
     const { reviewer: rawRepair } = await requestReviewerWithFallback({
       parts: [{ text: buildChoiceRepairPrompt(repairable, sourceText) }],
       hasReadableMaterial: true,
-      requestId
+      requestId,
+      budget
     });
     const result = applyChoiceRepairs(reviewer, rawRepair, repairable);
 
@@ -1018,6 +1158,45 @@ function getProviderTimeoutMs(provider) {
 
 function hasConfiguredProvider() {
   return AI_PROVIDERS.some((provider) => Boolean(process.env[provider.apiKeyEnv]));
+}
+
+// Off until TURNSTILE_SECRET_KEY is set, so the endpoint keeps working without it.
+// Once it is set the widget on the generator form becomes mandatory, because a
+// signed-in session alone does not stop one person running many accounts.
+function isTurnstileEnabled() {
+  return Boolean(process.env.TURNSTILE_SECRET_KEY);
+}
+
+async function verifyTurnstileToken(token, remoteIp, requestId) {
+  const form = new URLSearchParams({
+    secret: String(process.env.TURNSTILE_SECRET_KEY),
+    response: String(token || "")
+  });
+
+  if (remoteIp && remoteIp !== "unknown") form.set("remoteip", remoteIp);
+
+  let data = null;
+
+  try {
+    const verifyResponse = await fetchWithTimeout(TURNSTILE_VERIFY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString()
+    }, TURNSTILE_TIMEOUT_MS, "Turnstile");
+
+    data = await verifyResponse.json().catch(() => null);
+  } catch (error) {
+    // Treat a verification outage as a rejection. Failing open here would hand an
+    // attacker a free bypass by making Cloudflare unreachable.
+    console.error(`[${requestId}] Turnstile verification failed: ${error?.message || error}`);
+    return false;
+  }
+
+  if (!data?.success) {
+    console.warn(`[${requestId}] Turnstile rejected the request. Codes: ${JSON.stringify(data?.["error-codes"] || [])}`);
+  }
+
+  return Boolean(data?.success);
 }
 
 function getConfiguredProviders({ hasFileData = false, hasReadableMaterial = true } = {}) {
@@ -1151,13 +1330,16 @@ async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasRe
   }
 }
 
-async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId, hasFileData = false, schema }) {
+async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId, hasFileData = false, schema, budget }) {
   const providers = getConfiguredProviders({ hasFileData, hasReadableMaterial });
 
   if (!providers.length) {
-    const error = new Error("No AI provider is configured. Add GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.");
+    // Names nothing. The old message listed the environment variables that hold the
+    // keys, which told any caller which vendors this account uses.
+    const error = new Error("AI generation is not configured on this deployment.");
     error.statusCode = 500;
     error.isNonRetryable = true;
+    error.isClientSafe = true;
     throw error;
   }
 
@@ -1166,6 +1348,20 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
   const dependsOnFile = hasFileData && !hasReadableMaterial;
 
   for (const [index, provider] of providers.entries()) {
+    // The single choke point for every upstream call. Falling through to the next
+    // provider costs a unit too, so a broken chain cannot quietly multiply the bill.
+    if (!budget?.take()) {
+      const error = new Error(
+        attempts.length
+          ? "The AI providers are all busy after several attempts. Try again in a moment."
+          : "This request used up its AI call allowance. Try again in a few minutes."
+      );
+      error.statusCode = 429;
+      error.isClientSafe = true;
+      error.providerAttempts = attempts;
+      throw error;
+    }
+
     const timeoutMs = getProviderTimeoutMs(provider);
 
     try {
@@ -1178,7 +1374,7 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
       if (attempts.length) {
         console.warn(`[${requestId}] Recovered with ${provider.name} after ${attempts.length} earlier failure(s).`);
       }
-      return { reviewer, provider: provider.name };
+      return { reviewer };
     } catch (error) {
       attempts.push({ provider: provider.name, error });
       console.warn(`[${requestId}] ${provider.name} failed (${error?.statusCode || "unknown"}): ${error?.message || "Unknown error"}`);
@@ -1190,12 +1386,21 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
           && providers.slice(index + 1).some((next) => next.supportsVision);
 
         if (!rescuable) {
+          const tooLarge = /expected pattern|function_payload_too_large|payload too large|request entity too large/i
+            .test(error.message || "");
+
+          // Wording is written here rather than passed up from the provider, because
+          // a provider message names the provider and the model. The size case still
+          // gets its own hint so the interface can suggest pasting text instead.
           const finalError = new Error(
-            dependsOnFile
-              ? `The AI providers that can read this ${describeFileType(attachedFileMimeType)} are unavailable, and the file has no readable text to fall back on. Paste the study material as text to keep going.`
-              : error.message
+            tooLarge
+              ? `That ${describeFileType(attachedFileMimeType)} is too large to send to the AI after browser encoding. Compress or split the PDF, or paste the study material as text to keep going.`
+              : dependsOnFile
+                ? `The AI providers that can read this ${describeFileType(attachedFileMimeType)} are unavailable, and the file has no readable text to fall back on. Paste the study material as text to keep going.`
+                : GENERIC_AI_FAILURE_MESSAGE
           );
-          finalError.statusCode = 422;
+          finalError.statusCode = tooLarge ? 413 : 422;
+          finalError.isClientSafe = true;
           finalError.providerAttempts = attempts;
           throw finalError;
         }
@@ -1225,32 +1430,67 @@ export default async function handler(request, response) {
     return sendJson(response, 405, { error: "Method not allowed." });
   }
 
-  const rateLimitKey = await getRateLimitKey(request, requestId);
-  const rateLimit = checkRateLimit(rateLimitKey);
-  response.setHeader("X-RateLimit-Limit", String(RATE_LIMIT_MAX_REQUESTS));
+  // Reject an oversized body before spending a session verification on it.
+  const approximateBodyLength = JSON.stringify(request.body || {}).length;
+  if (approximateBodyLength > MAX_REQUEST_BODY_LENGTH) {
+    return sendJson(response, 413, { error: "That request is too large for AI generation. Use a smaller file, extract text, or paste the most important notes.", requestId });
+  }
+
+  // Signed in is not required, because there is no billing attached to these keys
+  // and trying the app should not need an account. What is required is a limit
+  // that a caller cannot rotate: the counter is keyed in the database on the
+  // session subject when there is one, and on an address hash when there is not.
+  const token = getBearerToken(request);
+  const supabase = getCallerSupabaseClient(token);
+  const remoteIp = getClientIpKey(request);
+  let caller = null;
+
+  try {
+    caller = await resolveCaller(supabase, token, requestId);
+  } catch (error) {
+    return sendJson(response, error?.statusCode || 401, {
+      error: error?.message || "Your session expired. Sign in again to keep your higher generation limit.",
+      requestId
+    });
+  }
+
+  const rateLimit = await consumeRateLimit({
+    supabase,
+    isSignedIn: Boolean(caller),
+    remoteIp,
+    requestId
+  });
+  response.setHeader("X-RateLimit-Limit", String(rateLimit.limit));
   response.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
   response.setHeader("X-RateLimit-Reset", String(Math.ceil(rateLimit.resetMs / 1000)));
-  response.setHeader("X-RateLimit-Scope", rateLimitKey.startsWith("user:") ? "user" : "ip");
+  response.setHeader("X-RateLimit-Scope", `${rateLimit.shared ? "" : "instance-"}${caller ? "user" : "ip"}`);
 
   if (!rateLimit.allowed) {
     response.setHeader("Retry-After", String(Math.ceil(rateLimit.resetMs / 1000)));
+    const minutes = Math.max(1, Math.ceil(rateLimit.resetMs / 60000));
     return sendJson(response, 429, {
-      error: `Too many AI requests. Try again in ${Math.ceil(rateLimit.resetMs / 60000)} minute${rateLimit.resetMs > 60000 ? "s" : ""}.`,
+      error: caller
+        ? `Too many AI requests. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`
+        : `Guest generation is limited to ${rateLimit.limit} requests every 10 minutes. Sign in for a higher limit, or try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
       requestId
     });
+  }
+
+  if (isTurnstileEnabled()) {
+    const turnstilePassed = await verifyTurnstileToken(
+      request.body?.turnstileToken,
+      remoteIp,
+      requestId
+    );
+
+    if (!turnstilePassed) {
+      return sendJson(response, 403, { error: "Finish the bot check and try again.", requestId });
+    }
   }
 
   if (!hasConfiguredProvider()) {
     console.error(`[${requestId}] No AI provider is configured.`);
-    return sendJson(response, 500, { error: "No AI provider is configured. Add GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.", requestId });
-  }
-
-  const approximateBodyLength = JSON.stringify(request.body || {}).length;
-  if (approximateBodyLength > MAX_REQUEST_BODY_LENGTH) {
-    return sendJson(response, 413, {
-      error: "That request is too large for AI generation. Use a smaller file, extract text, or paste the most important notes.",
-      requestId
-    });
+    return sendJson(response, 500, { error: "AI generation is not configured on this deployment.", requestId });
   }
 
   const {
@@ -1266,6 +1506,12 @@ export default async function handler(request, response) {
     existingReviewer = null,
     additionalCount = 20
   } = request.body || {};
+
+  // One budget for the whole request: the initial pass, every top-up, the
+  // choice-rebalance pass, and every fallback retry all draw from it. Sized well
+  // above what a full run spends, so it only trips if a loop stops ending. Read
+  // from the environment so the ceiling can be tuned without touching the source.
+  const budget = createUpstreamBudget(Number(process.env.AI_UPSTREAM_CALL_BUDGET) || UPSTREAM_CALL_BUDGET);
 
   const trimmedSourceText = String(sourceText).trim();
   const hasFileData = Boolean(file?.data && file?.mimeType);
@@ -1325,11 +1571,12 @@ export default async function handler(request, response) {
     }
 
     try {
-      const { reviewer: rawAdditionalReviewer, provider: servedProvider } = await requestReviewerWithFallback({
+      const { reviewer: rawAdditionalReviewer } = await requestReviewerWithFallback({
         parts,
         hasReadableMaterial: true,
         hasFileData,
-        requestId
+        requestId,
+        budget
       });
       const additionalReviewer = normalizeGeneratedReviewer(rawAdditionalReviewer, {
         title: baseReviewer.title,
@@ -1344,19 +1591,19 @@ const reviewer = {
       const { reviewer: rebalancedReviewer, repairedCount, unresolvedCount } = await rebalanceReviewerChoices({
         reviewer,
         sourceText: safeSourceText,
-        requestId
+        requestId,
+        budget
       });
 
       return sendJson(response, 200, {
         reviewer: rebalancedReviewer,
-        provider: servedProvider,
         requestedQuestionCount: requestedCount,
         generatedQuestionCount: rebalancedReviewer.questions.length,
         addedQuestionCount: Math.max(0, rebalancedReviewer.questions.length - baseReviewer.questions.length),
         difficultyMix: getDifficultyMix(rebalancedReviewer.questions),
         warning: [
           reviewer.questions.length < requestedCount
-            ? `${servedProvider} added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - reviewer.questions.length} requested new questions.`
+            ? `Added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - reviewer.questions.length} requested new questions.`
             : null,
           getDifficultyMixWarning(rebalancedReviewer),
           getChoiceBalanceWarning(repairedCount, unresolvedCount)
@@ -1369,9 +1616,8 @@ const reviewer = {
         providerAttempts: (error?.providerAttempts || []).map((attempt) => `${attempt.provider}: ${attempt.error?.message}`)
       });
       return sendJson(response, error?.statusCode || 500, {
-        error: error?.message || "Could not reach any AI provider.",
-        requestId,
-        rawText: error?.rawText
+        error: toClientErrorMessage(error),
+        requestId
       });
     }
   }
@@ -1404,9 +1650,9 @@ const reviewer = {
       parts,
       hasReadableMaterial,
       hasFileData,
-      requestId
+      requestId,
+      budget
     });
-    let servedProvider = firstAttempt.provider;
     let reviewer = normalizeGeneratedReviewer(firstAttempt.reviewer, {
       title: String(title).trim(),
       subject: String(subject).trim(),
@@ -1451,14 +1697,14 @@ const reviewer = {
           parts: completionParts,
           hasReadableMaterial,
           hasFileData,
-          requestId
+          requestId,
+          budget
         });
       } catch (error) {
         console.warn(`[${requestId}] Could not top up to ${requestedCount} questions: ${error?.message || "Unknown error"}`);
         break;
       }
 
-      servedProvider = completionAttempt.provider;
       const additionalReviewer = normalizeGeneratedReviewer(completionAttempt.reviewer, {
         title: reviewer.title,
         subject: reviewer.subject,
@@ -1472,12 +1718,13 @@ const reviewer = {
     const { reviewer: rebalancedReviewer, repairedCount, unresolvedCount } = await rebalanceReviewerChoices({
       reviewer,
       sourceText: safeSourceText,
-      requestId
+      requestId,
+      budget
     });
 
     const warning = [
       requestedCount && reviewer.questions.length < requestedCount
-        ? `${servedProvider} generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
+        ? `Generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
         : null,
       getDifficultyMixWarning(rebalancedReviewer),
       getChoiceBalanceWarning(repairedCount, unresolvedCount)
@@ -1485,7 +1732,6 @@ const reviewer = {
 
     return sendJson(response, 200, {
       reviewer: rebalancedReviewer,
-      provider: servedProvider,
       requestedQuestionCount: requestedCount || "comprehensive",
       generatedQuestionCount: rebalancedReviewer.questions.length,
       difficultyMix: getDifficultyMix(rebalancedReviewer.questions),
@@ -1498,9 +1744,8 @@ const reviewer = {
       providerAttempts: (error?.providerAttempts || []).map((attempt) => `${attempt.provider}: ${attempt.error?.message}`)
     });
     return sendJson(response, error?.statusCode || 500, {
-      error: error?.message || "Could not reach any AI provider.",
-      requestId,
-      rawText: error?.rawText
+      error: toClientErrorMessage(error),
+      requestId
     });
   }
 }

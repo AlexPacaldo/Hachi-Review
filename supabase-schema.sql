@@ -1172,6 +1172,170 @@ insert into public.admin_settings (key, value)
 values ('database_limit_bytes', 500 * 1024 * 1024)
 on conflict (key) do nothing;
 
+-- Who counts as the owner. The list lives in the private schema so no client can
+-- read it, and it ships empty: add yourself after applying this file with
+--
+--   insert into private.admin_emails (email) values ('you@example.com')
+--   on conflict (email) do nothing;
+--
+-- An account can also qualify through app_metadata.admin = true instead, set from
+-- the Supabase dashboard, which keeps no address on file at all. Nothing in this
+-- repository names an address, because this file is public and the old literal
+-- check meant anyone could read the owner's email out of git history.
+create schema if not exists private;
+
+revoke all on schema private from public, anon, authenticated;
+
+grant usage on schema private to authenticated;
+
+create table if not exists private.admin_emails (
+  email text primary key,
+  added_at timestamptz not null default now(),
+  constraint admin_emails_lowercase check (email = lower(email))
+);
+
+revoke all on private.admin_emails from anon, authenticated;
+
+-- SECURITY DEFINER so the allowlist can be read by callers who cannot see it. Not
+-- granted to authenticated: every path to it runs through a security definer
+-- function above, which already executes as the owner.
+create or replace function private.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((auth.jwt() -> 'app_metadata' ->> 'admin') = 'true', false)
+    or exists (
+      select 1
+      from private.admin_emails e
+      join auth.users u on lower(u.email) = e.email
+      where u.id = auth.uid()
+    );
+$$;
+
+revoke all on function private.is_admin() from public, anon, authenticated;
+
+-- AI quota protection. The provider keys are on free tiers, so abuse does not
+-- cost money, it exhausts the daily quota and makes the owner's own generation
+-- start failing. It needs a limit a caller cannot talk its way around.
+--
+-- It lives in a table rather than in one serverless instance's memory, so it is
+-- shared across the fleet and survives a cold start. A signed-in caller is keyed
+-- on auth.uid(), derived inside the function so no header can change it. An
+-- anonymous caller is keyed on a hash of the address, which the function in
+-- api/generate-reviewer.js computes, and is capped lower.
+create table if not exists public.ai_rate_limits (
+  subject_key text primary key,
+  subject_id uuid references auth.users(id) on delete cascade,
+  window_started_at timestamptz not null default now(),
+  request_count integer not null default 0
+);
+
+create index if not exists ai_rate_limits_window_idx
+on public.ai_rate_limits(window_started_at);
+
+alter table public.ai_rate_limits enable row level security;
+
+revoke all on table public.ai_rate_limits from anon, authenticated;
+
+-- Spends one unit from the caller's window and reports the remainder, all inside
+-- one transaction. The row lock is what stops two simultaneous requests from
+-- reading the same count and both passing.
+--
+-- Executable by anon as well as authenticated, because the serverless function
+-- verifies the session itself and then calls this with a plain client. A caller
+-- with a real session is keyed on their own uid regardless of what they pass.
+create or replace function public.consume_ai_rate_limit(
+  p_ip_hash text,
+  p_max_requests integer,
+  p_window_seconds integer
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_key text;
+  v_max integer := greatest(coalesce(p_max_requests, 8), 1);
+  v_window interval := make_interval(secs => greatest(coalesce(p_window_seconds, 600), 1));
+  v_now timestamptz := now();
+  v_window_started_at timestamptz;
+  v_count integer;
+  v_reset_ms bigint;
+begin
+  if v_uid is not null then
+    v_key := 'user:' || v_uid::text;
+  else
+    -- The shape check is what stops a caller passing an arbitrary string: without
+    -- it anyone could mint a fresh key per request and the limit would mean
+    -- nothing.
+    if p_ip_hash is null or p_ip_hash !~ '^ip:[0-9a-f]{64}$' then
+      raise exception 'missing rate limit subject';
+    end if;
+
+    v_key := p_ip_hash;
+
+    -- Keep anonymous rows from growing without bound. Each request discards the
+    -- ones whose window closed more than a day ago, which an attacker cannot avoid
+    -- while also making a real request.
+    delete from public.ai_rate_limits
+    where subject_id is null
+      and window_started_at < now() - interval '1 day';
+  end if;
+
+  insert into public.ai_rate_limits (subject_key, subject_id, window_started_at, request_count)
+  values (v_key, v_uid, v_now, 0)
+  on conflict (subject_key) do nothing;
+
+  select window_started_at, request_count
+  into v_window_started_at, v_count
+  from public.ai_rate_limits
+  where subject_key = v_key
+  for update;
+
+  -- An elapsed window starts over rather than blocking forever.
+  if v_now - v_window_started_at >= v_window then
+    v_window_started_at := v_now;
+    v_count := 0;
+  end if;
+
+  v_reset_ms := (extract(epoch from (v_window_started_at + v_window - v_now)) * 1000)::bigint;
+
+  if v_reset_ms < 0 then
+    v_reset_ms := 0;
+  end if;
+
+  if v_count >= v_max then
+    update public.ai_rate_limits
+    set window_started_at = v_window_started_at,
+        request_count = v_count
+    where subject_key = v_key;
+
+    return jsonb_build_object('allowed', false, 'remaining', 0, 'resetMs', v_reset_ms);
+  end if;
+
+  update public.ai_rate_limits
+  set window_started_at = v_window_started_at,
+      request_count = v_count + 1
+  where subject_key = v_key;
+
+  return jsonb_build_object(
+    'allowed', true,
+    'remaining', v_max - (v_count + 1),
+    'resetMs', v_reset_ms
+  );
+end;
+$$;
+
+revoke all on function public.consume_ai_rate_limit(text, integer, integer) from public, anon;
+
+grant execute on function public.consume_ai_rate_limit(text, integer, integer) to anon, authenticated;
+
 -- Reports the database size against the stored limit, plus the reviewer storage
 -- that decides whether those numbers are fine. avgReviewerKb is the on disk size
 -- of a reviewer after Postgres has compressed it, so comparing it against the
@@ -1184,18 +1348,13 @@ security definer
 set search_path = public
 as $$
 declare
-  v_email text;
   v_limit bigint;
   v_used bigint;
   v_reviewer_count bigint;
   v_avg_kb numeric;
   v_max_kb numeric;
 begin
-  select lower(u.email) into v_email
-  from auth.users u
-  where u.id = auth.uid();
-
-  if v_email is distinct from '[redacted]' then
+  if not private.is_admin() then
     return null;
   end if;
 
@@ -1237,14 +1396,8 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  v_email text;
 begin
-  select lower(u.email) into v_email
-  from auth.users u
-  where u.id = auth.uid();
-
-  if v_email is distinct from '[redacted]' then
+  if not private.is_admin() then
     raise exception 'not allowed';
   end if;
 

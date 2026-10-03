@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileJson, FileText, Loader2, Plus, RotateCcw, Save, Sparkles, Upload, Wifi, WifiOff } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
+import { useTurnstile } from "../hooks/useTurnstile.js";
 import { validateReviewer } from "../data/reviewerRegistry.js";
 import { upsertCloudReviewer } from "../services/cloudReviewers.js";
 import { clearGeneratorDraft, getCloudReviewerCache, getGeneratorDraft, saveCloudReviewerCache, saveGeneratorDraft, saveLocalReviewer } from "../utils/storageUtils.js";
@@ -31,6 +32,10 @@ const MAX_AI_SOURCE_TEXT_LENGTH = 45000;
 const AI_RATE_LIMIT_KEY = "reviewer_ai_request_window";
 const AI_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const AI_RATE_LIMIT_MAX_REQUESTS = 8;
+// Mirrors AI_ANON_RATE_LIMIT_MAX_REQUESTS on the server. Kept in step so a guest is
+// stopped here with the same number the server would have used, instead of being
+// allowed to click through to a 429.
+const AI_ANON_RATE_LIMIT_MAX_REQUESTS = 3;
 const QUESTION_TYPE_OPTIONS = [
   { value: "multiple_choice", label: "Multiple Choice" },
   { value: "identification", label: "Identification" },
@@ -210,13 +215,15 @@ function getFriendlyGenerationError(error) {
   return message || "Could not generate a reviewer.";
 }
 
-function getAiProviderNote(provider) {
-  return provider && provider !== "Gemini" ? ` (served by ${provider} fallback)` : "";
-}
-
+// This is a courtesy limiter, not the real one. The server keeps the count that
+// matters, in a table, keyed on the account or the address. This one exists so the
+// person is told the number without a round trip, and so the guest cap matches what
+// the server would have applied.
 function checkAiRateLimit(userId = "") {
   const now = Date.now();
-  const key = `${AI_RATE_LIMIT_KEY}:${userId || "guest"}`;
+  const isSignedIn = Boolean(userId);
+  const maxRequests = isSignedIn ? AI_RATE_LIMIT_MAX_REQUESTS : AI_ANON_RATE_LIMIT_MAX_REQUESTS;
+  const key = `${AI_RATE_LIMIT_KEY}:${isSignedIn ? userId : "guest"}`;
 
   try {
     const current = JSON.parse(localStorage.getItem(key) || "null");
@@ -226,9 +233,10 @@ function checkAiRateLimit(userId = "") {
       return null;
     }
 
-    if (current.count >= AI_RATE_LIMIT_MAX_REQUESTS) {
+    if (current.count >= maxRequests) {
       const retryMinutes = Math.max(1, Math.ceil((AI_RATE_LIMIT_WINDOW_MS - (now - current.windowStart)) / 60000));
-      return `AI generation is limited to ${AI_RATE_LIMIT_MAX_REQUESTS} requests every 10 minutes. Try again in about ${retryMinutes} minute${retryMinutes === 1 ? "" : "s"}.`;
+      const upgrade = isSignedIn ? "" : ` Sign in for ${AI_RATE_LIMIT_MAX_REQUESTS} instead.`;
+      return `AI generation is limited to ${maxRequests} requests every 10 minutes. Try again in about ${retryMinutes} minute${retryMinutes === 1 ? "" : "s"}.${upgrade}`;
     }
 
     localStorage.setItem(key, JSON.stringify({ ...current, count: current.count + 1 }));
@@ -281,6 +289,7 @@ async function extractPdfText(file) {
 export default function Generator() {
   const navigate = useNavigate();
   const { configured, session, user } = useAuth();
+  const turnstile = useTurnstile();
   const savedDraft = getGeneratorDraft();
   const skipNextAutosave = useRef(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -409,6 +418,43 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       "Content-Type": "application/json",
       ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
     };
+  }
+
+  // Generation works without an account, at a lower cap. A signed-in request carries
+  // the session so the server can key the rate limit on the account rather than the
+  // address, which is both more generous and harder to work around. Only a
+  // deployment with no Supabase config at all cannot generate.
+  function getAiGenerationNotice() {
+    if (!configured) {
+      return "AI generation needs Supabase configured on this deployment. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
+    }
+
+    if (!session?.access_token) {
+      return `Signed out, so AI generation is limited to ${AI_ANON_RATE_LIMIT_MAX_REQUESTS} requests every 10 minutes. Sign in for ${AI_RATE_LIMIT_MAX_REQUESTS}.`;
+    }
+
+    return null;
+  }
+
+  // Returns the body to send, or a ready-made error when the request cannot be made.
+  async function buildAiRequestBody(payload) {
+    if (!configured) {
+      return { error: getAiGenerationNotice() };
+    }
+
+    if (turnstile.enabled && turnstile.error) {
+      return { error: turnstile.error };
+    }
+
+    // No token means the widget is missing, blocked, or still loading. Sending
+    // the request anyway would only earn a 403.
+    const turnstileToken = turnstile.enabled ? await turnstile.getToken() : "";
+
+    if (turnstile.enabled && !turnstileToken) {
+      return { error: "Finish the bot check above, then try again." };
+    }
+
+    return { body: { ...payload, ...(turnstileToken ? { turnstileToken } : {}) } };
   }
 
   function getCurrentReviewerFromJson({ preserveReviewerId = false } = {}) {
@@ -693,6 +739,13 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       return;
     }
 
+    // Only blocks when Supabase is not configured at all. Signed out is allowed,
+    // because the server applies the lower cap and the notice below says so.
+    if (!configured) {
+      setErrors([getAiGenerationNotice()]);
+      return;
+    }
+
     const rateLimitError = checkAiRateLimit(user?.id);
     if (rateLimitError) {
       setErrors([rateLimitError]);
@@ -709,25 +762,31 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
 
     try {
       setProgressStep("Sending material to the AI");
+      const request = await buildAiRequestBody({
+        sourceText: trimmedSourceText,
+        file: hasUploadedFile
+          ? {
+              name: studyFile.name,
+              mimeType: studyFile.mimeType,
+              data: studyFile.data
+            }
+          : null,
+        title: details.title,
+        subject: details.subject,
+        instructions: details.instructions,
+        questionCount: targetQuestionCount,
+        difficulty,
+        questionType
+      });
+
+      if (request.error) {
+        throw new Error(request.error);
+      }
+
       const response = await fetch("/api/generate-reviewer", {
         method: "POST",
         headers: getAiRequestHeaders(),
-        body: JSON.stringify({
-          sourceText: trimmedSourceText,
-          file: hasUploadedFile
-            ? {
-                name: studyFile.name,
-                mimeType: studyFile.mimeType,
-                data: studyFile.data
-              }
-            : null,
-          title: details.title,
-          subject: details.subject,
-          instructions: details.instructions,
-          questionCount: targetQuestionCount,
-          difficulty,
-          questionType
-        })
+        body: JSON.stringify(request.body)
       });
       setProgressStep("Reading AI response");
       const data = await response.json();
@@ -759,7 +818,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       });
       setGenerationMessage(data.warning
         ? `${data.warning} ${getSaveMessage(saveMode)}`
-        : `Reviewer generated with ${reviewer.questions.length} questions.${getAiProviderNote(data.provider)} ${getSaveMessage(saveMode)}`);
+        : `Reviewer generated with ${reviewer.questions.length} questions. ${getSaveMessage(saveMode)}`);
       setProgressStep("Done");
     } catch (error) {
       logClientError("generate-reviewer", error, {
@@ -772,6 +831,9 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       setGenerationMessage("");
       setErrors([getFriendlyGenerationError(error)]);
     } finally {
+      // A bot-check token is single use. Invalidate it here rather than after a
+      // successful fetch, so a failed request cannot leave a live one behind.
+      turnstile.reset();
       setIsGenerating(false);
     }
   }
@@ -803,6 +865,11 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       return;
     }
 
+    if (!configured) {
+      setErrors([getAiGenerationNotice()]);
+      return;
+    }
+
     const rateLimitError = checkAiRateLimit(user?.id);
     if (rateLimitError) {
       setErrors([rateLimitError]);
@@ -815,27 +882,33 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     setGenerationMessage(`Making ${moreQuestionCount} more questions...`);
 
     try {
+      const request = await buildAiRequestBody({
+        mode: "extend",
+        sourceText: trimmedSourceText,
+        file: hasUploadedFile
+          ? {
+              name: studyFile.name,
+              mimeType: studyFile.mimeType,
+              data: studyFile.data
+            }
+          : null,
+        title: currentReviewer.title || details.title,
+        subject: currentReviewer.subject || details.subject,
+        instructions: currentReviewer.instructions || details.instructions,
+        difficulty,
+        questionType: currentReviewer.questionType || questionType,
+        additionalCount: moreQuestionCount,
+        existingReviewer: currentReviewer
+      });
+
+      if (request.error) {
+        throw new Error(request.error);
+      }
+
       const response = await fetch("/api/generate-reviewer", {
         method: "POST",
         headers: getAiRequestHeaders(),
-        body: JSON.stringify({
-          mode: "extend",
-          sourceText: trimmedSourceText,
-          file: hasUploadedFile
-            ? {
-                name: studyFile.name,
-                mimeType: studyFile.mimeType,
-                data: studyFile.data
-              }
-            : null,
-          title: currentReviewer.title || details.title,
-          subject: currentReviewer.subject || details.subject,
-          instructions: currentReviewer.instructions || details.instructions,
-          difficulty,
-          questionType: currentReviewer.questionType || questionType,
-          additionalCount: moreQuestionCount,
-          existingReviewer: currentReviewer
-        })
+        body: JSON.stringify(request.body)
       });
       setProgressStep("Checking new questions");
       const data = await response.json();
@@ -865,7 +938,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       });
       setGenerationMessage(data.warning
         ? `${data.warning} ${getSaveMessage(saveMode)}`
-        : `Added ${data.addedQuestionCount || moreQuestionCount} questions.${getAiProviderNote(data.provider)} ${getSaveMessage(saveMode)}`);
+        : `Added ${data.addedQuestionCount || moreQuestionCount} questions. ${getSaveMessage(saveMode)}`);
       setProgressStep("Done");
     } catch (error) {
       logClientError("extend-reviewer", error, {
@@ -877,6 +950,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       setGenerationMessage("");
       setErrors([getFriendlyGenerationError(error)]);
     } finally {
+      turnstile.reset();
       setIsAddingQuestions(false);
     }
   }
@@ -1000,10 +1074,21 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
                 <span>Also save an offline copy on this device</span>
               </label>
             ) : null}
+            {turnstile.enabled ? (
+              <div className="generator-turnstile">
+                <div ref={turnstile.containerRef} />
+                {turnstile.error ? <p className="generator-turnstile-note">{turnstile.error}</p> : null}
+              </div>
+            ) : null}
+            {configured && !user ? (
+              <p className="generation-hint">
+                {getAiGenerationNotice()} Reviewers still save to this device without an account.
+              </p>
+            ) : null}
             <div className="button-row">
               <button className="button primary" type="button" onClick={generateReviewerWithAi} disabled={isGenerating || isAddingQuestions || !isOnline}>
                 {isGenerating ? <Loader2 className="spinner" size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
-                {isGenerating ? "Generating..." : "Generate with Gemini"}
+                {isGenerating ? "Generating..." : "Generate with AI"}
               </button>
               {generationMessage ? <span className="template-message">{generationMessage}</span> : null}
             </div>

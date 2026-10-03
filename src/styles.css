@@ -2272,6 +2272,21 @@ legend {
   accent-color: var(--accent);
 }
 
+/* Turnstile mounts itself into a bare div, so this only handles spacing and the
+   error line underneath it. */
+.generator-turnstile {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  min-height: 65px;
+}
+
+.generator-turnstile-note {
+  margin: 0;
+  color: var(--warning);
+  font-weight: 700;
+}
+
 .production-note {
   display: grid;
   gap: 4px;
