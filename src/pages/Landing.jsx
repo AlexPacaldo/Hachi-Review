@@ -142,18 +142,19 @@ const PREVIEW_CAROUSEL_WIDE = {
 };
 
 /**
- * On a phone the content width is only about 400px and the component always
- * reserves 120px plus the fan, so a card can never fill it exactly. Shrink the
- * card and tighten the fan to keep the scale as close to 1 as possible. The card
- * is tall because the stylesheet stacks the answer choices in one column below
- * this breakpoint, which is the only way the labels stay readable at that width.
+ * On a phone the box is only about 420px and the component always reserves 120px
+ * plus the fan, so a card can never fill it exactly. A wider card is the lever
+ * that matters here: the quiz still stacks its answer choices in one column
+ * whatever the width, so widening the card means the question and the explanation
+ * wrap into fewer lines, which is what brings the rendered height down. Widening
+ * also lowers the scale, so the pair has to move together.
  *
  * The breakpoint must stay in step with the `max-width: 760px` block in
  * styles.css, otherwise the tall card gets the phone layout and overflows.
  */
 const PREVIEW_CAROUSEL_COMPACT = {
-  cardWidth: 400,
-  cardHeight: 1240,
+  cardWidth: 460,
+  cardHeight: 1060,
   radius: 26,
   depth: 104,
   spread: 16,
@@ -473,7 +474,7 @@ export default function Landing({ theme, onToggleTheme }) {
         </section>
 
         <section className="landing-section" id="faq" aria-labelledby="landing-faq-heading">
-          <div className="landing-section-head" data-reveal>
+          <div className="landing-section-head landing-section-head-centered" data-reveal>
             <p className="eyebrow">FAQ</p>
             <h2 id="landing-faq-heading">Good questions</h2>
             <p>Still curious? The answers below cover the things people ask first.</p>

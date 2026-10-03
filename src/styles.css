@@ -6825,7 +6825,12 @@ strong {
   color: var(--accent);
 }
 
-@media (min-width: 900px) {
+/* Not 900px, which is where the navbar turns into the fixed 300px sidebar. Two
+   columns have to clear that gutter as well as the page padding, and at 900px
+   they were sharing about 600px, which crushed the delete rows into one-word
+   lines. Single column below this reads fine because the profile panel already
+   spans the full width. */
+@media (min-width: 1240px) {
   .account-layout {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -7559,17 +7564,27 @@ strong {
   flex: 0 0 auto;
 }
 
+/* No `margin-top: auto` here. Pinning the action row to the bottom left the
+   unrevealed modes with a void in the middle of the card, which read as broken
+   rather than as a screen with a status bar. Trailing space reads as padding. */
 .preview-mode .quiz-actions {
-  margin-top: auto;
   padding-top: 18px;
 }
 
 /* FAQ */
+/* The FAQ is a centred question-and-answer block, like the quiz preview above
+   it. Features and How it works keep the left-aligned `.landing-section-head`. */
+.landing-section-head-centered {
+  max-width: 62ch;
+  margin: 0 auto;
+  text-align: center;
+}
+
 .landing-faq {
   display: grid;
   gap: 12px;
   max-width: 900px;
-  margin-top: 30px;
+  margin: 30px auto 0;
 }
 
 .landing-faq-item {
@@ -7917,8 +7932,8 @@ strong {
   /* The compact carousel reserves a narrower box, so the same width-driven scale
      reaches 1 sooner and the aspect ratio has to follow it. */
   .landing-preview-carousel {
-    max-width: 380px;
-    aspect-ratio: 552 / 1240;
+    max-width: 420px;
+    aspect-ratio: 612 / 1060;
   }
 }
 
