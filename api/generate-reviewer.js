@@ -66,8 +66,6 @@ const RATE_LIMIT_MAX_REQUESTS = 8;
 // not to ration output. Raise it before lowering it.
 const UPSTREAM_CALL_BUDGET = 12;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 90000;
-const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
-const TURNSTILE_TIMEOUT_MS = 8000;
 // Sent to the browser in place of a provider's own error text. Provider messages
 // name the vendor and sometimes the model, which is free reconnaissance for anyone
 // holding a script, and they can echo back fragments of the request.
@@ -1153,45 +1151,6 @@ function hasConfiguredProvider() {
   return AI_PROVIDERS.some((provider) => Boolean(process.env[provider.apiKeyEnv]));
 }
 
-// Off until TURNSTILE_SECRET_KEY is set, so the endpoint keeps working without it.
-// Once it is set the widget on the generator form becomes mandatory, because a
-// signed-in session alone does not stop one person running many accounts.
-function isTurnstileEnabled() {
-  return Boolean(process.env.TURNSTILE_SECRET_KEY);
-}
-
-async function verifyTurnstileToken(token, remoteIp, requestId) {
-  const form = new URLSearchParams({
-    secret: String(process.env.TURNSTILE_SECRET_KEY),
-    response: String(token || "")
-  });
-
-  if (remoteIp && remoteIp !== "unknown") form.set("remoteip", remoteIp);
-
-  let data = null;
-
-  try {
-    const verifyResponse = await fetchWithTimeout(TURNSTILE_VERIFY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString()
-    }, TURNSTILE_TIMEOUT_MS, "Turnstile");
-
-    data = await verifyResponse.json().catch(() => null);
-  } catch (error) {
-    // Treat a verification outage as a rejection. Failing open here would hand an
-    // attacker a free bypass by making Cloudflare unreachable.
-    console.error(`[${requestId}] Turnstile verification failed: ${error?.message || error}`);
-    return false;
-  }
-
-  if (!data?.success) {
-    console.warn(`[${requestId}] Turnstile rejected the request. Codes: ${JSON.stringify(data?.["error-codes"] || [])}`);
-  }
-
-  return Boolean(data?.success);
-}
-
 function getConfiguredProviders({ hasFileData = false, hasReadableMaterial = true } = {}) {
   // Vision-only models are slower and usually weaker at strict JSON, so they are
   // held back until a text provider has been tried. They are only reachable when
@@ -1455,18 +1414,6 @@ export default async function handler(request, response) {
       error: `Too many AI requests. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
       requestId
     });
-  }
-
-  if (isTurnstileEnabled()) {
-    const turnstilePassed = await verifyTurnstileToken(
-      request.body?.turnstileToken,
-      getClientIpKey(request),
-      requestId
-    );
-
-    if (!turnstilePassed) {
-      return sendJson(response, 403, { error: "Finish the bot check and try again.", requestId });
-    }
   }
 
   if (!hasConfiguredProvider()) {

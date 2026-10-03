@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileJson, FileText, Loader2, Plus, RotateCcw, Save, Sparkles, Upload, Wifi, WifiOff } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { useTurnstile } from "../hooks/useTurnstile.js";
 import { validateReviewer } from "../data/reviewerRegistry.js";
 import { upsertCloudReviewer } from "../services/cloudReviewers.js";
 import { clearGeneratorDraft, getCloudReviewerCache, getGeneratorDraft, saveCloudReviewerCache, saveGeneratorDraft, saveLocalReviewer } from "../utils/storageUtils.js";
@@ -281,7 +280,6 @@ async function extractPdfText(file) {
 export default function Generator() {
   const navigate = useNavigate();
   const { configured, session, user } = useAuth();
-  const turnstile = useTurnstile();
   const savedDraft = getGeneratorDraft();
   const skipNextAutosave = useRef(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -433,19 +431,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     const signInError = requireSignIn();
     if (signInError) return { error: signInError };
 
-    if (turnstile.enabled && turnstile.error) {
-      return { error: turnstile.error };
-    }
-
-    // No token means the widget is missing, blocked, or still loading. Sending
-    // the request anyway would only earn a 403.
-    const turnstileToken = turnstile.enabled ? await turnstile.getToken() : "";
-
-    if (turnstile.enabled && !turnstileToken) {
-      return { error: "Finish the bot check above, then try again." };
-    }
-
-    return { body: { ...payload, ...(turnstileToken ? { turnstileToken } : {}) } };
+    return { body: payload };
   }
 
   function getCurrentReviewerFromJson({ preserveReviewerId = false } = {}) {
@@ -823,9 +809,6 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       setGenerationMessage("");
       setErrors([getFriendlyGenerationError(error)]);
     } finally {
-      // A bot-check token is single use. Invalidate it here rather than after a
-      // successful fetch, so a failed request cannot leave a live one behind.
-      turnstile.reset();
       setIsGenerating(false);
     }
   }
@@ -943,7 +926,6 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       setGenerationMessage("");
       setErrors([getFriendlyGenerationError(error)]);
     } finally {
-      turnstile.reset();
       setIsAddingQuestions(false);
     }
   }
@@ -1066,12 +1048,6 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
                 />
                 <span>Also save an offline copy on this device</span>
               </label>
-            ) : null}
-            {turnstile.enabled ? (
-              <div className="generator-turnstile">
-                <div ref={turnstile.containerRef} />
-                {turnstile.error ? <p className="generator-turnstile-note">{turnstile.error}</p> : null}
-              </div>
             ) : null}
             {configured && !user ? (
               <p className="generation-hint">{requireSignIn()}</p>
