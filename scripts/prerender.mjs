@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
+import { resolveDocumentMeta, ROUTE_META } from "../src/utils/documentMeta.js";
 
 /**
  * Google treats every SPA route as the same page unless the served HTML differs.
@@ -16,36 +17,14 @@ import react from "@vitejs/plugin-react";
  */
 
 const ROOT = process.cwd();
-const ORIGIN = "https://hachi-review.site";
 const SSR_OUT_DIR = path.join(ROOT, ".prerender");
 const ENTRY = path.join(ROOT, "scripts", "prerender", "entry.jsx");
 
-const ROUTES = [
-  {
-    route: "/about",
-    title: "About Us - Hachi",
-    description:
-      "Hachi is an independent study companion for turning notes into quizzes, tracking progress, and revising online or offline. See who runs the site and how it is funded."
-  },
-  {
-    route: "/contact",
-    title: "Contact Us - Hachi",
-    description:
-      "Get in touch about Hachi support, bug reports, privacy and takedown requests, or advertising on the site."
-  },
-  {
-    route: "/privacy",
-    title: "Privacy Policy - Hachi",
-    description:
-      "How Hachi handles your data: what stays on your device, what syncs to your account, and how advertising is kept separate from your study material."
-  },
-  {
-    route: "/terms",
-    title: "Terms of Service - Hachi",
-    description:
-      "The terms covering your use of Hachi, including your content, AI-generated questions, and app availability."
-  }
-];
+// The root is served by Vercel as index.html and cannot be prerendered here,
+// because the landing page needs the auth and notification providers.
+const ROUTES = Object.entries(ROUTE_META)
+  .filter(([route]) => route !== "/")
+  .map(([route, meta]) => ({ route, ...meta }));
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -133,8 +112,8 @@ async function main() {
   const bundle = await buildSsrBundle();
   const { renderPage } = await import(pathToFileURL(bundle).href);
 
-  for (const { route, title, description } of ROUTES) {
-    const url = `${ORIGIN}${route}`;
+  for (const { route } of ROUTES) {
+    const { title, description, url } = resolveDocumentMeta(route);
     let html = template;
     html = setTitle(html, title);
     html = setMeta(html, "name", "description", description);

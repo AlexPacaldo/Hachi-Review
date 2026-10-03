@@ -27,6 +27,7 @@ import Terms from "./pages/Terms.jsx";
 import { AuthProvider } from "./contexts/AuthContext.jsx";
 import { NotificationProvider, useNotifications } from "./contexts/NotificationContext.jsx";
 import { getThemePreference, saveThemePreference } from "./utils/storageUtils.js";
+import { applyDocumentMeta, resolveDocumentMeta } from "./utils/documentMeta.js";
 import { logClientError } from "./utils/errorLogger.js";
 
 function AppShell() {
@@ -44,6 +45,13 @@ function AppShell() {
     document.documentElement.dataset.theme = theme;
     saveThemePreference(theme);
   }, [theme]);
+
+  // The prerendered public pages already carry their own title in the served HTML,
+  // but the router never reloads the document, so without this the title would stay
+  // on whichever page was loaded first for the rest of the session.
+  useEffect(() => {
+    applyDocumentMeta(resolveDocumentMeta(location.pathname));
+  }, [location.pathname]);
 
   useEffect(() => {
     const showUpdateNotice = () => {
