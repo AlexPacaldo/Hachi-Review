@@ -30,6 +30,20 @@ import { getThemePreference, saveThemePreference } from "./utils/storageUtils.js
 import { applyDocumentMeta, resolveDocumentMeta } from "./utils/documentMeta.js";
 import { logClientError } from "./utils/errorLogger.js";
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  // A client-side navigation never reloads the document, so the browser keeps
+  // whatever scroll offset it had and a new route can open halfway down. Hash
+  // links on the landing page are plain <a href="#...">, which do not change the
+  // pathname, so in-page anchors are left alone.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
+
 function AppShell() {
   const [theme, setTheme] = useState(getThemePreference);
   const [updateReady, setUpdateReady] = useState(false);
@@ -113,6 +127,7 @@ function AppShell() {
 
   return (
     <AuthProvider>
+      <ScrollToTop />
       <SocialNotificationWatcher />
       {isLanding ? null : <Navbar theme={theme} onToggleTheme={toggleTheme} />}
       {isLanding ? null : <TopActions />}

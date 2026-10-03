@@ -7984,11 +7984,16 @@ strong {
     padding: 22px;
   }
 
-  /* The compact carousel reserves a narrower box, so the same width-driven scale
-     reaches 1 sooner and the aspect ratio has to follow it. */
+  /* Take back the gutter `.landing-body` was holding, so the box is as wide as the
+     screen allows and the card can fill it. `.landing-body` keeps a 24px gutter
+     per side, so reclaiming 16px cannot reach the viewport edge or produce a
+     horizontal scrollbar. The ratio is the compact config's
+     cardWidth + 2 * spread + 120 over its cardHeight. */
   .landing-preview-carousel {
-    max-width: 420px;
-    aspect-ratio: 612 / 1060;
+    width: calc(100% + 32px);
+    max-width: none;
+    margin-inline: -16px;
+    aspect-ratio: 752 / 940;
   }
 }
 

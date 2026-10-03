@@ -143,19 +143,20 @@ const PREVIEW_CAROUSEL_WIDE = {
 };
 
 /**
- * On a phone the box is only about 420px and the component always reserves 120px
- * plus the fan, so a card can never fill it exactly. A wider card is the lever
- * that matters here: the quiz still stacks its answer choices in one column
- * whatever the width, so widening the card means the question and the explanation
- * wrap into fewer lines, which is what brings the rendered height down. Widening
- * also lowers the scale, so the pair has to move together.
+ * The card fills `cardWidth / (cardWidth + 2 * spread + 120)` of its box, because
+ * that is what the carousel reserves for the fan plus its margin. On a phone that
+ * fraction is the whole problem: a narrow card was leaving a third of the screen
+ * empty either side of it. So the card is widened, which raises the fraction and
+ * lets the text wrap into fewer lines at the same time, and the box is widened to
+ * take back the gutter `.landing-body` was holding. Both together are what make it
+ * fill the screen; neither is enough alone.
  *
  * The breakpoint must stay in step with the `max-width: 760px` block in
  * styles.css, otherwise the tall card gets the phone layout and overflows.
  */
 const PREVIEW_CAROUSEL_COMPACT = {
-  cardWidth: 460,
-  cardHeight: 1060,
+  cardWidth: 600,
+  cardHeight: 940,
   radius: 26,
   depth: 104,
   spread: 16,
