@@ -191,11 +191,12 @@ begin
 end;
 $$;
 
--- Earlier versions took (text, integer, integer) and allowed an anonymous caller
--- keyed on a hash of the address. Drop both so the two-argument form is the only
--- one present.
+-- An earlier version of this file took (text, integer, integer) and allowed an
+-- anonymous caller keyed on a hash of the address. Drop that one so the two-argument
+-- form is the only one left. Do not drop the two-argument signature here: the
+-- create above already made it, and dropping it would delete the function this
+-- migration exists to install.
 drop function if exists public.consume_ai_rate_limit(text, integer, integer);
-drop function if exists public.consume_ai_rate_limit(integer, integer);
 
 revoke all on function public.consume_ai_rate_limit(integer, integer) from public, anon;
 
