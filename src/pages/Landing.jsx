@@ -120,10 +120,16 @@ const FAQS = [
  * the available width and the carousel's own fit-to-width scaling stays near 1.
  * The component reserves `cardWidth + 2 * spread + 120` for itself, so the wide
  * numbers are chosen to land close to the real content width.
+ *
+ * The height has to clear the tallest mode, which is a revealed answer: the real
+ * answer choices stack in one column, and the feedback panel underneath adds the
+ * explanation on top of that. `.landing-preview-carousel` carries a matching
+ * aspect ratio of `cardWidth + 2 * spread + 120` over this height, which makes
+ * the box an exact fit for the scaled card instead of an estimate.
  */
 const PREVIEW_CAROUSEL_WIDE = {
   cardWidth: 900,
-  cardHeight: 552,
+  cardHeight: 940,
   radius: 34,
   depth: 150,
   spread: 32,
@@ -134,7 +140,7 @@ const PREVIEW_CAROUSEL_WIDE = {
 };
 
 /**
- * On a phone the content width is only about 340px and the component always
+ * On a phone the content width is only about 400px and the component always
  * reserves 120px plus the fan, so a card can never fill it exactly. Shrink the
  * card and tighten the fan to keep the scale as close to 1 as possible. The card
  * is tall because the stylesheet stacks the answer choices in one column below
@@ -144,8 +150,8 @@ const PREVIEW_CAROUSEL_WIDE = {
  * styles.css, otherwise the tall card gets the phone layout and overflows.
  */
 const PREVIEW_CAROUSEL_COMPACT = {
-  cardWidth: 300,
-  cardHeight: 780,
+  cardWidth: 400,
+  cardHeight: 1260,
   radius: 26,
   depth: 104,
   spread: 16,

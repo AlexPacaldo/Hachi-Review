@@ -1,25 +1,44 @@
-import { Check, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Grid3X3 } from "lucide-react";
+import ProgressBar from "./ProgressBar.jsx";
+import QuizQuestion from "./QuizQuestion.jsx";
 
 /**
- * Static marketing reproductions of the real quiz screen, one per quiz mode.
+ * A static reproduction of the real quiz screen, one per quiz mode.
  *
- * Everything here mirrors `src/pages/Quiz.jsx` and `src/components/AnswerChoice.jsx`:
- * the A/B/C/D choice letters, the "Correct answer" / "Your answer" status text
- * instead of tick icons, and the "Correct!" / "Incorrect" feedback panel with
- * its Your answer / Correct answer / Explanation lines.
+ * The markup is assembled from the same components and the same class names the
+ * live quiz uses in src/pages/Quiz.jsx, so this cannot quietly drift away from
+ * what a learner actually sees.
+ *
+ * `inert` is the one departure. These are real buttons and real AnswerChoice
+ * buttons, and a preview is not an interactive quiz, so the subtree is marked
+ * inert to keep it out of the tab order and unresponsive to clicks. The carousel
+ * still gets those clicks because they land on its own card, an ancestor.
  */
 
-const CHOICES = [
-  { letter: "A", label: "Right atrium" },
-  { letter: "B", label: "Left ventricle" },
-  { letter: "C", label: "Right ventricle" },
-  { letter: "D", label: "Left atrium" }
-];
+const QUESTION = {
+  id: "preview-cardiovascular",
+  type: "multiple_choice",
+  topic: "Cardiovascular system",
+  question: "Which chamber of the heart pumps oxygenated blood into the systemic circulation?",
+  choices: [
+    { value: "right-atrium", label: "Right atrium" },
+    { value: "left-ventricle", label: "Left ventricle" },
+    { value: "right-ventricle", label: "Right ventricle" },
+    { value: "left-atrium", label: "Left atrium" }
+  ],
+  correctAnswer: "left-ventricle",
+  answerText: "Left ventricle",
+  explanation:
+    "The left ventricle has the thickest myocardium of the four chambers because it pumps oxygenated blood through the aorta into the systemic circulation."
+};
 
-const CORRECT_INDEX = 1;
+const SUBJECT = "BIO 201 · Human Anatomy";
+const QUESTION_INDEX = 4;
+const QUESTION_TOTAL = 12;
+const ANSWERED_COUNT = 4;
 
-const EXPLANATION =
-  "The left ventricle has the thickest myocardium of the four chambers because it pumps oxygenated blood through the aorta into the systemic circulation.";
+const CORRECT_VALUE = QUESTION.correctAnswer;
+const WRONG_VALUE = "right-ventricle";
 
 const MODES = [
   {
@@ -36,7 +55,7 @@ const MODES = [
     blurb: "Lets you answer, go back, and change choices. Correct answers and explanations appear only after final submission.",
     state: "selected",
     action: "Next",
-    timer: null
+    timer: "03:18"
   },
   {
     key: "timed",
@@ -64,87 +83,100 @@ const MODES = [
   }
 ];
 
-function Choice({ letter, label, status }) {
-  return (
-    <span className={`preview-choice${status ? ` is-${status}` : ""}`}>
-      <span className="preview-choice-key">{letter}</span>
-      <span className="preview-choice-label">{label}</span>
-      {status ? <span className="preview-choice-status">{status === "correct" ? "Correct answer" : "Your answer"}</span> : null}
-    </span>
-  );
+function labelFor(value) {
+  return QUESTION.choices.find((choice) => choice.value === value)?.label ?? "";
 }
 
 function PreviewModeCard({ mode }) {
+  const isFlashcard = mode.state === "flashcard";
   const revealed = mode.state === "correct" || mode.state === "incorrect";
-  const answeredIndex = mode.state === "incorrect" ? 2 : CORRECT_INDEX;
+  const selectedValue = mode.state === "incorrect" ? WRONG_VALUE : CORRECT_VALUE;
+  const isCorrect = mode.state === "correct";
 
   return (
-    <article className="preview-mode">
-      <header className="preview-mode-top">
-        <span className="preview-mode-subject">BIO 201 · Human Anatomy</span>
-        {mode.timer ? <span className="preview-mode-timer">{mode.timer}</span> : null}
-      </header>
-
-      <p className="preview-mode-count">Question 4 of 12</p>
-
-      <div className="preview-mode-bar" aria-hidden="true">
-        <span style={{ width: "33%" }} />
-      </div>
-
-      <p className="preview-mode-topic">Cardiovascular system</p>
-      <p className="preview-mode-question">
-        Which chamber of the heart pumps oxygenated blood into the systemic circulation?
-      </p>
-
-      {mode.state === "flashcard" ? (
-        <div className="preview-mode-reveal">
-          <p className="preview-mode-reveal-label">Answer</p>
-          <p className="preview-mode-reveal-text">Left ventricle</p>
+    <article className="preview-mode" inert>
+      <section className="quiz-topbar">
+        <div>
+          <p className="eyebrow">{SUBJECT}</p>
+          <h1>
+            Question {QUESTION_INDEX} of {QUESTION_TOTAL}
+          </h1>
         </div>
+        <div className="quiz-meta">
+          {mode.timer ? <span className="timer">{mode.timer}</span> : null}
+          <button className="button subtle" type="button">
+            <Grid3X3 size={17} aria-hidden="true" />
+            Questions
+          </button>
+          <button className="button subtle" type="button">
+            Leave
+          </button>
+        </div>
+      </section>
+
+      <ProgressBar value={QUESTION_INDEX} max={QUESTION_TOTAL} label="Quiz progress" />
+
+      {isFlashcard ? (
+        <section className="question-panel flashcard-panel">
+          <div className="question-prompt">
+            <p className="topic-label">{QUESTION.topic}</p>
+            <h1>{QUESTION.question}</h1>
+          </div>
+          <div className="flashcard-answer">
+            <span>Answer</span>
+            <strong>{QUESTION.answerText}</strong>
+            <p>{QUESTION.explanation}</p>
+          </div>
+        </section>
       ) : (
-        <div className="preview-mode-choices">
-          {CHOICES.map((choice, index) => {
-            let status = null;
-            if (revealed && index === CORRECT_INDEX) status = "correct";
-            else if (revealed && index === answeredIndex) status = "incorrect";
-            else if (!revealed && index === CORRECT_INDEX) status = "selected";
-            return <Choice key={choice.letter} letter={choice.letter} label={choice.label} status={status} />;
-          })}
-        </div>
+        <QuizQuestion
+          question={QUESTION}
+          selectedAnswer={selectedValue}
+          revealed={revealed}
+          locked={false}
+          onSelect={() => {}}
+        />
       )}
 
       {revealed ? (
-        <div className={`preview-mode-feedback ${mode.state === "correct" ? "is-success" : "is-danger"}`}>
-          <p className="preview-mode-verdict">
-            {mode.state === "correct" ? <Check size={13} aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
-            {mode.state === "correct" ? "Correct!" : "Incorrect"}
+        <section className={`feedback-panel ${isCorrect ? "success" : "danger"}`}>
+          <h2>{isCorrect ? "Correct!" : "Incorrect"}</h2>
+          <p>
+            Your answer: <strong>{labelFor(selectedValue)}</strong>
           </p>
           <p>
-            Your answer: <strong>{CHOICES[answeredIndex].label}</strong>
+            Correct answer: <strong>{QUESTION.answerText}</strong>
           </p>
           <p>
-            Correct answer: <strong>{CHOICES[CORRECT_INDEX].label}</strong>
+            <strong>Explanation:</strong> {QUESTION.explanation}
           </p>
-          <p className="preview-mode-explanation">
-            <strong>Explanation:</strong> {EXPLANATION}
-          </p>
-        </div>
+        </section>
       ) : null}
 
-      <footer className="preview-mode-actions">
-        <span className="preview-mode-prev">Previous</span>
-        {mode.state === "flashcard" ? (
+      <section className="quiz-actions">
+        <button className="button subtle" type="button">
+          <ArrowLeft size={17} aria-hidden="true" />
+          Previous
+        </button>
+
+        <span className="answered-count">{ANSWERED_COUNT} answered</span>
+
+        {isFlashcard ? (
           <>
-            <span className="preview-mode-graded">Missed</span>
-            <span className="preview-mode-next">Got It</span>
+            <button className="button subtle" type="button">
+              Missed
+            </button>
+            <button className="button primary" type="button">
+              Got It
+            </button>
           </>
         ) : (
-          <>
-            <span className="preview-mode-answered">4 answered</span>
-            <span className="preview-mode-next">{mode.action}</span>
-          </>
+          <button className="button primary" type="button">
+            {mode.action}
+            <ArrowRight size={17} aria-hidden="true" />
+          </button>
         )}
-      </footer>
+      </section>
     </article>
   );
 }

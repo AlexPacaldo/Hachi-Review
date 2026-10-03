@@ -7463,11 +7463,7 @@ strong {
   flex-direction: column;
   gap: clamp(24px, 3vw, 38px);
   margin-top: clamp(52px, 6.5vw, 92px);
-  padding: clamp(28px, 4vw, 48px);
   scroll-margin-top: 92px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl);
 }
 
 .landing-preview-head {
@@ -7508,8 +7504,14 @@ strong {
 
 .landing-preview-carousel {
   position: relative;
-  /* Tall enough that the scaled card never overflows its box at any width. */
-  height: clamp(420px, 46vw, 560px);
+  width: 100%;
+  /* Matches cardWidth + 2 * spread + 120 from the carousel config in Landing.jsx.
+     The carousel scales the card by this box's width and never above 1, so
+     capping the width at that figure means the card renders at its natural size
+     and the aspect ratio below is an exact fit rather than a guess. */
+  max-width: 1084px;
+  margin: 0 auto;
+  aspect-ratio: 1084 / 940;
 }
 
 .landing-preview-caption {
@@ -7532,260 +7534,27 @@ strong {
   font-weight: 900;
 }
 
-/* --- The card is a miniature of the live quiz screen --- */
+/* --- The card is the live quiz screen ---
+   `.preview-mode` only owns the frame that the borrowed quiz markup sits in.
+   Everything inside it is styled by the shared quiz rules, so this block stays
+   deliberately thin: the only real decision here is pinning the action row to
+   the bottom, because the carousel fixes the card height and the shorter modes
+   would otherwise float their footer up under the question. */
 .preview-mode {
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 26px;
+  padding: clamp(20px, 2.2vw, 30px);
   color: var(--text);
   background: var(--surface);
   font-size: 1rem;
   text-align: left;
 }
 
-.preview-mode-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.preview-mode-subject {
-  color: var(--accent);
-  font-size: 0.84rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.preview-mode-timer {
-  padding: 4px 13px;
-  color: var(--muted);
-  background: var(--surface-2);
-  border-radius: var(--radius-pill);
-  font-size: 0.9rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.preview-mode-count {
-  margin: 14px 0 0;
-  color: var(--text);
-  font-size: 1.5rem;
-  font-weight: 900;
-  line-height: 1.2;
-}
-
-.preview-mode-bar {
-  height: 8px;
-  margin: 14px 0 20px;
-  overflow: hidden;
-  background: var(--surface-3);
-  border-radius: var(--radius-pill);
-}
-
-.preview-mode-bar span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-}
-
-.preview-mode-topic {
-  margin: 0 0 8px;
-  color: var(--accent);
-  font-size: 0.84rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.preview-mode-question {
-  margin: 0 0 20px;
-  color: var(--text);
-  font-size: 1.3rem;
-  font-weight: 800;
-  line-height: 1.32;
-}
-
-.preview-mode-choices {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.preview-choice {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 12px 13px;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.preview-choice-key {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: var(--radius-xs);
-  font-size: 0.86rem;
-  font-weight: 900;
-}
-
-.preview-choice-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview-choice-status {
-  display: none;
-}
-
-.preview-choice.is-selected {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
-}
-
-.preview-choice.is-correct {
-  color: var(--text);
-  background: var(--success-soft);
-  border-color: color-mix(in srgb, var(--success) 38%, transparent);
-}
-
-.preview-choice.is-incorrect {
-  color: var(--text);
-  background: var(--danger-soft);
-  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
-}
-
-/* Flashcard reveal */
-.preview-mode-reveal {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 20px;
-  padding: 20px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  text-align: center;
-}
-
-.preview-mode-reveal-label {
-  margin: 0;
-  color: var(--tertiary);
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.preview-mode-reveal-text {
-  margin: 0;
-  color: var(--text);
-  font-size: 1.5rem;
-  font-weight: 900;
-}
-
-/* Feedback panel, mirroring .feedback-panel */
-.preview-mode-feedback {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-top: 16px;
-  padding: 15px 16px;
-  border-radius: var(--radius-md);
-  font-size: 0.95rem;
-  font-weight: 600;
-  line-height: 1.42;
-}
-
-.preview-mode-feedback p {
-  margin: 0;
-}
-
-.preview-mode-feedback strong {
-  font-weight: 800;
-}
-
-.preview-mode-feedback.is-success {
-  background: var(--success-soft);
-}
-
-.preview-mode-feedback.is-danger {
-  background: var(--danger-soft);
-}
-
-.preview-mode-verdict {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 3px;
-  font-size: 1.12rem;
-  font-weight: 900;
-}
-
-.preview-mode-feedback.is-success .preview-mode-verdict {
-  color: var(--success);
-}
-
-.preview-mode-feedback.is-danger .preview-mode-verdict {
-  color: var(--danger);
-}
-
-.preview-mode-explanation {
-  margin-top: 3px;
-  color: var(--muted);
-}
-
-.preview-mode-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.preview-mode .quiz-actions {
   margin-top: auto;
   padding-top: 18px;
-  font-size: 0.95rem;
-  font-weight: 800;
-}
-
-.preview-mode-prev {
-  padding: 7px 15px;
-  color: var(--muted);
-  background: var(--surface-2);
-  border-radius: var(--radius-pill);
-}
-
-.preview-mode-answered {
-  margin-left: auto;
-  color: var(--tertiary);
-}
-
-.preview-mode-graded {
-  margin-left: auto;
-  padding: 7px 15px;
-  color: var(--muted);
-  background: var(--surface-2);
-  border-radius: var(--radius-pill);
-}
-
-.preview-mode-next {
-  padding: 7px 16px;
-  color: #fff;
-  background: var(--success);
-  border-radius: var(--radius-pill);
 }
 
 /* FAQ */
@@ -8134,51 +7903,15 @@ strong {
   }
 
   .landing-feature,
-  .landing-step,
-  .landing-preview {
+  .landing-step {
     padding: 22px;
   }
 
-  /* Let the carousel borrow the section padding so the card stays as wide as it
-     can, and keep the type readable under the carousel's fit-to-width scaling. */
+  /* The compact carousel reserves a narrower box, so the same width-driven scale
+     reaches 1 sooner and the aspect ratio has to follow it. */
   .landing-preview-carousel {
-    height: 800px;
-    margin: 0 -8px;
-  }
-
-  /* One column of choices: at phone widths two columns would clip every label. */
-  .preview-mode-choices {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .preview-mode {
-    padding: 18px;
-    font-size: 1.02rem;
-  }
-
-  .preview-mode-count {
-    font-size: 1.3rem;
-  }
-
-  .preview-mode-question {
-    font-size: 1.14rem;
-  }
-
-  .preview-mode-subject,
-  .preview-mode-topic {
-    font-size: 0.78rem;
-  }
-
-  .preview-mode-feedback {
-    font-size: 0.88rem;
-  }
-
-  .preview-mode-verdict {
-    font-size: 1rem;
-  }
-
-  .preview-mode-actions {
-    font-size: 0.88rem;
+    max-width: 552px;
+    aspect-ratio: 552 / 1260;
   }
 }
 
