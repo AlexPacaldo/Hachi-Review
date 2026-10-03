@@ -39,6 +39,8 @@ import {
 const PROGRESS_DEBOUNCE_MS = 4000;
 const STUDY_DAY_DEBOUNCE_MS = 8000;
 const DELETE_TYPES = new Set(["delete-progress", "clear-progress", "clear-attempts"]);
+// PostgREST reports the underlying Postgres SQLSTATE. 23503 is foreign_key_violation.
+const FOREIGN_KEY_VIOLATION = "23503";
 
 let activeUserId = null;
 let studyDayTimer = null;
@@ -272,18 +274,31 @@ async function writeQueuedItem(item) {
 }
 
 export async function flushSyncQueue() {
-  if (!canWrite()) return { synced: 0, failed: 0, results: [] };
+  if (!canWrite()) return { synced: 0, failed: 0, dropped: 0, results: [] };
 
   const items = getSyncQueue(activeUserId);
-  if (!items.length) return { synced: 0, failed: 0, results: [] };
+  if (!items.length) return { synced: 0, failed: 0, dropped: 0, results: [] };
 
   const results = [];
+  let dropped = 0;
 
   for (const item of items) {
     const { error } = await writeQueuedItem(item);
 
     if (error) {
-      results.push({ item, error });
+      // A foreign key violation means the reviewer this row pointed at is gone
+      // from the account, and reviewer_progress cascades on delete. Retrying can
+      // never succeed, so keeping it would leave the item failing on every sync
+      // and the queue would never drain. Anything else stays queued for another
+      // attempt, because those tend to be transient.
+      const gone = error.code === FOREIGN_KEY_VIOLATION;
+
+      if (gone) {
+        removeSyncItem(item.userId, item.type, item.reviewerId);
+        dropped += 1;
+      }
+
+      results.push({ item, error, gone });
       continue;
     }
 
@@ -294,6 +309,7 @@ export async function flushSyncQueue() {
   return {
     synced: results.filter((result) => !result.error).length,
     failed: results.filter((result) => result.error).length,
+    dropped,
     results
   };
 }
@@ -405,6 +421,15 @@ export async function pushUnsyncedLocalData() {
     )]);
   }
 
+  // Only reviewers the account actually holds now. reviewer_progress has a
+  // foreign key onto reviewers with on delete cascade, so pushing a session whose
+  // reviewer failed to upload would be rejected anyway, and pushing one whose
+  // reviewer was deleted elsewhere would fail the same way.
+  const knownReviewerIds = new Set([
+    ...cloudReviewerIds,
+    ...uploaded.map((reviewer) => reviewer.reviewerId)
+  ]);
+
   // A sign-in push used to be unconditional, so whichever device signed in last
   // decided whose progress survived. A session older than the row the account
   // already holds is left alone, so this can only ever move progress forward.
@@ -413,6 +438,7 @@ export async function pushUnsyncedLocalData() {
   let progress = 0;
   for (const session of Object.values(getAllProgress())) {
     if (!session?.reviewerId || session.completed) continue;
+    if (!knownReviewerIds.has(session.reviewerId)) continue;
     const cloudUpdatedAt = Date.parse(updatedAtByReviewerId?.[session.reviewerId] || "") || 0;
     if (cloudUpdatedAt > getProgressTimestamp(session)) continue;
     const { error } = await upsertCloudProgress(userId, session);

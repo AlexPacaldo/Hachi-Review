@@ -607,7 +607,14 @@ create table if not exists public.reviewer_progress (
   reviewer_id text not null,
   data jsonb not null,
   updated_at timestamptz not null default now(),
-  primary key (owner_id, reviewer_id)
+  primary key (owner_id, reviewer_id),
+  -- A session stores only the question ids it used, so it is meaningless without
+  -- the reviewer that can supply them. Without this the rows outlive the reviewer
+  -- forever and no second device can ever restore them.
+  constraint reviewer_progress_reviewer_fkey
+    foreign key (owner_id, reviewer_id)
+    references public.reviewers(owner_id, reviewer_id)
+    on delete cascade
 );
 
 alter table public.reviewer_progress enable row level security;
@@ -651,7 +658,13 @@ create table if not exists public.reviewer_attempts (
   data jsonb not null,
   completed_at timestamptz,
   created_at timestamptz not null default now(),
-  unique(owner_id, attempt_id)
+  unique(owner_id, attempt_id),
+  -- Same reason as reviewer_progress: a finished quiz cannot be shown or scored
+  -- again once its reviewer is gone, so it goes with it.
+  constraint reviewer_attempts_reviewer_fkey
+    foreign key (owner_id, reviewer_id)
+    references public.reviewers(owner_id, reviewer_id)
+    on delete cascade
 );
 
 alter table public.reviewer_attempts enable row level security;

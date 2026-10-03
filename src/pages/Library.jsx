@@ -495,13 +495,21 @@ export default function Library() {
     const { results } = await flushSyncQueue();
     let failed = 0;
 
-    results.forEach(({ item, error }) => {
+    results.forEach(({ item, error, gone }) => {
       if (!item.reviewerId) return;
 
       setSyncStatus((current) => ({
         ...current,
         [item.reviewerId]: error
-          ? { type: "error", message: error.message || "Queued sync failed." }
+          ? {
+              type: "error",
+              // The reviewer was deleted from the account, so this queued write was
+              // discarded rather than retried. Saying so beats surfacing a raw
+              // foreign key constraint message.
+              message: gone
+                ? "This reviewer was deleted from your account, so its queued change was discarded."
+                : error.message || "Queued sync failed."
+            }
           : { type: "success", message: "Queued sync complete." }
       }));
 
