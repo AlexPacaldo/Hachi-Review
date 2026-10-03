@@ -7352,39 +7352,88 @@ strong {
   line-height: 1.6;
 }
 
+/* No `margin-top: auto` here. This card is stretched over two grid rows, and
+   pinning the demo to the bottom opened a void between the copy and the demo
+   that read as a rendering fault. Slack left over at the bottom of the card
+   reads as padding instead. */
 .landing-feature-demo {
+  padding-top: 22px;
+}
+
+.landing-demo-panel {
   display: grid;
-  gap: 10px;
-  margin-top: auto;
-  padding-top: 26px;
-}
-
-.landing-demo-line {
-  height: 12px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-}
-
-.landing-demo-line-long {
-  width: 88%;
-}
-
-.landing-demo-line-short {
-  width: 52%;
-}
-
-.landing-demo-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-  padding: 12px 14px;
-  color: var(--text);
+  gap: 11px;
+  padding: 18px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+}
+
+.landing-demo-panel-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.landing-demo-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.landing-demo-bar {
+  height: 6px;
+  overflow: hidden;
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+}
+
+.landing-demo-bar > span {
+  display: block;
+  width: 32%;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+
+.landing-demo-topic {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.landing-demo-question {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.02rem;
+  font-weight: 800;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.landing-demo-ready {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding-top: 12px;
+  color: var(--text);
+  border-top: 1px solid var(--separator);
   font-size: 0.9rem;
   font-weight: 800;
+}
+
+.landing-demo-ready svg {
+  color: var(--success);
 }
 
 .landing-demo-check {
@@ -7392,7 +7441,6 @@ strong {
   place-items: center;
   width: 22px;
   height: 22px;
-  margin-left: auto;
   color: #fff;
   background: var(--success);
   border-radius: 50%;

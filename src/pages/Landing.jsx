@@ -394,18 +394,30 @@ export default function Landing({ theme, onToggleTheme }) {
                   <p>{feature.text}</p>
                   {feature.tone === "wide" ? (
                     <div className="landing-feature-demo" aria-hidden="true">
-                      <span className="landing-demo-line landing-demo-line-long" />
-                      <span className="landing-demo-line" />
-                      <span className="landing-demo-line landing-demo-line-short" />
-                      <div className="landing-demo-card">
-                        <Sparkles size={15} />
-                        <span>Question 1 of 10 generated</span>
-                        <span className="landing-demo-check">
-                          <Check size={13} />
+                      <div className="landing-demo-panel">
+                        <div className="landing-demo-panel-top">
+                          <span className="landing-demo-count">
+                            <Sparkles size={14} />
+                            Question 1 of 10
+                          </span>
+                          <span className="landing-demo-check">
+                            <Check size={13} />
+                          </span>
+                        </div>
+
+                        <span className="landing-demo-bar">
+                          <span />
                         </span>
-                      </div>
-                      <div className="landing-demo-card">
-                        <span>Answer + explanation ready</span>
+
+                        <p className="landing-demo-topic">Cardiovascular system</p>
+                        <p className="landing-demo-question">
+                          Which chamber of the heart pumps oxygenated blood into the systemic circulation?
+                        </p>
+
+                        <p className="landing-demo-ready">
+                          <Check size={15} />
+                          Answer + explanation ready
+                        </p>
                       </div>
                     </div>
                   ) : null}
