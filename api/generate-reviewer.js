@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { CHOICE_LETTERS, findChoiceBalanceIssues, getChoiceBalanceIssue, inferQuestionStyle } from "../src/utils/quizUtils.js";
 
@@ -60,11 +59,6 @@ const MAX_COMPLETION_ATTEMPTS = 3;
 const MAX_REQUEST_BODY_LENGTH = 5200000;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 8;
-// Anonymous callers may still generate, so trying the app does not require an
-// account, but they get a smaller share because one person can be many addresses
-// while one signed-in account is one person. This is the main thing keeping
-// anonymous traffic from eating the free tier's daily quota.
-const ANON_RATE_LIMIT_MAX_REQUESTS = 3;
 // Runaway guard, not a quality dial. A full request legitimately spends 5 upstream
 // calls (generate, three top-ups, one choice-rebalance pass), and each of those can
 // walk the fallback chain, so 12 leaves headroom for several provider failures
@@ -454,8 +448,7 @@ function getBearerToken(request) {
   return match?.[1] || "";
 }
 
-// One client per request, carrying the caller's own Authorization header when they
-// sent one.
+// One client per request, carrying the caller's own Authorization header.
 //
 // This is the whole reason auth.uid() works inside consume_ai_rate_limit. Calling
 // the RPC on a plain anon client resolves to the anon role in Postgres, where
@@ -477,17 +470,24 @@ function getCallerSupabaseClient(token) {
   });
 }
 
-// Anonymous callers are keyed on a hash of the address, so the table never holds a
-// raw one and a log line cannot reconstruct who used it.
-function getIpHash(remoteIp) {
-  const salt = process.env.AI_RATE_LIMIT_IP_SALT || "hachi";
-  return `ip:${createHash("sha256").update(`${salt}:${remoteIp}`).digest("hex")}`;
-}
+// Signed in, or nothing happens.
+//
+// There is no billing on these keys, so abuse costs no money. What it costs is
+// the free tier's daily quota, and a provider that starts refusing the account
+// breaks the owner's own generation too. A per-address cap cannot fix that,
+// because an address is not an identity: x-forwarded-for rotates for free, and a
+// shared network puts many people behind one address. A Google OAuth sign-in is a
+// real barrier, and it makes the counter keyed on something unforgeable.
+async function requireAuthenticatedUser(request, requestId) {
+  const token = getBearerToken(request);
 
-// Resolves the caller when there is a session, and reports a bad one. Returns null
-// for anonymous, which is allowed to generate at the lower cap.
-async function resolveCaller(supabase, token, requestId) {
-  if (!token) return null;
+  if (!token) {
+    const error = new Error("Sign in to generate a reviewer.");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const supabase = getCallerSupabaseClient(token);
 
   if (!supabase) {
     const error = new Error("Sign-in is not configured on this deployment.");
@@ -495,41 +495,35 @@ async function resolveCaller(supabase, token, requestId) {
     throw error;
   }
 
+  let user = null;
+
   try {
     const { data, error } = await supabase.auth.getUser(token);
-    if (!error && data?.user?.id) return data.user;
+    if (!error && data?.user?.id) user = data.user;
   } catch (error) {
     console.warn(`[${requestId}] Could not verify the session: ${error?.message || error}`);
   }
 
-  // The session was presented and did not hold up. Returning null here would turn a
-  // stale token into the anonymous cap rather than telling the person to sign in
-  // again, so this is a hard stop.
-  const error = new Error("Your session expired. Sign in again to keep your higher generation limit.");
-  error.statusCode = 401;
-  throw error;
+  if (!user) {
+    // Deliberately does not pass the Supabase message through. It would tell an
+    // attacker whether a token was malformed, expired, or revoked.
+    const error = new Error("Your session expired. Sign in again to generate a reviewer.");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  return { user, supabase };
 }
 
 // Spends one unit from the caller's window in Postgres. The counter is keyed on
-// auth.uid() for a signed-in caller and on an address hash otherwise, both chosen
-// here in the database rather than taken from the client. It is shared by every
-// instance on the fleet and survives a cold start.
-async function consumeRateLimit({ supabase, isSignedIn, remoteIp, requestId }) {
-  const maxRequests = isSignedIn
-    ? (Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS) || RATE_LIMIT_MAX_REQUESTS)
-    : (Number(process.env.AI_ANON_RATE_LIMIT_MAX_REQUESTS) || ANON_RATE_LIMIT_MAX_REQUESTS);
+// auth.uid(), derived inside the function, so there is nothing to rotate. It is
+// shared by every instance on the fleet and survives a cold start.
+async function consumeRateLimit({ supabase, userId, requestId }) {
+  const maxRequests = Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS) || RATE_LIMIT_MAX_REQUESTS;
   const windowSeconds = Math.round(RATE_LIMIT_WINDOW_MS / 1000);
-
-  if (!supabase) {
-    console.error(`[${requestId}] Supabase is not configured, so the shared rate limit is unavailable.`);
-    return { ...checkRateLimit(`fallback:${remoteIp}`), shared: false };
-  }
 
   try {
     const { data, error } = await supabase.rpc("consume_ai_rate_limit", {
-      // Only sent for anonymous. The function ignores it entirely when the caller
-      // has a session, so it cannot be used to borrow another account's allowance.
-      p_ip_hash: isSignedIn ? null : getIpHash(remoteIp),
       p_max_requests: maxRequests,
       p_window_seconds: windowSeconds
     });
@@ -553,12 +547,11 @@ async function consumeRateLimit({ supabase, isSignedIn, remoteIp, requestId }) {
       `[${requestId}] Shared rate limit unavailable, using the per-instance fallback: ${error?.message || error}. Run supabase-migration-2026-10-ai-abuse.sql if this keeps happening.`
     );
 
-    // Keyed on the address for anonymous and on the session subject otherwise, so
-    // the fallback still holds within one warm instance. It does not hold across
-    // the fleet, which is why the error above is worth reading rather than
-    // dismissing.
+    // Keyed on the account, so the fallback still holds within one warm instance.
+    // It does not hold across the fleet, which is why the error above is worth
+    // reading rather than dismissing.
     return {
-      ...checkRateLimit(`fallback:${isSignedIn ? "user" : "ip"}:${remoteIp}`),
+      ...checkRateLimit(`user:${userId}`),
       limit: maxRequests,
       shared: false
     };
@@ -1436,42 +1429,30 @@ export default async function handler(request, response) {
     return sendJson(response, 413, { error: "That request is too large for AI generation. Use a smaller file, extract text, or paste the most important notes.", requestId });
   }
 
-  // Signed in is not required, because there is no billing attached to these keys
-  // and trying the app should not need an account. What is required is a limit
-  // that a caller cannot rotate: the counter is keyed in the database on the
-  // session subject when there is one, and on an address hash when there is not.
-  const token = getBearerToken(request);
-  const supabase = getCallerSupabaseClient(token);
-  const remoteIp = getClientIpKey(request);
-  let caller = null;
-
+  // Signed in, or nothing happens. See requireAuthenticatedUser for why an address
+  // based cap was not good enough.
+  let user;
+  let supabase;
   try {
-    caller = await resolveCaller(supabase, token, requestId);
+    ({ user, supabase } = await requireAuthenticatedUser(request, requestId));
   } catch (error) {
     return sendJson(response, error?.statusCode || 401, {
-      error: error?.message || "Your session expired. Sign in again to keep your higher generation limit.",
+      error: error?.message || "Sign in to generate a reviewer.",
       requestId
     });
   }
 
-  const rateLimit = await consumeRateLimit({
-    supabase,
-    isSignedIn: Boolean(caller),
-    remoteIp,
-    requestId
-  });
+  const rateLimit = await consumeRateLimit({ supabase, userId: user.id, requestId });
   response.setHeader("X-RateLimit-Limit", String(rateLimit.limit));
   response.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
   response.setHeader("X-RateLimit-Reset", String(Math.ceil(rateLimit.resetMs / 1000)));
-  response.setHeader("X-RateLimit-Scope", `${rateLimit.shared ? "" : "instance-"}${caller ? "user" : "ip"}`);
+  response.setHeader("X-RateLimit-Scope", rateLimit.shared ? "user" : "instance-user");
 
   if (!rateLimit.allowed) {
     response.setHeader("Retry-After", String(Math.ceil(rateLimit.resetMs / 1000)));
     const minutes = Math.max(1, Math.ceil(rateLimit.resetMs / 60000));
     return sendJson(response, 429, {
-      error: caller
-        ? `Too many AI requests. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`
-        : `Guest generation is limited to ${rateLimit.limit} requests every 10 minutes. Sign in for a higher limit, or try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+      error: `Too many AI requests. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
       requestId
     });
   }
@@ -1479,7 +1460,7 @@ export default async function handler(request, response) {
   if (isTurnstileEnabled()) {
     const turnstilePassed = await verifyTurnstileToken(
       request.body?.turnstileToken,
-      remoteIp,
+      getClientIpKey(request),
       requestId
     );
 

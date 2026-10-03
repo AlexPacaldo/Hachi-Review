@@ -1219,13 +1219,13 @@ revoke all on function private.is_admin() from public, anon, authenticated;
 
 -- AI quota protection. The provider keys are on free tiers, so abuse does not
 -- cost money, it exhausts the daily quota and makes the owner's own generation
--- start failing. It needs a limit a caller cannot talk its way around.
+-- start failing, which can get the provider refusing the account outright.
 --
 -- It lives in a table rather than in one serverless instance's memory, so it is
--- shared across the fleet and survives a cold start. A signed-in caller is keyed
--- on auth.uid(), derived inside the function so no header can change it. An
--- anonymous caller is keyed on a hash of the address, which the function in
--- api/generate-reviewer.js computes, and is capped lower.
+-- shared across the fleet and survives a cold start. Generation requires a
+-- signed-in account, and the key is derived from auth.uid() inside the function,
+-- so there is no header for a caller to rotate. An IP address would not do: it
+-- is not an identity, and a per-address cap only slows someone down.
 create table if not exists public.ai_rate_limits (
   subject_key text primary key,
   subject_id uuid references auth.users(id) on delete cascade,
@@ -1244,11 +1244,11 @@ revoke all on table public.ai_rate_limits from anon, authenticated;
 -- one transaction. The row lock is what stops two simultaneous requests from
 -- reading the same count and both passing.
 --
--- Executable by anon as well as authenticated, because the serverless function
--- verifies the session itself and then calls this with a plain client. A caller
--- with a real session is keyed on their own uid regardless of what they pass.
+-- Executable by authenticated only. The serverless function passes the caller's
+-- own Authorization header through, so PostgREST runs this as that user and
+-- auth.uid() resolves. On a plain anon client it would resolve to null here and
+-- the counter would never engage.
 create or replace function public.consume_ai_rate_limit(
-  p_ip_hash text,
   p_max_requests integer,
   p_window_seconds integer
 )
@@ -1260,7 +1260,6 @@ set search_path = public
 as $$
 declare
   v_uid uuid := auth.uid();
-  v_key text;
   v_max integer := greatest(coalesce(p_max_requests, 8), 1);
   v_window interval := make_interval(secs => greatest(coalesce(p_window_seconds, 600), 1));
   v_now timestamptz := now();
@@ -1268,34 +1267,20 @@ declare
   v_count integer;
   v_reset_ms bigint;
 begin
-  if v_uid is not null then
-    v_key := 'user:' || v_uid::text;
-  else
-    -- The shape check is what stops a caller passing an arbitrary string: without
-    -- it anyone could mint a fresh key per request and the limit would mean
-    -- nothing.
-    if p_ip_hash is null or p_ip_hash !~ '^ip:[0-9a-f]{64}$' then
-      raise exception 'missing rate limit subject';
-    end if;
-
-    v_key := p_ip_hash;
-
-    -- Keep anonymous rows from growing without bound. Each request discards the
-    -- ones whose window closed more than a day ago, which an attacker cannot avoid
-    -- while also making a real request.
-    delete from public.ai_rate_limits
-    where subject_id is null
-      and window_started_at < now() - interval '1 day';
+  -- The endpoint requires a session before calling this, so a null uid means
+  -- somebody invoked the function directly with an anon key. They get nothing.
+  if v_uid is null then
+    raise exception 'not signed in';
   end if;
 
   insert into public.ai_rate_limits (subject_key, subject_id, window_started_at, request_count)
-  values (v_key, v_uid, v_now, 0)
+  values ('user:' || v_uid::text, v_uid, v_now, 0)
   on conflict (subject_key) do nothing;
 
   select window_started_at, request_count
   into v_window_started_at, v_count
   from public.ai_rate_limits
-  where subject_key = v_key
+  where subject_key = 'user:' || v_uid::text
   for update;
 
   -- An elapsed window starts over rather than blocking forever.
@@ -1314,7 +1299,7 @@ begin
     update public.ai_rate_limits
     set window_started_at = v_window_started_at,
         request_count = v_count
-    where subject_key = v_key;
+    where subject_key = 'user:' || v_uid::text;
 
     return jsonb_build_object('allowed', false, 'remaining', 0, 'resetMs', v_reset_ms);
   end if;
@@ -1322,7 +1307,7 @@ begin
   update public.ai_rate_limits
   set window_started_at = v_window_started_at,
       request_count = v_count + 1
-  where subject_key = v_key;
+  where subject_key = 'user:' || v_uid::text;
 
   return jsonb_build_object(
     'allowed', true,
@@ -1332,9 +1317,9 @@ begin
 end;
 $$;
 
-revoke all on function public.consume_ai_rate_limit(text, integer, integer) from public, anon;
+revoke all on function public.consume_ai_rate_limit(integer, integer) from public, anon;
 
-grant execute on function public.consume_ai_rate_limit(text, integer, integer) to anon, authenticated;
+grant execute on function public.consume_ai_rate_limit(integer, integer) to authenticated;
 
 -- Reports the database size against the stored limit, plus the reviewer storage
 -- that decides whether those numbers are fine. avgReviewerKb is the on disk size

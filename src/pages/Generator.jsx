@@ -32,10 +32,6 @@ const MAX_AI_SOURCE_TEXT_LENGTH = 45000;
 const AI_RATE_LIMIT_KEY = "reviewer_ai_request_window";
 const AI_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const AI_RATE_LIMIT_MAX_REQUESTS = 8;
-// Mirrors AI_ANON_RATE_LIMIT_MAX_REQUESTS on the server. Kept in step so a guest is
-// stopped here with the same number the server would have used, instead of being
-// allowed to click through to a 429.
-const AI_ANON_RATE_LIMIT_MAX_REQUESTS = 3;
 const QUESTION_TYPE_OPTIONS = [
   { value: "multiple_choice", label: "Multiple Choice" },
   { value: "identification", label: "Identification" },
@@ -216,14 +212,11 @@ function getFriendlyGenerationError(error) {
 }
 
 // This is a courtesy limiter, not the real one. The server keeps the count that
-// matters, in a table, keyed on the account or the address. This one exists so the
-// person is told the number without a round trip, and so the guest cap matches what
-// the server would have applied.
+// matters, in a table, keyed on the account. This one exists so the person is told
+// the number without a round trip.
 function checkAiRateLimit(userId = "") {
   const now = Date.now();
-  const isSignedIn = Boolean(userId);
-  const maxRequests = isSignedIn ? AI_RATE_LIMIT_MAX_REQUESTS : AI_ANON_RATE_LIMIT_MAX_REQUESTS;
-  const key = `${AI_RATE_LIMIT_KEY}:${isSignedIn ? userId : "guest"}`;
+  const key = `${AI_RATE_LIMIT_KEY}:${userId}`;
 
   try {
     const current = JSON.parse(localStorage.getItem(key) || "null");
@@ -233,10 +226,9 @@ function checkAiRateLimit(userId = "") {
       return null;
     }
 
-    if (current.count >= maxRequests) {
+    if (current.count >= AI_RATE_LIMIT_MAX_REQUESTS) {
       const retryMinutes = Math.max(1, Math.ceil((AI_RATE_LIMIT_WINDOW_MS - (now - current.windowStart)) / 60000));
-      const upgrade = isSignedIn ? "" : ` Sign in for ${AI_RATE_LIMIT_MAX_REQUESTS} instead.`;
-      return `AI generation is limited to ${maxRequests} requests every 10 minutes. Try again in about ${retryMinutes} minute${retryMinutes === 1 ? "" : "s"}.${upgrade}`;
+      return `AI generation is limited to ${AI_RATE_LIMIT_MAX_REQUESTS} requests every 10 minutes. Try again in about ${retryMinutes} minute${retryMinutes === 1 ? "" : "s"}.`;
     }
 
     localStorage.setItem(key, JSON.stringify({ ...current, count: current.count + 1 }));
@@ -420,17 +412,17 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     };
   }
 
-  // Generation works without an account, at a lower cap. A signed-in request carries
-  // the session so the server can key the rate limit on the account rather than the
-  // address, which is both more generous and harder to work around. Only a
-  // deployment with no Supabase config at all cannot generate.
-  function getAiGenerationNotice() {
+  // Generation needs an account. The provider keys are on free tiers, so letting
+  // anonymous callers in risks the daily quota rather than a bill, and a per-address
+  // cap cannot stop that because an address is not an identity. Checked here so the
+  // person gets told why instead of reading a 401 out of the network tab.
+  function requireSignIn() {
     if (!configured) {
       return "AI generation needs Supabase configured on this deployment. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
     }
 
     if (!session?.access_token) {
-      return `Signed out, so AI generation is limited to ${AI_ANON_RATE_LIMIT_MAX_REQUESTS} requests every 10 minutes. Sign in for ${AI_RATE_LIMIT_MAX_REQUESTS}.`;
+      return "Sign in to generate a reviewer with AI. Saving and taking a quiz still work without an account.";
     }
 
     return null;
@@ -438,9 +430,8 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
 
   // Returns the body to send, or a ready-made error when the request cannot be made.
   async function buildAiRequestBody(payload) {
-    if (!configured) {
-      return { error: getAiGenerationNotice() };
-    }
+    const signInError = requireSignIn();
+    if (signInError) return { error: signInError };
 
     if (turnstile.enabled && turnstile.error) {
       return { error: turnstile.error };
@@ -739,10 +730,11 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       return;
     }
 
-    // Only blocks when Supabase is not configured at all. Signed out is allowed,
-    // because the server applies the lower cap and the notice below says so.
-    if (!configured) {
-      setErrors([getAiGenerationNotice()]);
+    // Before the local rate limiter, so a signed-out visitor is told to sign in
+    // rather than spending a request they could never complete.
+    const signInError = requireSignIn();
+    if (signInError) {
+      setErrors([signInError]);
       return;
     }
 
@@ -865,8 +857,9 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       return;
     }
 
-    if (!configured) {
-      setErrors([getAiGenerationNotice()]);
+    const signInError = requireSignIn();
+    if (signInError) {
+      setErrors([signInError]);
       return;
     }
 
@@ -1081,9 +1074,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
               </div>
             ) : null}
             {configured && !user ? (
-              <p className="generation-hint">
-                {getAiGenerationNotice()} Reviewers still save to this device without an account.
-              </p>
+              <p className="generation-hint">{requireSignIn()}</p>
             ) : null}
             <div className="button-row">
               <button className="button primary" type="button" onClick={generateReviewerWithAi} disabled={isGenerating || isAddingQuestions || !isOnline}>

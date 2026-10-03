@@ -16,10 +16,12 @@
 --      and survives a cold start. It used to be a Map inside one warm serverless
 --      instance, which meant N instances allowed N times the intended limit.
 --
---   2. The counter is keyed on something the caller cannot choose. For a signed-in
---      request the key is derived from auth.uid() here in the function, so there is
---      no header to rotate. For an anonymous request it is a hash of the address,
---      which is the best available signal and is capped lower.
+--   2. Generation requires a signed-in account. There is no billing on these keys,
+--      so abuse costs no money, but it exhausts the free tier's daily quota and can
+--      get the provider refusing the account outright. An IP address is not an
+--      identity: x-forwarded-for can be rotated freely, so a per-address cap is a
+--      speed bump rather than a limit. A Google OAuth sign-in is a real barrier,
+--      and it makes the counter keyed on something unforgeable.
 --
 --   3. Counting is atomic. The row lock is held to the end of the call, so two
 --      simultaneous requests cannot both read the same count and both pass.
@@ -89,16 +91,12 @@ $$;
 -- harmless on its own but is not worth the extra surface.
 revoke all on function private.is_admin() from public, anon, authenticated;
 
--- 3. Durable rate limit counters, one row per subject.
+-- 3. Durable rate limit counters, one row per account.
 --
---    subject_key is what the counter is keyed on. For a signed-in caller it is
---    derived inside the function from auth.uid() and the client cannot influence
---    it. For an anonymous caller it is 'ip:' plus a sha256 of the address, computed
---    in the serverless function, so the table never stores a raw address.
---
---    subject_id is set only for signed-in callers, which gives the row a
---    foreign key so it disappears with the account. Anonymous rows have no
---    account to belong to and are pruned by the function instead.
+--    subject_key is what the counter is keyed on, and the function always derives
+--    it from auth.uid(), so the client cannot influence which bucket it lands in.
+--    subject_id carries the same foreign key so the row disappears with the
+--    account and no pruning is needed.
 create table if not exists public.ai_rate_limits (
   subject_key text primary key,
   subject_id uuid references auth.users(id) on delete cascade,
@@ -106,7 +104,6 @@ create table if not exists public.ai_rate_limits (
   request_count integer not null default 0
 );
 
--- Backs the anonymous prune below.
 create index if not exists ai_rate_limits_window_idx
 on public.ai_rate_limits(window_started_at);
 
@@ -119,11 +116,11 @@ revoke all on table public.ai_rate_limits from anon, authenticated;
 -- 4. The counter itself. Takes one unit from the caller's window and reports what
 --    is left, in the same transaction.
 --
---    Executable by anon as well as authenticated, because the serverless function
---    verifies the session itself and then calls this with a plain client. A caller
---    with a real session is keyed on their own uid regardless of what they pass.
+--    Executable by authenticated only. The serverless function passes the caller's
+--    own Authorization header through, so PostgREST runs this as that user and
+--    auth.uid() resolves. On a plain anon client it would resolve to null here and
+--    the counter would never engage.
 create or replace function public.consume_ai_rate_limit(
-  p_ip_hash text,
   p_max_requests integer,
   p_window_seconds integer
 )
@@ -135,7 +132,6 @@ set search_path = public
 as $$
 declare
   v_uid uuid := auth.uid();
-  v_key text;
   v_max integer := greatest(coalesce(p_max_requests, 8), 1);
   v_window interval := make_interval(secs => greatest(coalesce(p_window_seconds, 600), 1));
   v_now timestamptz := now();
@@ -143,36 +139,22 @@ declare
   v_count integer;
   v_reset_ms bigint;
 begin
-  if v_uid is not null then
-    v_key := 'user:' || v_uid::text;
-  else
-    -- Anonymous. The shape check is what stops a caller passing an arbitrary
-    -- string: without it anyone could mint a fresh key per request and the limit
-    -- would mean nothing.
-    if p_ip_hash is null or p_ip_hash !~ '^ip:[0-9a-f]{64}$' then
-      raise exception 'missing rate limit subject';
-    end if;
-
-    v_key := p_ip_hash;
-
-    -- Keep the anonymous rows from growing without bound. Each request discards
-    -- the ones whose window closed more than a day ago, which an attacker cannot
-    -- avoid while also making a real request.
-    delete from public.ai_rate_limits
-    where subject_id is null
-      and window_started_at < now() - interval '1 day';
+  -- The endpoint requires a session before calling this, so a null uid means
+  -- somebody invoked the function directly with an anon key. They get nothing.
+  if v_uid is null then
+    raise exception 'not signed in';
   end if;
 
   -- Create the row, then take a row lock on it. The lock is held until this call
-  -- commits, which is what serializes concurrent requests from the same subject.
+  -- commits, which is what serializes concurrent requests from the same account.
   insert into public.ai_rate_limits (subject_key, subject_id, window_started_at, request_count)
-  values (v_key, v_uid, v_now, 0)
+  values ('user:' || v_uid::text, v_uid, v_now, 0)
   on conflict (subject_key) do nothing;
 
   select window_started_at, request_count
   into v_window_started_at, v_count
   from public.ai_rate_limits
-  where subject_key = v_key
+  where subject_key = 'user:' || v_uid::text
   for update;
 
   -- An elapsed window starts over rather than blocking forever.
@@ -191,7 +173,7 @@ begin
     update public.ai_rate_limits
     set window_started_at = v_window_started_at,
         request_count = v_count
-    where subject_key = v_key;
+    where subject_key = 'user:' || v_uid::text;
 
     return jsonb_build_object('allowed', false, 'remaining', 0, 'resetMs', v_reset_ms);
   end if;
@@ -199,7 +181,7 @@ begin
   update public.ai_rate_limits
   set window_started_at = v_window_started_at,
       request_count = v_count + 1
-  where subject_key = v_key;
+  where subject_key = 'user:' || v_uid::text;
 
   return jsonb_build_object(
     'allowed', true,
@@ -209,13 +191,15 @@ begin
 end;
 $$;
 
--- An earlier version of this file took (integer, integer) and refused anonymous
--- callers outright. Drop it so the new signature is the only one present.
+-- Earlier versions took (text, integer, integer) and allowed an anonymous caller
+-- keyed on a hash of the address. Drop both so the two-argument form is the only
+-- one present.
+drop function if exists public.consume_ai_rate_limit(text, integer, integer);
 drop function if exists public.consume_ai_rate_limit(integer, integer);
 
-revoke all on function public.consume_ai_rate_limit(text, integer, integer) from public, anon;
+revoke all on function public.consume_ai_rate_limit(integer, integer) from public, anon;
 
-grant execute on function public.consume_ai_rate_limit(text, integer, integer) to anon, authenticated;
+grant execute on function public.consume_ai_rate_limit(integer, integer) to authenticated;
 
 -- 5. Point the admin functions at the allowlist. Before this, both compared the
 --    caller's address against a literal sitting in a public repository.
@@ -295,7 +279,7 @@ commit;
 
 -- After running, these should hold.
 --
---   -- 1. The allowlist is empty until you add yourself, so this should be 0 now.
+--   -- 1. The allowlist is empty if you went with app_metadata instead. Either is fine.
 --   select count(*) as admin_rows from private.admin_emails;
 --
 --   -- 2. No client can read the allowlist.
@@ -304,13 +288,15 @@ commit;
 --   -- 3. No client can read the counters.
 --   --    As the anon key: select * from ai_rate_limits;         -- must error
 --
---   -- 4. A signed-in caller is keyed on their own uid and cannot ask for another
---   --    subject. Call this as a signed-in session, then look at the key column.
---   select public.consume_ai_rate_limit(null, 3, 60);
---   select subject_key from ai_rate_limits;   -- should read user:<your own id>
+--   -- 4. An anonymous caller gets nothing. From the SQL editor auth.uid() is null,
+--   --    so this raises even though you are running it as postgres.
+--   select public.consume_ai_rate_limit(3, 60);   -- must error: not signed in
 --
---   -- 5. An anonymous caller must supply a well formed hash or it is refused.
---   select public.consume_ai_rate_limit('nonsense', 3, 60);   -- must error
+--   -- 5. The real test is a signed-in request from the app. Sign in, generate once,
+--   --    then look at the key column: it should read user:<your own id>.
+--   select subject_key, request_count from ai_rate_limits;
 --
---   -- 6. Four anonymous calls against a cap of three: the fourth is refused.
---   select public.consume_ai_rate_limit(repeat('a', 64), 3, 60);
+--   -- 6. The function signature should now be two arguments.
+--   select pg_get_function_identity_arguments(oid)
+--   from pg_proc
+--   where proname = 'consume_ai_rate_limit';

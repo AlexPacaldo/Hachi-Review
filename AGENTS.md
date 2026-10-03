@@ -53,15 +53,16 @@ requests per minute, which makes concurrency more damaging than total volume.
 
 `api/generate-reviewer.js` is built around that:
 
-- Anonymous callers may generate. There is no billing, so making people sign up to
-  try the app is not worth it.
-- A signed-in request is keyed on `auth.uid()`, which is derived inside
-  `consume_ai_rate_limit` and cannot be supplied by the client. An anonymous request
-  is keyed on a salted sha256 of the address, and gets a lower cap.
-- The limit is enforced in Postgres through `consume_ai_rate_limit`, which requires
-  `supabase-migration-2026-10-ai-abuse.sql` to have been run. Without it the function
-  logs an error and falls back to a per-instance `Map`, which does not hold across the
-  fleet.
+- Generation requires a signed-in account. There is no billing, so abuse costs
+  quota rather than money, and a per-address cap cannot protect that: an address is
+  not an identity, `x-forwarded-for` rotates for free, and a shared network puts many
+  people behind one address. Do not reintroduce an anonymous path to reduce sign-up
+  friction without also adding a bot challenge, or the cap is decorative.
+- The limit is enforced in Postgres through `consume_ai_rate_limit`, keyed on
+  `auth.uid()`, which is derived inside the function from the caller's own session.
+  That requires `supabase-migration-2026-10-ai-abuse.sql` to have been run. Without it
+  the function logs an error and falls back to a per-instance `Map`, which does not
+  hold across the fleet.
 - The RPC must be called on a client built with the caller's Authorization header, not
   a plain anon client. On a plain client the call resolves to the anon role, where
   `auth.uid()` is null, so the counter silently never engages. See
@@ -74,5 +75,6 @@ requests per minute, which makes concurrency more damaging than total volume.
   Errors opt in to being shown with `isClientSafe`; everything else becomes
   `GENERIC_AI_FAILURE_MESSAGE`.
 
-Admin access is a row in `private.admin_emails`, or `app_metadata.admin = true`. Do not
-add an address to a committed SQL file.
+Admin access is `app_metadata.admin = true` on the account. A row in
+`private.admin_emails` is the alternative, but an address is public the moment it is
+written down, so prefer the flag. Do not add an address to a committed SQL file.
