@@ -7352,98 +7352,105 @@ strong {
   line-height: 1.6;
 }
 
-/* No `margin-top: auto` here. This card is stretched over two grid rows, and
-   pinning the demo to the bottom opened a void between the copy and the demo
-   that read as a rendering fault. Slack left over at the bottom of the card
-   reads as padding instead. */
+/* A condensed reproduction of the real generator panel from Generator.jsx.
+   The containers keep the app's own class names so the card inherits the live
+   form styling, and only the interactive-looking pieces are spans: this sits
+   inside an aria-hidden illustration, and real inputs or buttons in there would
+   be focusable while hidden from assistive technology. */
 .landing-feature-demo {
   padding-top: 22px;
 }
 
+/* The two cards in the right-hand column set the height of the rows this card
+   spans, so the panel is sized to fit the slack they leave rather than to grow
+   them, which would leave a visible gap between those two cards. */
 .landing-demo-panel {
-  display: grid;
-  gap: 11px;
-  padding: 18px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  gap: 12px;
+  padding: 16px;
   border-radius: var(--radius-lg);
 }
 
-.landing-demo-panel-top {
+.landing-demo-fields .landing-demo-field {
+  display: grid;
+  gap: 6px;
+}
+
+.landing-demo-field > span,
+.landing-demo-legend {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.landing-demo-fieldset {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.landing-demo-box {
+  padding: 9px 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.landing-demo-segs {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.landing-demo-seg {
+  padding: 6px 13px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.landing-demo-seg.is-active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* The real upload zone reserves 166px for a drop target, which is more than this
+   card has to give. The dashed accent border is the part that reads as upload. */
+.landing-demo-panel .upload-zone {
+  min-height: 0;
+  gap: 4px;
+  padding: 12px;
+}
+
+.landing-demo-panel .upload-zone span {
+  max-width: none;
+  font-size: 0.8rem;
+}
+
+.landing-demo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
 }
 
-.landing-demo-count {
+/* `.button` carries no display of its own because it is normally a <button>.
+   A span needs one for the min-height and the icon gap to apply. */
+.landing-demo-cta {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.landing-demo-bar {
-  height: 6px;
-  overflow: hidden;
-  background: var(--surface-3);
-  border-radius: var(--radius-pill);
-}
-
-.landing-demo-bar > span {
-  display: block;
-  width: 32%;
-  height: 100%;
-  background: var(--accent);
-  border-radius: inherit;
-}
-
-.landing-demo-topic {
-  margin: 0;
-  color: var(--accent);
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.landing-demo-question {
-  margin: 0;
-  color: var(--text);
-  font-size: 1.02rem;
-  font-weight: 800;
-  line-height: 1.35;
-  text-wrap: pretty;
-}
-
-.landing-demo-ready {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0;
-  padding-top: 12px;
-  color: var(--text);
-  border-top: 1px solid var(--separator);
-  font-size: 0.9rem;
-  font-weight: 800;
-}
-
-.landing-demo-ready svg {
-  color: var(--success);
-}
-
-.landing-demo-check {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  color: #fff;
-  background: var(--success);
-  border-radius: 50%;
+  gap: 8px;
+  min-height: 40px;
 }
 
 /* Steps */

@@ -15,6 +15,7 @@ import {
   Sun,
   Target,
   TrendingUp,
+  Upload,
   UsersRound,
   X
 } from "lucide-react";
@@ -394,30 +395,40 @@ export default function Landing({ theme, onToggleTheme }) {
                   <p>{feature.text}</p>
                   {feature.tone === "wide" ? (
                     <div className="landing-feature-demo" aria-hidden="true">
-                      <div className="landing-demo-panel">
-                        <div className="landing-demo-panel-top">
-                          <span className="landing-demo-count">
-                            <Sparkles size={14} />
-                            Question 1 of 10
+                      <div className="ai-prompt-panel landing-demo-panel">
+                        <div className="generator-form-grid landing-demo-fields">
+                          <span className="landing-demo-field">
+                            <span>Reviewer Title</span>
+                            <span className="landing-demo-box">Biology Prelim Reviewer</span>
                           </span>
-                          <span className="landing-demo-check">
-                            <Check size={13} />
+                          <span className="landing-demo-field">
+                            <span>Subject</span>
+                            <span className="landing-demo-box">Biology</span>
                           </span>
                         </div>
 
-                        <span className="landing-demo-bar">
-                          <span />
-                        </span>
+                        <div className="upload-zone">
+                          <Upload size={24} aria-hidden="true" />
+                          <strong>Upload study material</strong>
+                          <span>PDF under 3 MB, or TXT, MD, CSV, JSON.</span>
+                        </div>
 
-                        <p className="landing-demo-topic">Cardiovascular system</p>
-                        <p className="landing-demo-question">
-                          Which chamber of the heart pumps oxygenated blood into the systemic circulation?
-                        </p>
+                        <div className="landing-demo-actions">
+                          <div className="landing-demo-fieldset">
+                            <span className="landing-demo-legend">Number of Questions</span>
+                            <div className="landing-demo-segs">
+                              <span className="landing-demo-seg">20</span>
+                              <span className="landing-demo-seg is-active">50</span>
+                              <span className="landing-demo-seg">75</span>
+                              <span className="landing-demo-seg">100</span>
+                            </div>
+                          </div>
 
-                        <p className="landing-demo-ready">
-                          <Check size={15} />
-                          Answer + explanation ready
-                        </p>
+                          <span className="button primary landing-demo-cta">
+                            <Sparkles size={17} aria-hidden="true" />
+                            Generate with AI
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ) : null}
