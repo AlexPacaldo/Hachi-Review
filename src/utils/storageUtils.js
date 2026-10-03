@@ -352,6 +352,41 @@ export function clearLocalReviewers() {
   notifyReviewerDataChanged();
 }
 
+// Called when the account says a reviewer was deleted on another device. Both
+// stores have to go: the offline copy, and the read cache that keeps rendering a
+// card for a reviewer the cloud no longer has. The quiz session goes with it,
+// because a session cannot be resumed without its questions.
+export function forgetTombstonedReviewers(reviewerIds) {
+  const ids = new Set((Array.isArray(reviewerIds) ? reviewerIds : []).filter(Boolean));
+
+  if (!ids.size) return { local: 0, cached: 0, progress: 0 };
+
+  const keptLocal = getLocalReviewers().filter((reviewer) => !ids.has(reviewer?.reviewerId));
+  const keptCache = getCloudReviewerCache().filter((reviewer) => !ids.has(reviewer?.reviewerId));
+
+  const local = getLocalReviewers().length - keptLocal.length;
+  const cached = getCloudReviewerCache().length - keptCache.length;
+
+  let progress = 0;
+  const sessions = getAllProgress();
+
+  ids.forEach((id) => {
+    if (sessions[id]) {
+      delete sessions[id];
+      progress += 1;
+    }
+  });
+
+  if (progress) writeJson(KEYS.progress, sessions);
+
+  if (local) writeJson(KEYS.localReviewers, keptLocal);
+  if (cached) writeJson(KEYS.cloudReviewerCache, keptCache);
+
+  if (local || cached || progress) notifyReviewerDataChanged();
+
+  return { local, cached, progress };
+}
+
 export function getCloudReviewerCache() {
   return readJson(KEYS.cloudReviewerCache, []);
 }

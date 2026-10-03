@@ -9,7 +9,13 @@ import {
   upsertCloudAttempt,
   upsertCloudProgress
 } from "./cloudProgress.js";
-import { listCloudReviewersByIds, listMyCloudReviewers, upsertCloudReviewer } from "./cloudReviewers.js";
+import {
+  listCloudReviewersByIds,
+  listMyCloudReviewers,
+  listReviewerTombstones,
+  pruneReviewerTombstones,
+  upsertCloudReviewer
+} from "./cloudReviewers.js";
 import { getCloudStudyStreak, markCloudStudyDays } from "./cloudStudyDays.js";
 import {
   getAttemptHistory,
@@ -28,6 +34,7 @@ import {
   mergeCloudStudyStreak,
   dropProgressOlderThanAttempts,
   dropConflictingQueueItems,
+  forgetTombstonedReviewers,
   queuePendingDelete,
   queueSyncItem,
   removePendingDelete,
@@ -356,6 +363,11 @@ async function resolveReviewerMap(reviewerIds) {
 export async function hydrateFromCloud() {
   if (!canWrite()) return { error: null };
 
+  // Runs first. A reviewer deleted on another device has to leave this device's
+  // stores before anything reads them, or the upload pass below would find it
+  // missing from the cloud and put it straight back.
+  const tombstones = await applyReviewerTombstones();
+
   const [progressResult, attemptsResult] = await Promise.all([
     listCloudProgress(activeUserId),
     listCloudAttempts(activeUserId)
@@ -377,8 +389,35 @@ export async function hydrateFromCloud() {
   // Prunes only what has already synced and fallen out of the history window, so
   // it is safe to fire and forget alongside the pull.
   pruneOldCloudAttempts(activeUserId);
+  pruneReviewerTombstones();
 
-  return { error: progressResult.error || attemptsResult.error || null };
+  return { error: progressResult.error || attemptsResult.error || tombstones.error || null };
+}
+
+// Drops every local copy of a reviewer this account deleted elsewhere. Without
+// this the delete reverses itself: the upload pass treats anything held locally
+// but missing from the cloud as never uploaded, and writes it back.
+async function applyReviewerTombstones() {
+  const { reviewerIds, error } = await listReviewerTombstones(activeUserId);
+
+  if (error || !reviewerIds.length) return { removed: 0, error };
+
+  // A queued upload would undo the delete twice over: upserting the reviewer
+  // recreates the row, and the insert trigger then clears the tombstone itself.
+  // The progress write is dropped for the same reason, and would be rejected by
+  // the foreign key anyway.
+  reviewerIds.forEach((id) => {
+    removeSyncItem(activeUserId, "upsert-reviewer", id);
+    removeSyncItem(activeUserId, "upsert-progress", id);
+  });
+
+  const removed = forgetTombstonedReviewers(reviewerIds);
+
+  if (removed.local || removed.cached) {
+    console.log(`[sync] Cleared ${removed.local + removed.cached} local reviewer copy/copies deleted on another device.`);
+  }
+
+  return { removed: removed.local + removed.cached, error: null };
 }
 
 // Deliberately not part of hydrateFromCloud. That runs on a 60 second timer, and a

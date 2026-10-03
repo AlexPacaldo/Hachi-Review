@@ -1165,6 +1165,100 @@ from public.reviewers r;
 
 grant select on public.reviewer_summaries to authenticated;
 
+-- A reviewer deleted on one device has to stay deleted on the others. Absence
+-- cannot carry that: "not in the cloud" also means never uploaded, or taken
+-- offline while signed out, and those must not be treated as a delete. So a
+-- delete is recorded explicitly and every device clears its local copy on sight.
+create table if not exists public.reviewer_tombstones (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  reviewer_id text not null,
+  deleted_at timestamptz not null default now(),
+  primary key (owner_id, reviewer_id)
+);
+
+alter table public.reviewer_tombstones enable row level security;
+
+-- Clients only ever read their own. Writes happen in the triggers below.
+drop policy if exists "Users can read own tombstones" on public.reviewer_tombstones;
+create policy "Users can read own tombstones"
+on public.reviewer_tombstones
+for select
+to authenticated
+using (auth.uid() = owner_id);
+
+revoke all on public.reviewer_tombstones from anon;
+grant select on public.reviewer_tombstones to authenticated;
+
+-- SECURITY DEFINER so the triggers can write a table the deleting role has no
+-- insert privilege on.
+create or replace function private.record_reviewer_tombstone()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.reviewer_tombstones (owner_id, reviewer_id)
+  values (old.owner_id, old.reviewer_id)
+  on conflict (owner_id, reviewer_id) do update set deleted_at = now();
+
+  return old;
+end;
+$$;
+
+create or replace function private.clear_reviewer_tombstone()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.reviewer_tombstones
+  where owner_id = new.owner_id and reviewer_id = new.reviewer_id;
+
+  return new;
+end;
+$$;
+
+revoke all on function private.record_reviewer_tombstone() from public, anon, authenticated;
+revoke all on function private.clear_reviewer_tombstone() from public, anon, authenticated;
+
+-- Triggers rather than client calls, so a delete cannot skip the record. A client
+-- that forgot to write a tombstone would resurrect the reviewer on the next
+-- sign-in, which is the exact bug this exists to close.
+drop trigger if exists reviewers_record_tombstone on public.reviewers;
+create trigger reviewers_record_tombstone
+after delete on public.reviewers
+for each row execute function private.record_reviewer_tombstone();
+
+-- Re-generating a reviewer with the same id clears the tombstone, so the id can
+-- be reused and the reviewer syncs normally.
+drop trigger if exists reviewers_clear_tombstone on public.reviewers;
+create trigger reviewers_clear_tombstone
+after insert on public.reviewers
+for each row execute function private.clear_reviewer_tombstone();
+
+-- Only useful while another device might still hold a copy, so they are pruned
+-- rather than kept forever. Runs from the same sync pass that already trims the
+-- attempts table, which keeps it to one indexed delete instead of a cron job.
+create or replace function public.prune_reviewer_tombstones(p_older_than_days integer default 30)
+returns integer
+language sql
+volatile
+security definer
+set search_path = public
+as $$
+  with removed as (
+    delete from public.reviewer_tombstones
+    where deleted_at < now() - make_interval(days => greatest(coalesce(p_older_than_days, 30), 1))
+    returning 1
+  )
+  select count(*)::integer from removed;
+$$;
+
+revoke execute on function public.prune_reviewer_tombstones(integer) from public, anon;
+grant execute on function public.prune_reviewer_tombstones(integer) to authenticated;
+
 -- Owner-only database usage readout. The size is checked inside the function
 -- rather than in the client, so the number is not available to any other
 -- account even by calling the function directly.

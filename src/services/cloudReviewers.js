@@ -2,6 +2,46 @@ import { supabase } from "../lib/supabaseClient.js";
 
 const REVIEWERS_TABLE = "reviewers";
 const REVIEWER_SUMMARIES_VIEW = "reviewer_summaries";
+const TOMBSTONES_TABLE = "reviewer_tombstones";
+// A tombstone is only useful while another device might still hold a copy of the
+// reviewer it names. Reading back a long-dead one would clear work that has since
+// been redone, so anything older than this is ignored here. The rows themselves
+// are pruned separately.
+const TOMBSTONE_MAX_AGE_DAYS = 30;
+
+// Reviewers this account deleted, so a local copy of one can be dropped instead of
+// being re-uploaded on the next sync. Read only; the tombstone is written by a
+// trigger on the reviewers table so a delete cannot skip it.
+export async function listReviewerTombstones(userId) {
+  if (!supabase || !userId) return { reviewerIds: [], error: null };
+
+  const cutoff = new Date(Date.now() - TOMBSTONE_MAX_AGE_DAYS * 86400000).toISOString();
+
+  const { data, error } = await supabase
+    .from(TOMBSTONES_TABLE)
+    .select("reviewer_id, deleted_at")
+    .eq("owner_id", userId)
+    .gte("deleted_at", cutoff);
+
+  if (error) return { reviewerIds: [], error };
+
+  return {
+    reviewerIds: (data || []).map((row) => row?.reviewer_id).filter(Boolean),
+    error: null
+  };
+}
+
+// Runs alongside the attempts prune so tombstone rows do not accumulate. Fire and
+// forget, like that one.
+export async function pruneReviewerTombstones(days = TOMBSTONE_MAX_AGE_DAYS) {
+  if (!supabase || !(Number(days) > 0)) return { deleted: 0, error: null };
+
+  const { data, error } = await supabase.rpc("prune_reviewer_tombstones", {
+    p_older_than_days: Math.round(Number(days))
+  });
+
+  return { deleted: Number(data) || 0, error };
+}
 
 // Only the ids are needed here, to tell which device-only reviewers still have
 // to be uploaded. Selecting the whole row used to pull every question for every
