@@ -20,6 +20,8 @@ import Account from "./pages/Account.jsx";
 import Friends from "./pages/Friends.jsx";
 import Groups from "./pages/Groups.jsx";
 import GroupDetail from "./pages/GroupDetail.jsx";
+import About from "./pages/About.jsx";
+import Contact from "./pages/Contact.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import { AuthProvider } from "./contexts/AuthContext.jsx";
@@ -134,6 +136,8 @@ function AppShell() {
             <Route path="/groups/:groupId" element={<GroupDetail />} />
             <Route path="/generator" element={<Generator />} />
             <Route path="/account" element={<Account />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="*" element={<Navigate to="/home" replace />} />

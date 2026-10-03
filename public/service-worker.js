@@ -1,8 +1,10 @@
-const CACHE_VERSION = "review-hub-v7";
+const CACHE_VERSION = "review-hub-v8";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./home",
+  "./about",
+  "./contact",
   "./privacy",
   "./terms",
   "./offline.html",
@@ -35,7 +37,9 @@ async function cacheAppShell() {
     // home, and the public legal pages can all be answered offline from one
     // copy of index.html without waiting on the network.
     const shellResponse = () => new Response(indexHtml, { headers: { "Content-Type": "text/html" } });
-    await Promise.all(["./", "./home", "./privacy", "./terms"].map((url) => cache.put(url, shellResponse())));
+    await Promise.all(
+      ["./", "./home", "./about", "./contact", "./privacy", "./terms"].map((url) => cache.put(url, shellResponse()))
+    );
 
     const assetUrls = [...indexHtml.matchAll(/(?:src|href)="([^"]+)"/g)]
       .map((match) => match[1])

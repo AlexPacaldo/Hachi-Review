@@ -8252,3 +8252,76 @@ strong {
     margin-left: 300px;
   }
 }
+
+.contact-email {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 4px 0;
+  padding: 18px 22px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: var(--radius-lg);
+}
+
+.contact-email svg {
+  flex: 0 0 auto;
+}
+
+.contact-email a {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.contact-email a:hover {
+  color: var(--accent-strong);
+}
+
+.contact-methods {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.contact-method {
+  padding: 22px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+}
+
+.contact-method-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 14px;
+  color: var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.contact-method strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.contact-method p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+@media (min-width: 620px) {
+  .contact-methods {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

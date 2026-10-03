@@ -41,10 +41,11 @@ export default function Privacy() {
         <p>Last updated: 1 October 2026</p>
         
         <h2>Contact</h2>
-        <p>For privacy or account questions, contact the app owner through the support email shown on the Google OAuth consent screen.</p>
+        <p>For privacy or account questions, use the contact address published on the Contact Us page. It reaches the app owner directly.</p>
 
         <footer className="legal-footer">
           <Link className="back-link" to="/">Back to Hachi</Link>
+          <Link to="/contact">Contact Us</Link>
           <Link to="/terms">Terms of Service</Link>
         </footer>
       </section>

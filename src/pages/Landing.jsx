@@ -514,7 +514,9 @@ export default function Landing({ theme, onToggleTheme }) {
             </p>
           </div>
 
-          <nav className="landing-footer-links" aria-label="Legal">
+          <nav className="landing-footer-links" aria-label="Site information">
+            <Link to="/about">About Us</Link>
+            <Link to="/contact">Contact Us</Link>
             <Link to="/privacy">Privacy Policy</Link>
             <Link to="/terms">Terms of Service</Link>
             <Link to="/account">Account</Link>

@@ -21,6 +21,7 @@ export default function Terms() {
 
         <footer className="legal-footer">
           <Link className="back-link" to="/">Back to Hachi</Link>
+          <Link to="/contact">Contact Us</Link>
           <Link to="/privacy">Privacy Policy</Link>
         </footer>
       </section>

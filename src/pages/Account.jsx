@@ -276,6 +276,10 @@ export default function Account() {
       )}
 
       <footer className="account-legal-links">
+        <Link to="/about">About</Link>
+        <span aria-hidden="true">/</span>
+        <Link to="/contact">Contact</Link>
+        <span aria-hidden="true">/</span>
         <Link to="/privacy">Privacy Policy</Link>
         <span aria-hidden="true">/</span>
         <Link to="/terms">Terms of Service</Link>
