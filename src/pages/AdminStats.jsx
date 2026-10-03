@@ -64,10 +64,17 @@ export default function AdminStats() {
 
     try {
       const result = await getAdminUserStats();
-      if (!result.stats) {
+
+      if (result.status === "forbidden") {
         setState({ status: "forbidden", stats: null, series: [], error: null });
         return;
       }
+
+      if (result.status === "error") {
+        setState({ status: "error", stats: null, series: [], error: result.error });
+        return;
+      }
+
       setState({ status: "ready", stats: result.stats, series: result.series, error: null });
     } catch (error) {
       logClientError("admin-stats", error);
@@ -129,14 +136,24 @@ export default function AdminStats() {
   }
 
   if (state.status === "error") {
+    // The message from the database is shown rather than a guess, because the
+    // cause is not always the same one. A missing function and a signed-in
+    // account without the admin flag need completely different fixes, and an
+    // earlier version of this page assumed the first and sent the owner looking
+    // in the wrong place.
+    const detail = state.error?.message || state.error;
+
     return (
       <div className="page">
         <div className="account-card">
           <p className="eyebrow">Statistics</p>
           <h1>Could not load statistics</h1>
+          {detail ? <p className="account-inline-notice">{detail}</p> : null}
           <p className="muted">
-            The numbers come from the database, so this usually means the admin statistics migration has not been
-            applied yet.
+            The two usual causes are that supabase-migration-2026-10-admin-stats.sql has not been applied yet, or that
+            this account is missing <code>app_metadata.admin = true</code>. A function that is missing is reported as
+            &ldquo;could not find the function&rdquo;; a function that exists but refuses the read is reported as
+            &ldquo;permission denied&rdquo;, which means the migration is in place and the account needs the flag.
           </p>
           <div className="button-row">
             <button className="button" type="button" onClick={load}>
