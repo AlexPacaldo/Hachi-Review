@@ -125,11 +125,13 @@ const FAQS = [
  * answer choices stack in one column, and the feedback panel underneath adds the
  * explanation on top of that. `.landing-preview-carousel` carries a matching
  * aspect ratio of `cardWidth + 2 * spread + 120` over this height, which makes
- * the box an exact fit for the scaled card instead of an estimate.
+ * the box an exact fit for the scaled card instead of an estimate. That box is
+ * deliberately narrower than the space the carousel reserves, so the card is
+ * scaled down to roughly two thirds and fits a laptop viewport without scrolling.
  */
 const PREVIEW_CAROUSEL_WIDE = {
   cardWidth: 900,
-  cardHeight: 940,
+  cardHeight: 1020,
   radius: 34,
   depth: 150,
   spread: 32,
@@ -151,7 +153,7 @@ const PREVIEW_CAROUSEL_WIDE = {
  */
 const PREVIEW_CAROUSEL_COMPACT = {
   cardWidth: 400,
-  cardHeight: 1260,
+  cardHeight: 1240,
   radius: 26,
   depth: 104,
   spread: 16,

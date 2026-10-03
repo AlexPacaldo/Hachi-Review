@@ -7509,9 +7509,9 @@ strong {
      The carousel scales the card by this box's width and never above 1, so
      capping the width at that figure means the card renders at its natural size
      and the aspect ratio below is an exact fit rather than a guess. */
-  max-width: 1084px;
+  max-width: 700px;
   margin: 0 auto;
-  aspect-ratio: 1084 / 940;
+  aspect-ratio: 1084 / 1020;
 }
 
 .landing-preview-caption {
@@ -7550,6 +7550,13 @@ strong {
   background: var(--surface);
   font-size: 1rem;
   text-align: left;
+}
+
+/* The carousel fixes the card's height, so without this the quiz blocks shrink to
+   fit and `.question-panel` clips its own last answer choice instead of the card
+   overflowing. Overflowing is the lesser evil and stays visible. */
+.preview-mode > * {
+  flex: 0 0 auto;
 }
 
 .preview-mode .quiz-actions {
@@ -7910,8 +7917,8 @@ strong {
   /* The compact carousel reserves a narrower box, so the same width-driven scale
      reaches 1 sooner and the aspect ratio has to follow it. */
   .landing-preview-carousel {
-    max-width: 552px;
-    aspect-ratio: 552 / 1260;
+    max-width: 380px;
+    aspect-ratio: 552 / 1240;
   }
 }
 
