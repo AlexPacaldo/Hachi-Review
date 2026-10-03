@@ -2,7 +2,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/prerender.mjs",
     "preview": "vite preview",
     "ios:add": "npm install @capacitor/core @capacitor/cli @capacitor/ios && npx cap add ios",
     "ios:sync": "npm run build && npx cap sync ios",
