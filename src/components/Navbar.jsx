@@ -84,7 +84,9 @@ export default function Navbar({ theme, onToggleTheme }) {
     if (!menuOpen) return;
 
     const closeOnResize = () => {
-      if (window.innerWidth > 760) {
+      // 900px, where the navbar becomes the fixed sidebar. Below that the drawer
+      // is the navigation, so the menu has to close when it stops being one.
+      if (window.innerWidth > 899) {
         setMenuOpen(false);
         setMenuClosing(false);
       }

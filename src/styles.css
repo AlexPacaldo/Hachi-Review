@@ -273,7 +273,7 @@ main {
   height: 0;
 }
 
-@media (min-width: 761px) {
+@media (min-width: 900px) {
   .top-pill-spacer {
     height: 76px;
   }
@@ -3436,7 +3436,7 @@ legend {
   color: var(--danger);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 899px) {
   .nav-backdrop {
     position: fixed;
     inset: 0;
@@ -5248,56 +5248,10 @@ strong {
   }
 }
 
-@media (min-width: 761px) {
+@media (min-width: 900px) {
   .notification-toasts {
     top: 76px;
     right: 24px;
-  }
-}
-
-/* Between the drawer at 760px and the fixed sidebar at 900px the bar has to hold
-   six links, the wordmark and the theme toggle on one line, which needs about
-   894px and so is always wider than the space it is given. It is the only
-   horizontal navigation in that range, and nothing clips it or scrolls it
-   sideways, so the overflow reached the document and dragged the whole page
-   sideways with it, sidebar included.
-
-   The link icons go rather than the labels: a 17px icon plus an 8px gap is a
-   fixed saving per link, which is the only one here that does not depend on how
-   wide the font measures. Placed after the rules above because several of them
-   sit later in the file than a block written next to the navbar would. */
-@media (min-width: 761px) and (max-width: 899px) {
-  .navbar {
-    gap: 12px;
-    padding: 0 20px;
-  }
-
-  .brand,
-  .nav-links {
-    min-width: 0;
-  }
-
-  .nav-links {
-    gap: 4px;
-  }
-
-  .nav-links a {
-    padding: 0 9px;
-  }
-
-  .nav-links a > svg {
-    display: none;
-  }
-
-  /* The account pill cannot sit on top of the bar at this width. The top spacer
-     already reserves a band under the bar for it to float in, so it moves down
-     into that and the toasts move below the pill rather than over it. */
-  .app-top-actions {
-    top: 84px;
-  }
-
-  .notification-toasts {
-    top: 136px;
   }
 }
 
@@ -5340,11 +5294,14 @@ strong {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 899px) {
   body {
     background: var(--bg);
   }
 
+  /* The hamburger sits at the opposite end of the bar from the account pill, so
+     the name has room again well above phone width. It is hidden further down, at
+     the width where it genuinely stops fitting, rather than across this range. */
   .app-top-actions {
     top: 19px;
     right: 22px;
@@ -5360,11 +5317,6 @@ strong {
     min-height: 34px;
     max-width: none;
     padding: 0 4px;
-  }
-
-  .top-account-name,
-  .top-account-chevron {
-    display: none;
   }
 
   .top-account-avatar {
@@ -6151,7 +6103,7 @@ strong {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 899px) {
   .home-hero {
     background:
       radial-gradient(80% 60% at 50% 100%, color-mix(in srgb, var(--success-soft) 55%, transparent) 0%, transparent 12rem),
@@ -6640,6 +6592,13 @@ strong {
     width: min(100% - 20px, 1180px);
   }
 
+  /* Phone width only. The pill has the rest of the bar to itself above this, so
+     the name stays where there is room for it. */
+  .top-account-name,
+  .top-account-chevron {
+    display: none;
+  }
+
   .reviewer-setup-hero,
   .reviewer-info-panel,
   .quiz-setup-panel {
@@ -6950,7 +6909,7 @@ strong {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 899px) {
   .account-identity {
     flex-wrap: wrap;
   }
@@ -8072,7 +8031,7 @@ strong {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 899px) {
   .landing-body,
   .landing-nav-inner,
   .landing-nav-sheet,

@@ -151,7 +151,7 @@ const PREVIEW_CAROUSEL_WIDE = {
  * take back the gutter `.landing-body` was holding. Both together are what make it
  * fill the screen; neither is enough alone.
  *
- * The breakpoint must stay in step with the `max-width: 760px` block in
+ * The breakpoint must stay in step with the `max-width: 899px` block in
  * styles.css, otherwise the tall card gets the phone layout and overflows.
  */
 const PREVIEW_CAROUSEL_COMPACT = {
@@ -168,11 +168,11 @@ const PREVIEW_CAROUSEL_COMPACT = {
 
 function useCompactViewport() {
   const [compact, setCompact] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 899px)").matches
   );
 
   useEffect(() => {
-    const query = window.matchMedia("(max-width: 760px)");
+    const query = window.matchMedia("(max-width: 899px)");
     const sync = () => setCompact(query.matches);
     sync();
     query.addEventListener("change", sync);
