@@ -14,11 +14,14 @@ const KEYS = {
   lastUserId: "reviewer_last_user_id",
   studyStreak: "reviewer_study_streak",
   pendingStudyDays: "reviewer_study_days_pending",
-  errorLog: "reviewer_error_log"
+  errorLog: "reviewer_error_log",
+  notifications: "hachi_notifications",
+  socialNotificationState: "hachi_social_notification_state"
 };
 
 export const REVIEWER_DATA_CHANGED_EVENT = "reviewer-data-changed";
 export const SOCIAL_DATA_CHANGED_EVENT = "social-data-changed";
+export const SOCIAL_NOTIFICATION_STATE_KEY = KEYS.socialNotificationState;
 
 function readJson(key, fallback) {
   try {
@@ -37,6 +40,142 @@ function notifyReviewerDataChanged() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(REVIEWER_DATA_CHANGED_EVENT));
   }
+}
+
+// The stores that hold one account's reviewers, progress, history, streak,
+// drafts and notifications. Each gets a slot per account, so two accounts used on
+// the same browser each keep their own offline state instead of overwriting one
+// another, and neither is ever handed the other's.
+const ACCOUNT_DATA_KEYS = [
+  KEYS.progress,
+  KEYS.history,
+  KEYS.lastAttempt,
+  KEYS.localReviewers,
+  KEYS.cloudReviewerCache,
+  KEYS.studyStreak,
+  KEYS.pendingStudyDays,
+  KEYS.generatorDraft,
+  KEYS.notifications
+];
+
+// Which account is signed in, or null once that is known to be signed out.
+let accountDataOwnerId = null;
+let accountDataOwnerKnown = false;
+
+// Captured before anything can overwrite it. This is the account that used the
+// device last, which is the only thing that can decide whether a store written
+// before the slots existed may be moved into an account's slot.
+const legacyDataOwnerId = localStorage.getItem(KEYS.lastUserId);
+
+export const ACCOUNT_DATA_CHANGED_EVENT = "account-data-changed";
+
+export function setAccountDataOwner(userId) {
+  const nextOwnerId = userId || null;
+  accountDataOwnerKnown = true;
+  if (accountDataOwnerId === nextOwnerId) return;
+  accountDataOwnerId = nextOwnerId;
+
+  claimUnownedStores();
+
+  // Views read these stores synchronously and hold the result in state, so a
+  // change of account has to send them back to the store rather than leave the
+  // last account's data on screen until their next fetch.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ACCOUNT_DATA_CHANGED_EVENT));
+  }
+  notifyReviewerDataChanged();
+}
+
+function hasStoredValue(key) {
+  return localStorage.getItem(key) !== null;
+}
+
+// The suffix is the account id. `:device` is the slot for work done with no
+// account signed in, which belongs to no account until one claims it.
+function accountKey(key) {
+  return accountDataOwnerId ? `${key}:${accountDataOwnerId}` : `${key}:device`;
+}
+
+// A store written before the slots existed was written by whichever account used
+// the device last, or by nobody if no account ever has.
+function canAdoptLegacy() {
+  if (!accountDataOwnerId) return true;
+  return !legacyDataOwnerId || legacyDataOwnerId === accountDataOwnerId;
+}
+
+// Moved rather than copied, so work with no account on it cannot be claimed twice
+// and the account after this one does not inherit it.
+function claimUnownedStores() {
+  if (!accountDataOwnerId || !canAdoptLegacy()) return;
+
+  ACCOUNT_DATA_KEYS.forEach((key) => {
+    const target = accountKey(key);
+    if (hasStoredValue(target)) return;
+
+    const source = [deviceKey(key), key].find((candidate) => hasStoredValue(candidate));
+    if (!source) return;
+
+    const value = readJson(source, null);
+    if (value === null || value === undefined) return;
+
+    // A reviewer cache is the one store whose entries record who owns them, so a
+    // cache from before the slots existed cannot be moved as a whole: the
+    // reviewers another account's friends own are exactly what must not come
+    // with it. An entry with no owner was made on this device, so it does.
+    const claimable = source === key && key === KEYS.cloudReviewerCache && Array.isArray(value)
+      ? value.filter((reviewer) => !reviewer?.ownerId || reviewer.ownerId === accountDataOwnerId)
+      : value;
+
+    writeJson(target, claimable);
+    localStorage.removeItem(source);
+  });
+}
+
+function deviceKey(key) {
+  return `${key}:device`;
+}
+
+function readAccountData(key, fallback) {
+  const own = accountKey(key);
+  if (hasStoredValue(own)) return readJson(own, fallback);
+
+  // This account's slot is empty. Work done with no account signed in belongs to
+  // no account rather than to another one, so it is available to whoever signs
+  // in next. A page can reach this before the claim pass has run.
+  if (accountDataOwnerId && hasStoredValue(deviceKey(key))) return readJson(deviceKey(key), fallback);
+
+  // Nothing under the account's slot and nothing signed out on the device, so
+  // this store predates the slots. It belongs to the account that used the device
+  // last, and is left untouched for anyone else.
+  if (hasStoredValue(key) && canAdoptLegacy()) return readJson(key, fallback);
+
+  return fallback;
+}
+
+function writeAccountData(key, value) {
+  // A page renders, and a mount effect writes, before the session has resolved.
+  // Writing then would put this browser's empty value where another account's
+  // belongs, so nothing is written until it is known whose the store is.
+  if (!accountDataOwnerKnown) return;
+  writeJson(accountKey(key), value === undefined ? null : value);
+}
+
+function clearAccountData(key) {
+  localStorage.removeItem(accountKey(key));
+}
+
+// Everything the account slots add on top of the fixed names, so deleting the
+// device data cannot leave one account's reviewers behind.
+function removeAccountSlots() {
+  const doomed = [];
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key) continue;
+    if (ACCOUNT_DATA_KEYS.some((prefix) => key === prefix || key.startsWith(`${prefix}:`))) doomed.push(key);
+  }
+
+  doomed.forEach((key) => localStorage.removeItem(key));
 }
 
 function isObject(value) {
@@ -103,11 +242,11 @@ export function saveThemePreference(theme) {
 }
 
 export function getAllProgress() {
-  return readJson(KEYS.progress, {});
+  return readAccountData(KEYS.progress, {});
 }
 
 export function clearAllQuizProgress() {
-  writeJson(KEYS.progress, {});
+  writeAccountData(KEYS.progress, {});
   notifyReviewerDataChanged();
 }
 
@@ -121,14 +260,14 @@ export function saveQuizProgress(session) {
     ...session,
     updatedAt: session.updatedAt || Date.now()
   };
-  writeJson(KEYS.progress, progress);
+  writeAccountData(KEYS.progress, progress);
   notifyReviewerDataChanged();
 }
 
 export function clearQuizProgress(reviewerId) {
   const progress = getAllProgress();
   delete progress[reviewerId];
-  writeJson(KEYS.progress, progress);
+  writeAccountData(KEYS.progress, progress);
   notifyReviewerDataChanged();
 }
 
@@ -159,7 +298,7 @@ export function mergeCloudProgress(cloudSessions, reviewersById = new Map()) {
   });
 
   if (changed) {
-    writeJson(KEYS.progress, progress);
+    writeAccountData(KEYS.progress, progress);
     notifyReviewerDataChanged();
   }
 
@@ -167,19 +306,19 @@ export function mergeCloudProgress(cloudSessions, reviewersById = new Map()) {
 }
 
 export function getAttemptHistory() {
-  return readJson(KEYS.history, []);
+  return readAccountData(KEYS.history, []);
 }
 
 export function saveAttempt(attempt) {
   const history = [attempt, ...getAttemptHistory()];
-  writeJson(KEYS.history, history);
-  writeJson(KEYS.lastAttempt, { [attempt.reviewerId]: attempt });
+  writeAccountData(KEYS.history, history);
+  writeAccountData(KEYS.lastAttempt, { [attempt.reviewerId]: attempt });
   notifyReviewerDataChanged();
   return history;
 }
 
 export function clearAttemptHistory() {
-  writeJson(KEYS.history, []);
+  writeAccountData(KEYS.history, []);
   notifyReviewerDataChanged();
 }
 
@@ -216,7 +355,7 @@ export function mergeCloudAttempts(cloudRows, reviewersById = new Map()) {
 
   const merged = [...byId.values()].sort((a, b) => getAttemptTimestamp(b) - getAttemptTimestamp(a));
 
-  writeJson(KEYS.history, merged);
+  writeAccountData(KEYS.history, merged);
   notifyReviewerDataChanged();
   return merged;
 }
@@ -260,7 +399,7 @@ export function dropProgressOlderThanAttempts(attempts = getAttemptHistory()) {
   });
 
   if (changed) {
-    writeJson(KEYS.progress, progress);
+    writeAccountData(KEYS.progress, progress);
     notifyReviewerDataChanged();
   }
 
@@ -268,7 +407,7 @@ export function dropProgressOlderThanAttempts(attempts = getAttemptHistory()) {
 }
 
 export function getLocalReviewers() {
-  return readJson(KEYS.localReviewers, []);
+  return readAccountData(KEYS.localReviewers, []);
 }
 
 // could never be right for two reasons: only finished quizzes counted, and the
@@ -277,13 +416,13 @@ export function getLocalReviewers() {
 // rather than a list of days: a streak is one number, so a day per row stored
 // roughly 400 times more than the interface can ever use and grew forever.
 export function getStudyStreak() {
-  return normalizeStudyStreak(readJson(KEYS.studyStreak, null));
+  return normalizeStudyStreak(readAccountData(KEYS.studyStreak, null));
 }
 
 // Days recorded on this device that the account has not confirmed yet. Kept as a
 // plain list so a day is never lost if the tab closes before the upload.
 export function getPendingStudyDays() {
-  return normalizeRecentDays(readJson(KEYS.pendingStudyDays, []));
+  return normalizeRecentDays(readAccountData(KEYS.pendingStudyDays, []));
 }
 
 // Recorded for today as soon as the learner does something, so a session that is
@@ -297,8 +436,8 @@ export function markStudyDay(day = toStudyDayKey(new Date())) {
   const pending = new Set(getPendingStudyDays());
 
   pending.add(day);
-  writeJson(KEYS.studyStreak, next);
-  writeJson(KEYS.pendingStudyDays, [...pending].sort());
+  writeAccountData(KEYS.studyStreak, next);
+  writeAccountData(KEYS.pendingStudyDays, [...pending].sort());
   notifyReviewerDataChanged();
   return next;
 }
@@ -309,7 +448,7 @@ export function mergeCloudStudyStreak(cloudStreak) {
   const merged = mergeStudyStreaks(getStudyStreak(), cloudStreak);
   if (JSON.stringify(merged) === JSON.stringify(getStudyStreak())) return merged;
 
-  writeJson(KEYS.studyStreak, merged);
+  writeAccountData(KEYS.studyStreak, merged);
   notifyReviewerDataChanged();
   return merged;
 }
@@ -321,7 +460,7 @@ export function clearPendingStudyDays(days) {
   if (!confirmed.size) return getPendingStudyDays();
 
   const pending = getPendingStudyDays().filter((day) => !confirmed.has(day));
-  writeJson(KEYS.pendingStudyDays, pending);
+  writeAccountData(KEYS.pendingStudyDays, pending);
   return pending;
 }
 
@@ -334,21 +473,21 @@ export function saveLocalReviewer(reviewer) {
     },
     ...existing
   ];
-  writeJson(KEYS.localReviewers, nextReviewers);
+  writeAccountData(KEYS.localReviewers, nextReviewers);
   notifyReviewerDataChanged();
   return nextReviewers;
 }
 
 export function deleteLocalReviewer(reviewerId) {
   const nextReviewers = getLocalReviewers().filter((reviewer) => reviewer.reviewerId !== reviewerId);
-  writeJson(KEYS.localReviewers, nextReviewers);
+  writeAccountData(KEYS.localReviewers, nextReviewers);
   clearQuizProgress(reviewerId);
   notifyReviewerDataChanged();
   return nextReviewers;
 }
 
 export function clearLocalReviewers() {
-  writeJson(KEYS.localReviewers, []);
+  writeAccountData(KEYS.localReviewers, []);
   notifyReviewerDataChanged();
 }
 
@@ -377,10 +516,10 @@ export function forgetTombstonedReviewers(reviewerIds) {
     }
   });
 
-  if (progress) writeJson(KEYS.progress, sessions);
+  if (progress) writeAccountData(KEYS.progress, sessions);
 
-  if (local) writeJson(KEYS.localReviewers, keptLocal);
-  if (cached) writeJson(KEYS.cloudReviewerCache, keptCache);
+  if (local) writeAccountData(KEYS.localReviewers, keptLocal);
+  if (cached) writeAccountData(KEYS.cloudReviewerCache, keptCache);
 
   if (local || cached || progress) notifyReviewerDataChanged();
 
@@ -388,24 +527,27 @@ export function forgetTombstonedReviewers(reviewerIds) {
 }
 
 export function getCloudReviewerCache() {
-  return readJson(KEYS.cloudReviewerCache, []);
+  const stored = readAccountData(KEYS.cloudReviewerCache, []);
+  return Array.isArray(stored) ? stored : [];
 }
 
 export function saveCloudReviewerCache(reviewers) {
   const nextReviewers = Array.isArray(reviewers) ? reviewers : [];
-  writeJson(KEYS.cloudReviewerCache, nextReviewers);
+  writeAccountData(KEYS.cloudReviewerCache, nextReviewers);
   notifyReviewerDataChanged();
   return nextReviewers;
 }
 
 export function clearCloudReviewerCache() {
-  localStorage.removeItem(KEYS.cloudReviewerCache);
+  clearAccountData(KEYS.cloudReviewerCache);
   notifyReviewerDataChanged();
 }
 
 // The list arrives as summaries, with no questions. Merging keeps the full
 // reviewer already cached for anything that has been opened, so a summary can
-// never strip questions a reviewer still needs offline.
+// never strip questions a reviewer still needs offline. A reviewer owned by a
+// friend or a group peer is kept as it arrives: whether it may be read is the
+// account stamp's decision, not the owner's.
 export function mergeCloudReviewerCache(entries) {
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return getCloudReviewerCache();
@@ -423,7 +565,7 @@ export function mergeCloudReviewerCache(entries) {
   });
 
   const next = [...byId.values()];
-  writeJson(KEYS.cloudReviewerCache, next);
+  writeAccountData(KEYS.cloudReviewerCache, next);
   notifyReviewerDataChanged();
   return next;
 }
@@ -435,21 +577,36 @@ export function cacheCloudReviewer(reviewer) {
 }
 
 export function getGeneratorDraft() {
-  return readJson(KEYS.generatorDraft, null);
+  return readAccountData(KEYS.generatorDraft, null);
 }
 
 export function saveGeneratorDraft(draft) {
-  writeJson(KEYS.generatorDraft, {
+  writeAccountData(KEYS.generatorDraft, {
     ...draft,
     savedAt: new Date().toISOString()
   });
 }
 
 export function clearGeneratorDraft() {
-  localStorage.removeItem(KEYS.generatorDraft);
+  clearAccountData(KEYS.generatorDraft);
+}
+
+// The toast history names friends and reviewers, so it is held per account for
+// the same reason as the stores above.
+export function getNotificationHistory() {
+  const stored = readAccountData(KEYS.notifications, []);
+  return Array.isArray(stored) ? stored : [];
+}
+
+export function saveNotificationHistory(notifications) {
+  writeAccountData(KEYS.notifications, Array.isArray(notifications) ? notifications : []);
 }
 
 export function clearAllDeviceData() {
+  // The fixed names first, then every account slot, which is suffixed with the
+  // account id. Removing a store only ever took the signed-in account's copy, so
+  // the names in KEYS alone would leave the other accounts on this device behind.
+  removeAccountSlots();
   Object.values(KEYS).forEach((key) => localStorage.removeItem(key));
   notifyReviewerDataChanged();
 }
@@ -586,19 +743,23 @@ export function clearSyncQueue(userId) {
 export function restoreLocalDataSnapshot(snapshot) {
   validateLocalDataSnapshot(snapshot);
 
-  writeJson(KEYS.progress, isObject(snapshot.progress) ? snapshot.progress : {});
-  writeJson(KEYS.history, Array.isArray(snapshot.history) ? snapshot.history : []);
-  writeJson(KEYS.lastAttempt, isObject(snapshot.lastAttempt) ? snapshot.lastAttempt : {});
-  writeJson(KEYS.localReviewers, Array.isArray(snapshot.localReviewers) ? snapshot.localReviewers : []);
-  writeJson(KEYS.cloudReviewerCache, Array.isArray(snapshot.cloudReviewerCache) ? snapshot.cloudReviewerCache : []);
+  // Restoring is a deliberate import of a file the browser owner chose, so the
+  // values land under whichever account is signed in. The account stores are
+  // stamped by the writer, which is what stops the import being read back by
+  // another account later.
+  writeAccountData(KEYS.progress, isObject(snapshot.progress) ? snapshot.progress : {});
+  writeAccountData(KEYS.history, Array.isArray(snapshot.history) ? snapshot.history : []);
+  writeAccountData(KEYS.lastAttempt, isObject(snapshot.lastAttempt) ? snapshot.lastAttempt : {});
+  writeAccountData(KEYS.localReviewers, Array.isArray(snapshot.localReviewers) ? snapshot.localReviewers : []);
+  writeAccountData(KEYS.cloudReviewerCache, Array.isArray(snapshot.cloudReviewerCache) ? snapshot.cloudReviewerCache : []);
   writeJson(KEYS.syncQueue, Array.isArray(snapshot.syncQueue) ? snapshot.syncQueue : []);
   writeJson(KEYS.pendingDeletes, Array.isArray(snapshot.pendingDeletes) ? snapshot.pendingDeletes : []);
   writeJson(KEYS.errorLog, Array.isArray(snapshot.errorLog) ? snapshot.errorLog.slice(0, 25) : []);
 
   if (isObject(snapshot.generatorDraft)) {
-    writeJson(KEYS.generatorDraft, snapshot.generatorDraft);
+    writeAccountData(KEYS.generatorDraft, snapshot.generatorDraft);
   } else {
-    localStorage.removeItem(KEYS.generatorDraft);
+    clearAccountData(KEYS.generatorDraft);
   }
 
   if (typeof snapshot.theme === "string") {
@@ -614,7 +775,7 @@ export function getLocalDataSnapshot() {
     exportedAt: new Date().toISOString(),
     progress: getAllProgress(),
     history: getAttemptHistory(),
-    lastAttempt: readJson(KEYS.lastAttempt, {}),
+    lastAttempt: readAccountData(KEYS.lastAttempt, {}),
     localReviewers: getLocalReviewers(),
     cloudReviewerCache: getCloudReviewerCache(),
     generatorDraft: getGeneratorDraft(),

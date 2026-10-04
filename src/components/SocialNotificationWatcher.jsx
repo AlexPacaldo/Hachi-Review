@@ -4,10 +4,13 @@ import { useNotifications } from "../contexts/NotificationContext.jsx";
 import { acceptFriendRequest, listFriendships, removeFriendship } from "../services/social.js";
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";
 import { listMyGroupMembers, listMyGroups } from "../services/groups.js";
-import { mergeCloudReviewerCache, SOCIAL_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
+import { mergeCloudReviewerCache, SOCIAL_DATA_CHANGED_EVENT, SOCIAL_NOTIFICATION_STATE_KEY } from "../utils/storageUtils.js";
 import { supabase } from "../lib/supabaseClient.js";
 
-const STATE_KEY = "hachi_social_notification_state";
+// Held per account inside one object, so switching accounts cannot replay the
+// other's notifications. The key lives with the other store names so that
+// deleting the device data clears the names and reviewer titles cached here too.
+const STATE_KEY = SOCIAL_NOTIFICATION_STATE_KEY;
 const POLL_INTERVAL_MS = 60_000;
 const MAX_SEEN = 300;
 

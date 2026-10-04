@@ -40,6 +40,7 @@ import {
   removePendingDelete,
   removeSyncItem,
   saveCloudReviewerCache,
+  setAccountDataOwner,
   setLastUserId
 } from "../utils/storageUtils.js";
 
@@ -55,6 +56,9 @@ const pendingProgress = new Map();
 
 export function setSyncUser(userId) {
   activeUserId = userId || null;
+  // The account stores belong to an account, so they change hands with it rather
+  // than with whatever page happens to be mounted.
+  setAccountDataOwner(activeUserId);
   if (activeUserId) setLastUserId(activeUserId);
 }
 

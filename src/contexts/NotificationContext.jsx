@@ -1,17 +1,25 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ACCOUNT_DATA_CHANGED_EVENT,
+  getNotificationHistory,
+  REVIEWER_DATA_CHANGED_EVENT,
+  saveNotificationHistory
+} from "../utils/storageUtils.js";
 
 const NotificationContext = createContext(null);
-const NOTIFICATION_KEY = "hachi_notifications";
 const MAX_NOTIFICATIONS = 25;
 const TOAST_DURATION = 5200;
 
 function readNotifications() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(NOTIFICATION_KEY) || "[]");
-    return Array.isArray(saved) ? saved.slice(0, MAX_NOTIFICATIONS) : [];
-  } catch {
-    return [];
-  }
+  return getNotificationHistory().slice(0, MAX_NOTIFICATIONS);
+}
+
+// The store is the record, and it changes hands with the account. Comparing
+// before setting keeps a progress save, which fires the reviewer event every few
+// seconds during a quiz, from re-rendering every notification consumer.
+function sameNotifications(current, next) {
+  return current.length === next.length
+    && current.every((item, index) => item.id === next[index]?.id && item.read === next[index]?.read);
 }
 
 function createNotification(notification) {
@@ -34,8 +42,27 @@ export function NotificationProvider({ children }) {
   const actionHandlers = useRef(new Map());
 
   useEffect(() => {
-    localStorage.setItem(NOTIFICATION_KEY, JSON.stringify(notifications.slice(0, MAX_NOTIFICATIONS)));
+    saveNotificationHistory(notifications.slice(0, MAX_NOTIFICATIONS));
   }, [notifications]);
+
+  // A different account, or a wipe of the device data, both replace the history
+  // behind this list. The account event covers the sign-in and sign-out; the
+  // reviewer event covers the wipe, which no account change announces.
+  useEffect(() => {
+    const handleStoreChange = () => {
+      setNotifications((current) => {
+        const next = readNotifications();
+        return sameNotifications(current, next) ? current : next;
+      });
+    };
+
+    window.addEventListener(ACCOUNT_DATA_CHANGED_EVENT, handleStoreChange);
+    window.addEventListener(REVIEWER_DATA_CHANGED_EVENT, handleStoreChange);
+    return () => {
+      window.removeEventListener(ACCOUNT_DATA_CHANGED_EVENT, handleStoreChange);
+      window.removeEventListener(REVIEWER_DATA_CHANGED_EVENT, handleStoreChange);
+    };
+  }, []);
 
   const registerAction = useCallback((kind, handler) => {
     actionHandlers.current.set(kind, handler);

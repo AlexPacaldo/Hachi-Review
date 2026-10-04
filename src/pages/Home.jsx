@@ -44,8 +44,15 @@ export default function Home() {
     async function loadSignedInReviewers() {
       if (loading) return;
 
-      if (!configured || !user) {
+      // With no cloud there is nothing to reconcile the cache against, so it is
+      // dropped. Signed out it is only left alone: a stamp now keeps the last
+      // account's reviewers unreadable, and clearing it here would throw away
+      // offline copies that account still wants.
+      if (!configured) {
         clearCloudReviewerCache();
+      }
+
+      if (!user) {
         setReviewerList(getAllReviewers());
         setCloudLoadMessage("");
         return;
