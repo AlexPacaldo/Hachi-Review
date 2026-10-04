@@ -3762,12 +3762,15 @@ legend {
   .library-status-grid,
   .review-stats,
   .answer-comparison,
-  .generator-layout,
   .friends-grid,
   .share-form {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  /* .generator-layout is deliberately absent from the list above. It holds a
+     single panel, so a second track leaves the panel squeezed into the left half
+     of the page with the right half empty, which is what it did at every width
+     from 461 to 760. It stays on the single column it is defined with. */
   .mode-options {
     grid-template-columns: 1fr;
   }
@@ -3894,7 +3897,6 @@ legend {
   .library-status-grid,
   .review-stats,
   .answer-comparison,
-  .generator-layout,
   .friends-grid,
   .share-form {
     grid-template-columns: 1fr;
@@ -5404,6 +5406,13 @@ strong {
   .section-heading,
   .quiz-topbar {
     align-items: stretch;
+  }
+
+  /* The heading stacks here, so the title is on the left with the actions on the
+     line below it. Left aligning them keeps the two together; right aligning them
+     left the buttons against the far edge with the panel's left edge bare. */
+  .section-heading .generator-heading-actions {
+    justify-content: flex-start;
   }
 
   .reviewer-card,
