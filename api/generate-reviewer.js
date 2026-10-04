@@ -393,7 +393,14 @@ const choiceRepairSchema = {
 // Repairs only the give-away items, so the prompt is a short work order instead
 // of a second full generation. Rewriting in place is what makes this cheaper
 // than the original call and what keeps every other question untouched.
-function buildChoiceRepairPrompt(issues, sourceText) {
+// Which side of the imbalance to move. This prompt used to ask the model to
+// "match all four choices to each other on length", which is symmetric, so on an
+// item where the correct answer was a dozen words against one-word distractors
+// the model had to guess whether to truncate the answer or pad the distractors.
+// Truncating is the one option that breaks the question, and the main generation
+// prompt has always said so explicitly. This one did not, and the items it failed
+// on were the majority of what survived.
+function buildChoiceRepairPrompt(issues, sourceText, { retry = false } = {}) {
   const workOrder = issues.map((issue) => [
     `id ${issue.id}: ${issue.question}`,
     `- The current choices give it away because ${issue.reasons.join("; ")}.`,
@@ -403,9 +410,11 @@ function buildChoiceRepairPrompt(issues, sourceText) {
     `- D: ${issue.choices.D}`,
     `- The correct answer is currently ${issue.correctAnswer}.`,
     `- The current explanation is: ${issue.explanation}`
-  ].join("\n")).join("\n\n");
+  ]).join("\n\n");
 
-  return `The following multiple-choice questions were written so that the answer gives itself away by its shape. Rewrite just those questions.
+  return `${retry
+    ? `A previous attempt to rebalance the questions below did not fix them. The same instruction has now been tried twice, so a different tactic is needed: this time move the distractors all the way to the correct answer, and where a correct answer is a multi-word term that cannot be shortened, rewrite every distractor to the same shape as that term rather than trimming the term itself.`
+    : `The following multiple-choice questions were written so that the answer gives itself away by its shape. Rewrite just those questions.`}
 
 ${workOrder}
 
@@ -413,15 +422,26 @@ WHAT WENT WRONG:
 - The correct choice is visibly longer, more detailed, or the only one carrying more than one idea, so a learner can pick it without knowing the subject.
 - In these items the distractors are also drawn from unrelated subject areas, which makes them easy to rule out rather than hard to choose between.
 
+MOVE THE DISTRACTORS, NOT THE ANSWER:
+- This is the part that decides whether the rewrite works. The correct answer is right and has to stay right, so its wording is the one thing you may not sacrifice to make the lengths match.
+- Bring the three wrong choices UP to the correct answer's length. Never cut the correct answer down to the length of the distractors.
+- If the correct answer is a technical term of two or more words and the distractors are single words, the term stays exactly as it is and each distractor is rewritten to carry a matching qualifier. "Entrepreneurship" becomes "Entrepreneurship in general", "Intrapreneurship" becomes "Intrapreneurship inside an existing firm". Never reduce the correct answer to "Entrepreneurship" to make the set look even.
+- Only shorten the correct answer when it is padded with words that carry no meaning, in which case drop those and nothing else.
+- If a distractor is a bare term, give it a short accurate qualifier drawn from the material. Padding with a true and relevant qualifier also makes it a better distractor, because it now looks plausible instead of thin.
+
 REWRITE EACH QUESTION SO THAT:
-- Keep the same concept as the correct answer. Do not change what the question is really asking, and do not change which answer is correct. Only the wording and the explanations get rewritten.
+- Keep the same concept as the correct answer. Do not change what the question is really asking, and do not change which answer is correct.
 - Keep the same id, and return exactly the ${issues.length} question(s) listed above and nothing else.
-- Match all four choices to each other on length, detail, and specificity. Count the words and aim for all four to land within about two words of each other.
+- Count the words in all four choices before returning. All four must land within about two words of each other, and none may be more than about a third longer than another. Recount and adjust until that is true.
 - Keep all four choices in the same subject area as the question. A learner who half-understood the lesson must find all four plausible, so never import a distractor from an unrelated field.
 - Never repeat the question's own wording inside the correct choice.
 - No "All of the above", "None of the above", or "Both A and B".
 - answerText must exactly equal choices[correctAnswer].
 - Rewrite the explanation so it teaches the concept instead of restating the correct choice. A learner who has not read the choices should still learn something useful from it.
+
+WORKED EXAMPLE OF THE FIX:
+- Broken, correct answer is nine words and the distractors are one word each: "Technopreneurship, which applies entrepreneurial methods to creating a new venture" against "Entrepreneurship", "Intrapreneurship", "Innovation". A learner picks A without reading.
+- Fixed, same correct answer untouched, every distractor given a matching qualifier: "Technopreneurship, which applies entrepreneurial methods to creating a new venture" against "Entrepreneurship in a small independent firm", "Intrapreneurship inside a large company", "Innovation without a new venture". Now all four are the same shape and the answer is decided by knowing the term.
 
 Study material for reference:
 ${(sourceText || "[The study material was not pasted as text.]").slice(0, 24000)}`;
@@ -1030,8 +1050,9 @@ function getDifficultyMixWarning(reviewer) {
 // One round is often not enough. The model regularly returns a rewrite that is
 // still lopsided, and under an all-or-nothing check that item kept the give-away
 // it started with while the request still counted as spent, leaving the learner
-// told to regenerate. So there is a small second round for whatever survived the
-// first, and a rewrite that improves an item without clearing it is kept.
+// told to regenerate. So there is a second round for whatever survived the first.
+// That round is escalated, because replaying the same prompt against the same
+// material reproduced the same failure: it fixed nothing and still cost a call.
 const MAX_CHOICE_REPAIR_QUESTIONS = 12;
 const CHOICE_REPAIR_ROUNDS = 2;
 
@@ -1125,7 +1146,7 @@ async function rebalanceReviewerChoices({ reviewer, sourceText, requestId, budge
 
     try {
       const { reviewer: rawRepair } = await requestReviewerWithFallback({
-        parts: [{ text: buildChoiceRepairPrompt(repairable, sourceText) }],
+        parts: [{ text: buildChoiceRepairPrompt(repairable, sourceText, { retry: round > 0 }) }],
         hasReadableMaterial: true,
         requestId,
         budget
@@ -1145,8 +1166,14 @@ async function rebalanceReviewerChoices({ reviewer, sourceText, requestId, budge
     }
   }
 
-  if (repairedCount) {
-    console.warn(`[${requestId}] Rewrote ${repairedCount} give-away choices, ${issues.length} still lopsided.`);
+  if (repairedCount || issues.length) {
+    // Names the surviving items and why they are still lopsided. Without this the
+    // only evidence was a count, which cannot distinguish a threshold that is too
+    // aggressive from a concept the model is unable to reword at all.
+    const detail = issues.map((issue) => `#${issue.id} (${issue.reasons.join("; ")})`).join(" | ");
+    console.warn(
+      `[${requestId}] Rewrote ${repairedCount} give-away choices; ${issues.length} still lopsided${detail ? `: ${detail}` : "."}`
+    );
   }
 
   // Measured on the reviewer as it now stands rather than inferred from the
@@ -1460,7 +1487,7 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
 
 // Exported so the mix and repair logic can be tested without a live request. The
 // handler below is still the only thing Vercel calls.
-export { applyChoiceRepairs, getStyleMixWarning, SCENARIO_MIX };
+export { applyChoiceRepairs, buildChoiceRepairPrompt, getStyleMixWarning, SCENARIO_MIX };
 
 export default async function handler(request, response) {
   const requestId = getRequestId();

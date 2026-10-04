@@ -234,6 +234,41 @@ section("a repair is kept only when it is strictly better");
   check("nothing repaired means nothing counted", applyChoiceRepairs(reviewer, repair({ A: worse, B: flat[0], C: flat[1], D: flat[2] }), []).repairedCount, 0);
 }
 
+// The second round used to replay the first round's prompt word for word against
+// the same material. It reproduced the same failure, fixed nothing, and still
+// cost an upstream call, so the retry has to ask for a different tactic.
+section("the retry round asks for a different tactic, not the same answer again");
+{
+  const { buildChoiceRepairPrompt } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const issue = {
+    id: 7,
+    question: "This is the use of entrepreneurial methods to create a new venture.",
+    choices: { A: "Technopreneurship applied to a new venture creation process", B: "Entrepreneurship", C: "Intrapreneurship", D: "Innovation" },
+    correctAnswer: "A",
+    explanation: "Technopreneurship applies entrepreneurship to a new venture.",
+    reasons: ["the correct answer is 7 words while the other choices sit around 1 word"],
+    correctWords: 7,
+    medianDistractorWords: 1
+  };
+
+  const first = buildChoiceRepairPrompt([issue], "material");
+  const second = buildChoiceRepairPrompt([issue], "material", { retry: true });
+
+  check("the first round is not the retry", first === second, false);
+  check("the retry says the first attempt failed", /previous attempt/i.test(second), true);
+  check("the retry names a different tactic", /different tactic/i.test(second), true);
+
+  for (const [label, prompt] of [["first", first], ["retry", second]]) {
+    check(`${label}: move the distractors`, /Bring the three wrong choices UP/i.test(prompt), true);
+    check(`${label}: never cut the correct answer`, /Never cut the correct answer/i.test(prompt), true);
+    check(`${label}: counts words`, /Count the words/i.test(prompt), true);
+    check(`${label}: carries the work order`, prompt.includes("id 7:"), true);
+  }
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;
