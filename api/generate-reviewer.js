@@ -1167,10 +1167,10 @@ function getChoiceBalanceWarning(repairedCount, unresolvedCount) {
   if (!unresolvedCount) return null;
 
   const repaired = repairedCount
-    ? `${repairedCount} give-away ${repairedCount === 1 ? "question was" : "questions were"} rewritten, `
+    ? `We fixed ${repairedCount} of ${repairedCount === 1 ? "it" : "them"}, but `
     : "";
 
-  return `${repaired}but ${unresolvedCount} still ${unresolvedCount === 1 ? "has" : "have"} an answer that can be spotted without knowing the material. Regenerate if that bothers you.`;
+  return `${repaired}${unresolvedCount} ${unresolvedCount === 1 ? "question still has" : "questions still have"} an answer you could guess just by looking at the choices, without knowing the material. You can make a new set or edit them under Edit Questions.`;
 }
 
 async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs, schema }) {

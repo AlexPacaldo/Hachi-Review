@@ -768,8 +768,8 @@ section("the repair work order names the faults it was given");
   // The learner is told about whatever survived the pass, in words that fit every rule
   // rather than only the length one it used to name.
   check("nothing left to report says nothing", getChoiceBalanceWarning(3, 0), null);
-  check("what survived is reported without a repair count", getChoiceBalanceWarning(0, 1), "but 1 still has an answer that can be spotted without knowing the material. Regenerate if that bothers you.");
-  check("what survived is reported with a repair count", getChoiceBalanceWarning(2, 3), "2 give-away questions were rewritten, but 3 still have an answer that can be spotted without knowing the material. Regenerate if that bothers you.");
+  check("what survived is reported without a repair count", getChoiceBalanceWarning(0, 1), "1 question still has an answer you could guess just by looking at the choices, without knowing the material. You can make a new set or edit them under Edit Questions.");
+  check("what survived is reported with a repair count", getChoiceBalanceWarning(2, 3), "We fixed 2 of them, but 3 questions still have an answer you could guess just by looking at the choices, without knowing the material. You can make a new set or edit them under Edit Questions.");
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

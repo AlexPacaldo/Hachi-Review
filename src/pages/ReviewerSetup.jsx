@@ -429,12 +429,10 @@ export default function ReviewerSetup() {
             <p className="muted">
               <span>
                 {giveAwayCount} of {totalQuestions}{" "}
-                {giveAwayCount === 1 ? "question can" : "questions can"} be answered from the shape of the
-                options alone, without knowing the material.
+                {giveAwayCount === 1 ? "question has" : "questions have"} an answer you could guess just by looking at the choices, without knowing the material.
               </span>
               <span>
-                New reviewers send these for a rewrite, and a rewrite is only kept when it fixes the problem.
-                To fix one here, open Edit Questions from the reviewer's menu.
+                New reviewers try to fix these automatically, and a fix is only kept when it works. To fix one here, open Edit Questions from the reviewer's menu.
               </span>
             </p>
           </fieldset>
