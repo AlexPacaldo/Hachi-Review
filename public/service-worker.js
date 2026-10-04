@@ -1,4 +1,4 @@
-const CACHE_VERSION = "review-hub-v8";
+const CACHE_VERSION = "review-hub-v9";
 const APP_SHELL = [
   "./",
   "./index.html",
