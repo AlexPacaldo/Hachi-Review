@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Check,
+  ListChecks,
   Loader2,
   MoreVertical,
   Pencil,
@@ -22,6 +23,7 @@ import {
   upsertCloudReviewer
 } from "../services/cloudReviewers.js";
 import ConfirmModal from "./ConfirmModal.jsx";
+import ReviewerQuestionEditor from "./ReviewerQuestionEditor.jsx";
 import { deleteReviewerSharesForOwner, listFriendships } from "../services/social.js";
 import { clearReviewerGroupShares, listMyGroups, shareReviewerWithGroups } from "../services/groups.js";
 import {
@@ -58,6 +60,9 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   );
   const [sharingError, setSharingError] = useState(null);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
+  const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [questionsSaving, setQuestionsSaving] = useState(false);
+  const [questionsError, setQuestionsError] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -224,6 +229,12 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     setRenameOpen(true);
   }
 
+  function openQuestions() {
+    setOpen(false);
+    setQuestionsError(null);
+    setQuestionsOpen(true);
+  }
+
   async function submitRename(event) {
     event.preventDefault();
     if (renameSaving) return;
@@ -275,6 +286,48 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     setRenameSaving(false);
     setRenameOpen(false);
     onMessage({ type: "success", text: "Reviewer renamed." });
+  }
+
+  async function saveQuestions(nextQuestions) {
+    if (!user || !isOwner) return;
+
+    setQuestionsSaving(true);
+    setQuestionsError(null);
+
+    // questionCount is stored beside the questions and validateReviewer refuses a
+    // reviewer whose two disagree, so it is derived rather than left behind.
+    const questionCount = nextQuestions.length;
+
+    if (hasCloud) {
+      // Editing questions must not change who the reviewer is shared with, and the
+      // cache copy can be behind the row, so the saved scope comes from the row.
+      const { data: current } = await getMyCloudReviewer(user.id, reviewer.reviewerId);
+      const scope = current
+        ? {
+            visibility: current.visibility,
+            sharedWith: current.shared_with || null,
+            sharedGroups: current.shared_groups || null
+          }
+        : {};
+
+      const { error } = await upsertCloudReviewer(user.id, {
+        ...reviewer,
+        ...scope,
+        questions: nextQuestions,
+        questionCount
+      });
+
+      if (error) {
+        setQuestionsError(error.message || "Could not save the questions.");
+        setQuestionsSaving(false);
+        return;
+      }
+    }
+
+    syncMetadata({ questions: nextQuestions, questionCount });
+    setQuestionsSaving(false);
+    setQuestionsOpen(false);
+    onMessage({ type: "success", text: "Questions updated." });
   }
 
   // Applies both audiences at once, so turning one off can never quietly take the
@@ -697,6 +750,12 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
 
           {isOwner && hasCloud ? (
             <div className="reviewer-menu-section">
+              {Array.isArray(reviewer.questions) ? (
+                <button className="reviewer-menu-item" type="button" onClick={openQuestions}>
+                  <ListChecks size={16} aria-hidden="true" />
+                  Edit Questions
+                </button>
+              ) : null}
               <button className="reviewer-menu-item" type="button" onClick={openRename}>
                 <Pencil size={16} aria-hidden="true" />
                 Rename Reviewer
@@ -895,6 +954,17 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
             </div>
           </section>
         </div>,
+        document.body
+      ) : null}
+
+      {questionsOpen ? createPortal(
+        <ReviewerQuestionEditor
+          reviewer={reviewer}
+          saving={questionsSaving}
+          error={questionsError}
+          onClose={() => setQuestionsOpen(false)}
+          onSave={saveQuestions}
+        />,
         document.body
       ) : null}
 

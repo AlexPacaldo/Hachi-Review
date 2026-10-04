@@ -191,6 +191,135 @@ section("an off-plan mix is reported, an on-plan one is not");
   check("under the reporting floor", warned(reviewer(0, 8)), false);
 }
 
+// A hand-edited question is written straight to the row, and a reviewer whose
+// answerText disagrees with its correct choice, or whose choices do not match its
+// type, is a reviewer the setup page then refuses to open. Neither failure is
+// visible at the moment of editing, so the rules that prevent them are checked
+// here rather than left to the editor component.
+section("editing a question keeps the shape the validator demands");
+{
+  const {
+    choiceLettersFor,
+    isTypedQuestion,
+    normalizeQuestionForSave,
+    normalizeQuestionType,
+    questionProblems,
+    setChoiceValue,
+    setCorrectAnswer
+  } = await import(
+    pathToFileURL(new URL("../src/utils/questionEditor.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const mc = {
+    id: 1,
+    type: "multiple_choice",
+    difficulty: "medium",
+    topic: "Segmentation",
+    question: "Which method groups buyers by age and income?",
+    choices: { A: "Demographic", B: "Behavioral", C: "Geographic", D: "Psychographic" },
+    correctAnswer: "A",
+    answerText: "Demographic",
+    explanation: "Age and income are who the buyer is, not what they did."
+  };
+
+  const valid = (question) => questionProblems(question).length === 0;
+  // The condition validateReviewer states as answerText === choices[correctAnswer],
+  // which is the one an owner breaks by typing into one field and not the other.
+  const mirrors = (question) => question.answerText === question.choices[question.correctAnswer];
+
+  check("a whole question as generated is valid", valid(mc), true);
+
+  check("typing into the correct choice mirrors answerText",
+    mirrors(setChoiceValue(mc, "A", "Demographic segmentation")),
+    true);
+
+  check("typing into a distractor leaves answerText alone",
+    mirrors(setChoiceValue(mc, "B", "Behavioural")),
+    true);
+
+  check("marking another choice moves answerText with it",
+    mirrors(setCorrectAnswer(mc, "C")),
+    true);
+
+  check("a type switch to true/false leaves two choices",
+    Object.values(normalizeQuestionType(mc, "true_false").choices).filter(Boolean),
+    ["True", "False"]);
+
+  check("a type switch to true/false keeps a valid answer",
+    mirrors(normalizeQuestionType(mc, "true_false")),
+    true);
+
+  check("a type switch to a typed question answers with TEXT",
+    normalizeQuestionType(mc, "flashcard").correctAnswer,
+    "TEXT");
+
+  check("a type switch away from typed reports the empty choices it left",
+    questionProblems(normalizeQuestionType({ ...mc, type: "flashcard", choices: {} }, "multiple_choice")).length > 0,
+    true);
+
+  check("a typed question is not asked for choices",
+    [isTypedQuestion("flashcard"), isTypedQuestion("multiple_choice")],
+    [true, false]);
+
+  check("true/false stores two choices, multiple choice four",
+    [choiceLettersFor("true_false").length, choiceLettersFor("multiple_choice").length],
+    [2, 4]);
+
+  const padded = { ...mc, topic: "  Segmentation  ", explanation: "  Padded.  " };
+  check("saving trims the text fields",
+    [normalizeQuestionForSave(padded).topic, normalizeQuestionForSave(padded).explanation],
+    ["Segmentation", "Padded."]);
+
+  check("saving leaves answerText equal to the trimmed correct choice",
+    mirrors(normalizeQuestionForSave({ ...mc, choices: { ...mc.choices, A: "  Demographic  " } })),
+    true);
+
+  check("saving is idempotent",
+    normalizeQuestionForSave(normalizeQuestionForSave(mc)),
+    normalizeQuestionForSave(mc));
+
+  section("what the editor refuses to save");
+  check("an empty topic", questionProblems({ ...mc, topic: "  " }).length, 1);
+  check("an empty explanation", questionProblems({ ...mc, explanation: "" }).length, 1);
+  check("an empty choice", questionProblems({ ...mc, choices: { ...mc.choices, C: "" } }).length, 1);
+  check("a repeated choice", questionProblems({ ...mc, choices: { ...mc.choices, C: "demographic" } }).length, 1);
+  check("a correct answer that is not a choice", questionProblems({ ...mc, correctAnswer: "Z" }).length, 1);
+  check("a typed question with no answer", questionProblems({ ...mc, type: "flashcard", answerText: " " }).length, 1);
+  check("a whole question reports nothing", questionProblems(mc).length, 0);
+
+  // The filter the editor offers is this same check, so what it reports is what
+  // the owner is shown, and a balanced question must not be swept up with it.
+  section("the standout answer filter finds the give-aways and leaves the rest");
+  const { getChoiceBalanceIssue } = await import(
+    pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const giveaway = {
+    ...mc,
+    choices: {
+      A: "Demographic segmentation, which groups buyers by age and income and spending power",
+      B: "Behavioral",
+      C: "Geographic",
+      D: "Psychographic"
+    },
+    correctAnswer: "A"
+  };
+
+  check("a long correct answer is reported",
+    getChoiceBalanceIssue({ ...giveaway, answerText: giveaway.choices.A }) !== null,
+    true);
+
+  check("the report says why",
+    getChoiceBalanceIssue({ ...giveaway, answerText: giveaway.choices.A }).reasons.length > 0,
+    true);
+
+  check("a balanced question is not reported", getChoiceBalanceIssue(mc), null);
+
+  check("a repeated choice is left to the save check, not the filter",
+    getChoiceBalanceIssue({ ...mc, choices: { ...mc.choices, C: "Demographic" } }),
+    null);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;
