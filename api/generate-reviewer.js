@@ -1025,13 +1025,19 @@ function getDifficultyMixWarning(reviewer) {
   return `Difficulty mix came back thin (${sparse.map((level) => `${mix[level]} ${level}`).join(", ")} out of ${total}). Filtering to ${sparse.join(" or ")} in the reviewer will return fewer questions than expected.`;
 }
 
-// One repair call has to stay cheap, so only the worst offenders go back to the
-// model. Anything past this is still reported to the learner as a warning.
+// Prompt rules for balanced choices demonstrably leak, so the finished reviewer
+// is measured instead and only the give-away items are sent back for a rewrite.
+// One round is often not enough. The model regularly returns a rewrite that is
+// still lopsided, and under an all-or-nothing check that item kept the give-away
+// it started with while the request still counted as spent, leaving the learner
+// told to regenerate. So there is a small second round for whatever survived the
+// first, and a rewrite that improves an item without clearing it is kept.
 const MAX_CHOICE_REPAIR_QUESTIONS = 12;
+const CHOICE_REPAIR_ROUNDS = 2;
 
-// A repair is only accepted if it actually fixed the item. The model sometimes
-// returns choices that are still lopsided, or answers pointing at a blank, and
-// keeping the original is always better than shipping a half-finished rewrite.
+// A repair is only accepted if it actually made the item better. The model
+// sometimes returns choices that are still lopsided, or answers pointing at a
+// blank, and keeping the original is always better than shipping something worse.
 function applyChoiceRepairs(reviewer, rawRepair, issues) {
   const repairsById = new Map(
     (Array.isArray(rawRepair?.questions) ? rawRepair.questions : [])
@@ -1063,7 +1069,9 @@ function applyChoiceRepairs(reviewer, rawRepair, issues) {
       explanation: String(repair?.explanation || question.explanation || "").trim()
     };
 
-    if (getChoiceBalanceIssue(candidate)) return question;
+    // Strictly better, not merely different. A rewrite that swaps one lopsided
+    // set for an equally lopsided one is churn, and the original is no worse.
+    if (!isBetterBalanced(candidate, question)) return question;
 
     repairedCount += 1;
     return candidate;
@@ -1072,42 +1080,89 @@ function applyChoiceRepairs(reviewer, rawRepair, issues) {
   return { reviewer: { ...reviewer, questions }, repairedCount, attemptedCount: issues.length };
 }
 
-// Prompt rules for balanced choices demonstrably leak, so the finished reviewer
-// is measured instead and only the give-away items are sent back for a rewrite.
+// How far a question sits from balanced, split into the two things that give an
+// answer away. Length is the dominant one, because a learner scanning a list
+// finds the longest choice without reading it, and the multi-idea tell is
+// secondary. The ratio is logged so a correct answer that is too long and one
+// that is too short score the same.
+function getBalanceRank(question) {
+  const issue = getChoiceBalanceIssue(question);
+
+  if (!issue) return { length: 0, tells: 0 };
+
+  return {
+    length: Math.abs(Math.log(issue.correctWords / issue.medianDistractorWords)),
+    tells: issue.reasons.length
+  };
+}
+
+// Ordered rather than summed on purpose. As one score the secondary tell could
+// outweigh a worse primary one, which let a wordier rewrite that gave itself
+// away a single way beat a tighter rewrite that gave itself away twice. Telling
+// them apart is what a learner actually does, so compare them the same way: the
+// length decides, and the extra tell only separates two of the same length.
+function isBetterBalanced(candidate, original) {
+  const after = getBalanceRank(candidate);
+  const before = getBalanceRank(original);
+
+  if (after.length !== before.length) return after.length < before.length;
+
+  return after.tells < before.tells;
+}
+
 // Best effort by design: a reviewer with one long distractor beats a failed
 // request, so any error here returns the reviewer untouched.
 async function rebalanceReviewerChoices({ reviewer, sourceText, requestId, budget }) {
-  const issues = findChoiceBalanceIssues(reviewer?.questions);
-  if (!issues.length) return { reviewer, repairedCount: 0, unresolvedCount: 0 };
+  let current = reviewer;
+  let repairedCount = 0;
+  let issues = findChoiceBalanceIssues(current?.questions);
 
-  const repairable = issues.slice(0, MAX_CHOICE_REPAIR_QUESTIONS);
+  for (let round = 0; round < CHOICE_REPAIR_ROUNDS && issues.length; round += 1) {
+    // The cap keeps any single prompt small, so a reviewer with many give-aways
+    // spreads them across rounds instead of one very large call.
+    const repairable = issues.slice(0, MAX_CHOICE_REPAIR_QUESTIONS);
+    const before = issues.length;
 
-  try {
-    const { reviewer: rawRepair } = await requestReviewerWithFallback({
-      parts: [{ text: buildChoiceRepairPrompt(repairable, sourceText) }],
-      hasReadableMaterial: true,
-      requestId,
-      budget
-    });
-    const result = applyChoiceRepairs(reviewer, rawRepair, repairable);
+    try {
+      const { reviewer: rawRepair } = await requestReviewerWithFallback({
+        parts: [{ text: buildChoiceRepairPrompt(repairable, sourceText) }],
+        hasReadableMaterial: true,
+        requestId,
+        budget
+      });
 
-    if (result.repairedCount) {
-      console.warn(`[${requestId}] Rewrote ${result.repairedCount} of ${issues.length} give-away choices.`);
+      const result = applyChoiceRepairs(current, rawRepair, repairable);
+      current = result.reviewer;
+      repairedCount += result.repairedCount;
+      issues = findChoiceBalanceIssues(current?.questions);
+
+      // A round that moved nothing will not move anything on the same material,
+      // and the call budget is not worth spending to find that out twice.
+      if (issues.length >= before) break;
+    } catch (error) {
+      console.warn(`[${requestId}] Could not rebalance give-away choices: ${error?.message || "Unknown error"}`);
+      break;
     }
-
-    return {
-      reviewer: result.reviewer,
-      repairedCount: result.repairedCount,
-      unresolvedCount: issues.length - result.repairedCount
-    };
-  } catch (error) {
-    console.warn(`[${requestId}] Could not rebalance give-away choices: ${error?.message || "Unknown error"}`);
-    return { reviewer, repairedCount: 0, unresolvedCount: issues.length };
   }
+
+  if (repairedCount) {
+    console.warn(`[${requestId}] Rewrote ${repairedCount} give-away choices, ${issues.length} still lopsided.`);
+  }
+
+  // Measured on the reviewer as it now stands rather than inferred from the
+  // issue count, so items past the per-round cap are reported as untouched
+  // instead of being quietly counted as attempts that failed.
+  return {
+    reviewer: current,
+    repairedCount,
+    unresolvedCount: issues.length
+  };
 }
 
 // A give-away choice that survived the repair pass is still a flaw in the
-// reviewer, so say how many rather than shipping it silently.
+// reviewer, so say how many rather than shipping it silently. Regenerating is
+// poor advice here: it spends the call allowance again and rolls the dice on the
+// same material, so name the item instead of telling the learner to try their luck.
 function getChoiceBalanceWarning(repairedCount, unresolvedCount) {
   if (!unresolvedCount) return null;
 
@@ -1115,7 +1170,7 @@ function getChoiceBalanceWarning(repairedCount, unresolvedCount) {
     ? `${repairedCount} give-away ${repairedCount === 1 ? "question was" : "questions were"} rewritten, `
     : "";
 
-  return `${repaired}but ${unresolvedCount} still ${unresolvedCount === 1 ? "has" : "have"} an answer that stands out by its length or detail. Regenerate if that bothers you.`;
+  return `${repaired}but ${unresolvedCount} ${unresolvedCount === 1 ? "still has" : "still have"} a correct answer that is longer or more detailed than the others, which gives the answer away by its shape. Those ${unresolvedCount === 1 ? "item" : "items"} ${unresolvedCount === 1 ? "is" : "are"} still worth revising.`;
 }
 
 async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs, schema }) {
@@ -1403,9 +1458,9 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
   throw error;
 }
 
-// Exported so the mix warning can be tested without a live request. The handler
-// below is still the only thing Vercel calls.
-export { getStyleMixWarning, SCENARIO_MIX };
+// Exported so the mix and repair logic can be tested without a live request. The
+// handler below is still the only thing Vercel calls.
+export { applyChoiceRepairs, getStyleMixWarning, SCENARIO_MIX };
 
 export default async function handler(request, response) {
   const requestId = getRequestId();

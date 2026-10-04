@@ -191,6 +191,49 @@ section("an off-plan mix is reported, an on-plan one is not");
   check("under the reporting floor", warned(reviewer(0, 8)), false);
 }
 
+// A learner picks the longest choice without reading, so a choice set that gives
+// the answer away by shape is a broken question however correct it is. The repair
+// pass used to be all or nothing, so a rewrite that improved an item without
+// clearing the threshold was discarded and the original give-away was shipped
+// instead, with the learner told to regenerate.
+section("a repair is kept only when it is strictly better");
+{
+  const { applyChoiceRepairs } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const flat = ["Association", "Access Point", "BSSID"];
+  const question = (correct, distractors = flat) => ({
+    id: 1,
+    question: "This is the amount of information broadcast over a connection.",
+    choices: { A: correct, B: distractors[0], C: distractors[1], D: distractors[2] },
+    correctAnswer: "A",
+    answerText: correct,
+    explanation: "Bandwidth is the rate of data."
+  });
+
+  // Twelve words against one-word distractors, and the only choice carrying two
+  // ideas, so it gives itself away twice over.
+  const original = question("Bandwidth expressed as bits per second, measured over the connection, every second");
+  const reviewer = { questions: [original] };
+  const repair = (choices, correctAnswer = "A") => ({ questions: [{ id: 1, choices, correctAnswer, explanation: "Bandwidth is the rate of data." }] });
+
+  const apply = (correct, distractors = flat, correctAnswer = "A") => {
+    const result = applyChoiceRepairs(reviewer, repair({ A: correct, B: distractors[0], C: distractors[1], D: distractors[2] }, correctAnswer), []);
+    return { kept: result.reviewer.questions[0].choices.A, count: result.repairedCount };
+  };
+
+  check("a rewrite that clears it is kept", apply("Bandwidth", flat).count, 1);
+  check("a partial improvement is kept", apply("Bandwidth expressed in bits per second, measured over the air").count, 1);
+  check("a same-length rewrite is kept when it drops a tell", apply("Throughput expressed as bits per second, measured over the air").count, 1);
+
+  const worse = "The bandwidth of a wireless link expressed as bits per second over the air interface every day";
+  check("a longer rewrite is rejected", apply(worse).kept, original.choices.A);
+  check("a blank choice is rejected", apply("").kept, original.choices.A);
+  check("an answer letter outside A-D is rejected", apply("Bandwidth", flat, "Z").kept, original.choices.A);
+  check("nothing repaired means nothing counted", applyChoiceRepairs(reviewer, repair({ A: worse, B: flat[0], C: flat[1], D: flat[2] }), []).repairedCount, 0);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

@@ -3,7 +3,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/prerender.mjs",
-    "test": "node scripts/storage-account-check.mjs && node scripts/question-style-check.mjs",
+    "test": "node scripts/storage-account-check.mjs && node scripts/question-quality-check.mjs",
     "preview": "vite preview",
     "ios:add": "npm install @capacitor/core @capacitor/cli @capacitor/ios && npx cap add ios",
     "ios:sync": "npm run build && npx cap sync ios",
