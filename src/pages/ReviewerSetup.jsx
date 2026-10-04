@@ -383,6 +383,14 @@ export default function ReviewerSetup() {
             >
               <strong>Include Exam-style</strong>
               <span>Keeps the scenario and application questions alongside the rest of the reviewer.</span>
+              <span>
+                {styleCounts.scenario} exam-style and {styleCounts.direct} direct{" "}
+                {styleCounts.direct === 1 ? "question" : "questions"}
+                {negativeStemCount > 0
+                  ? `, of which ${negativeStemCount} ${negativeStemCount === 1 ? "is" : "are"} an odd-one-out "which is NOT..." ${negativeStemCount === 1 ? "question" : "questions"}`
+                  : ""}
+                .
+              </span>
             </button>
             <button
               type="button"
@@ -391,17 +399,12 @@ export default function ReviewerSetup() {
             >
               <strong>Direct Questions Only</strong>
               <span>Leaves out the scenarios and drills the definitions, facts, and comparisons.</span>
+              <span>
+                {styleCounts.direct} direct {styleCounts.direct === 1 ? "question" : "questions"} once the
+                exam-style ones are left out.
+              </span>
             </button>
           </div>
-          <p className="muted">
-            {settings.includeScenarioQuestions
-              ? `This reviewer has ${styleCounts.scenario} exam-style and ${styleCounts.direct} direct questions.`
-              : `${styleCounts.direct} direct questions available in this reviewer.`}
-          </p>
-          <p className="muted">
-            Exam-style covers the "Which among the following is NOT..." odd-one-out questions as well
-            {negativeStemCount > 0 ? `: this reviewer has ${negativeStemCount} of them.` : ": this reviewer has none."}
-          </p>
         </fieldset>
 
         {giveAwayCount > 0 ? (
