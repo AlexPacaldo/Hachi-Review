@@ -1735,6 +1735,15 @@ main {
   place-content: center;
 }
 
+/* A textarea is a scroll container, so inside a grid row its automatic minimum
+   size is zero and rows={3} buys nothing: the row collapses to the textarea's
+   padding and the field shows one clipped line. The height has to be stated for
+   rows to mean anything here, and min-height is enough to hold the row open.
+   This is also why the topic input beside it was unaffected. */
+.question-editor-form.modal-form textarea {
+  min-height: 84px;
+}
+
 .question-editor-form-head {
   display: flex;
   align-items: center;
