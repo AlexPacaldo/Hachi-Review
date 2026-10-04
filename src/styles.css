@@ -5408,9 +5408,18 @@ strong {
     align-items: stretch;
   }
 
+  /* Repeated at the same specificity on purpose. .generator-page .section-heading
+     sets align-items: end for the row layout, to sit the title level with the
+     buttons beside it. Specificity, not source order, is what decides, so the
+     plain rule above never beat it: once the heading stacks, end means shrink
+     wrap each child and push it against the right edge, which is what left the
+     title indented from the panel and the buttons hard against the far side. */
+  .generator-page .section-heading {
+    align-items: stretch;
+  }
+
   /* The heading stacks here, so the title is on the left with the actions on the
-     line below it. Left aligning them keeps the two together; right aligning them
-     left the buttons against the far edge with the panel's left edge bare. */
+     line below it. Left aligning them keeps the two together. */
   .section-heading .generator-heading-actions {
     justify-content: flex-start;
   }
