@@ -225,6 +225,14 @@ THE CORRECT ANSWER IS A TERM, NOT A SENTENCE:
 - Write the three distractors in the same shape as the correct answer. If the answer is a term then every distractor is a term from the same family, so all four are the same length before a word of explanation is written and there is nothing left to balance.
 - If a question genuinely cannot be answered by naming something, then write all four choices as short phrases of similar length. Never leave one choice a full sentence while the other three are bare terms.
 
+DISTRACTORS MUST BE WEIGHABLE, NOT DISMISSIBLE:
+- A distractor is something a learner who half-remembers the lesson would put on a shortlist and then rule out for a reason. If it would be crossed out the instant it is read, it is not a distractor, and the question was decided without being read.
+- Apply the test to each wrong choice on its own: "Could someone who half-understood this lesson seriously consider this?" If the honest answer is no, it has to be replaced, not reworded.
+- Every distractor must be the same KIND of thing as the correct answer, answering the same question in the same form. When the question asks what something provides, produces, or consists of, then all four choices must be candidate answers of that kind. A macroeconomic report, a spreadsheet, and a legal framework are not candidates for what customer personas provide, however plausible each sounds on its own.
+- Never pad a wrong choice with filler to make its length match the correct one. Words added to reach a word count are exactly what turns a distractor into an absurd claim: "It allows startups to operate without any financial capital requirements" is longer than the real answer and is also nonsense. If a distractor cannot be made genuinely plausible at the right length, the correct answer is too wordy. Fix the answer instead.
+- Never use absolutes in a wrong choice: guarantees, absolute, immunity, immune, risk-free, impossible, never, always, without any, solely, ignore, replaces the need for. A real distractor is a claim a person could hold and be wrong about. "It removes market uncertainties and guarantees absolute financial immunity" is a claim about the world rather than about the subject, so no learner weighs it.
+- Do not put an obviously wrong claim in the correct answer's place while leaving the other three plausible either. Fix every choice that fails the test.
+
 ANSWER CHOICE BALANCE - CRITICAL:
 - Never make the correct answer noticeably longer, more detailed, more specific, or more technically sophisticated than the incorrect choices. The correct answer must NOT be identifiable because it contains more information.
 - Keep all four choices reasonably similar in length, level of detail, specificity, grammatical structure, complexity, and number of ideas.
@@ -428,6 +436,14 @@ ${workOrder}
 WHAT WENT WRONG:
 - The correct choice is visibly longer, more detailed, or the only one carrying more than one idea, so a learner can pick it without knowing the subject.
 - In these items the distractors are also drawn from unrelated subject areas, which makes them easy to rule out rather than hard to choose between.
+- Some of these items are the right length throughout and still give themselves away, because the wrong choices are claims no learner would seriously consider. Check every wrong choice on its own and ask: could someone who half-understood this lesson put this on a shortlist? If not, it has to be replaced, not reworded.
+
+REPLACE ANY DISTRACTOR THAT NO LEARNER WOULD WEIGH:
+- This is the more important half of the job when the lengths already match. A balanced question full of absurd choices is still a giveaway.
+- Every wrong choice must be the same KIND of thing as the correct answer, answering the same question in the same form. If the question asks what something provides or consists of, all four choices must be candidate answers of that kind, so a macroeconomic report, a spreadsheet, and a legal framework are all wrong because they are not candidates for the thing being asked about.
+- Keep claims a person could hold and be wrong about. Never write an absolute: guarantees, absolute, immunity, immune, risk-free, impossible, never, always, without any, solely, ignore, replaces the need for. "It removes market uncertainties and guarantees absolute financial immunity" is a claim about the world, not about the subject, so it is discarded on sight.
+- Do not pad a wrong choice with filler to make its length match. Words added to hit a word count are what turn a distractor into nonsense. If a wrong choice cannot be made genuinely plausible at the right length, the correct answer is too wordy, so shorten the correct answer to its term instead.
+- Replace the worst distractor first. Replacing one of three absurd choices with a plausible one is worth more than rebalancing all four.
 
 MOVE THE DISTRACTORS, NOT THE ANSWER:
 - This is the part that decides whether the rewrite works. The correct answer is right and has to stay right, so its wording is the one thing you may not sacrifice to make the lengths match.

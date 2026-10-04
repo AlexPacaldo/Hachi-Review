@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 
 const MODULE_URL = pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href;
 
-const { inferQuestionStyle, getQuestionStyle, countNegativeStemQuestions, getReviewerStyleCounts } = await import(MODULE_URL);
+const { getChoiceBalanceIssue, inferQuestionStyle, getQuestionStyle, countNegativeStemQuestions, getReviewerStyleCounts } = await import(MODULE_URL);
 
 // [stem, expected style]. "direct" is recall of a term, definition, standard,
 // category or recommended practice. "scenario" puts the concept in a situation
@@ -267,6 +267,70 @@ section("the retry round asks for a different tactic, not the same answer again"
     check(`${label}: counts words`, /Count the words/i.test(prompt), true);
     check(`${label}: carries the work order`, prompt.includes("id 7:"), true);
   }
+}
+
+// Balanced lengths were never the whole story. These three came back with the
+// lengths even, which is all the check above could see, and were still decided
+// on sight because the wrong choices were claims nobody would weigh. Q10 and Q19
+// are catchable from wording; Q48 is not, and is here to pin that down rather
+// than to pretend the check covers it.
+section("give-away wrong choices are caught even when the lengths match");
+{
+  const item = (question, choices, correctAnswer) => ({ id: 1, question, choices, correctAnswer, explanation: "" });
+
+  const q10 = item(
+    "Why is problem identification considered an essential pillar of technopreneurship?",
+    {
+      A: "Identifying real-world problems drives meaningful technological innovation and market relevance.",
+      B: "It replaces the need for customer segmentation and target personas.",
+      C: "It allows startups to operate without any financial capital requirements.",
+      D: "It ensures that founders never have to pivot their initial product ideas."
+    },
+    "A"
+  );
+  const q19 = item(
+    "What is a major strategic advantage of adopting a macro industry perspective for technopreneurs?",
+    {
+      A: "It enables entrepreneurs to anticipate changes and launch proactive solutions before competitors.",
+      B: "It allows founders to ignore customer interviews and focus solely on coding.",
+      C: "It restricts business operations to local brick-and-mortar storefronts.",
+      D: "It removes market uncertainties and guarantees absolute financial immunity."
+    },
+    "A"
+  );
+  const q48 = item(
+    "Which among the following best describes what customer personas provide to technopreneurial teams during product design?",
+    {
+      A: "A macroeconomic report detailing regional industry trends and supply chains",
+      B: "A semi-fictional representation that gives broad segments a human face and guides product development",
+      C: "A quantitative spreadsheet tracking financial metrics and venture capital runway",
+      D: "A legal framework for protecting proprietary software source code and patents"
+    },
+    "B"
+  );
+
+  const q10Reasons = getChoiceBalanceIssue(q10).reasons;
+  const q19Reasons = getChoiceBalanceIssue(q19).reasons;
+
+  check("Q10 flagged", Boolean(getChoiceBalanceIssue(q10)), true);
+  check("Q10 blames the unweighable choices", q10Reasons.some((reason) => /no learner would seriously consider/.test(reason)), true);
+  check("Q10 also caught the odd frame", q10Reasons.some((reason) => /open with "it"/.test(reason)), true);
+  check("Q19 flagged", Boolean(getChoiceBalanceIssue(q19)), true);
+
+  // The lengths in all three are within a word or two of each other, which is
+  // exactly why the old check passed them. Assert that directly, so this test
+  // fails loudly if someone ever widens the length thresholds back out.
+  check("Q10 has no length complaint", q10Reasons.filter((reason) => /\bwords?\b/.test(reason)).length, 0);
+  check("Q19 has no length complaint", q19Reasons.filter((reason) => /\bwords?\b/.test(reason)).length, 0);
+
+  // A distractor that is merely long is still the original fault; a distractor
+  // nobody would weigh is the new one.
+  check("Q19 blames the unweighable choices", q19Reasons.some((reason) => /no learner would seriously consider/.test(reason)), true);
+
+  // Q48's wrong choices are all the wrong kind of thing rather than absurd ones,
+  // and nothing in the wording gives that away. Pinned here so the gap stays
+  // visible instead of being assumed away.
+  check("Q48 is not detectable by this check", getChoiceBalanceIssue(q48), null);
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
