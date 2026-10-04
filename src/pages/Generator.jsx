@@ -5,7 +5,7 @@ import { useAuth } from "../contexts/AuthContext.jsx";
 import { validateReviewer } from "../data/reviewerRegistry.js";
 import { upsertCloudReviewer } from "../services/cloudReviewers.js";
 import { clearGeneratorDraft, getCloudReviewerCache, getGeneratorDraft, saveCloudReviewerCache, saveGeneratorDraft, saveLocalReviewer } from "../utils/storageUtils.js";
-import { inferQuestionStyle } from "../utils/quizUtils.js";
+import { getQuestionStyle, inferQuestionStyle } from "../utils/quizUtils.js";
 import { logClientError } from "../utils/errorLogger.js";
 
 const emptyQuestion = {
@@ -161,7 +161,7 @@ function normalizeReviewerJson(reviewer, options = {}) {
       id: question.id || index + 1,
       type,
       difficulty: ["easy", "medium", "hard"].includes(question.difficulty) ? question.difficulty : "medium",
-      style: QUESTION_STYLES.includes(question.style) ? question.style : inferQuestionStyle(question.question),
+      style: getQuestionStyle(question),
       topic: question.topic || "Generated Reviewer",
       question: question.question || "",
       choices: normalizedChoices,

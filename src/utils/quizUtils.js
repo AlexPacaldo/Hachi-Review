@@ -45,23 +45,15 @@ const RECALL_QUESTION_PATTERN = /^(what\s+(is|are|was|were)\b|(which\s+(term|con
 // BEST describes X?" stays an application question while "Which of the following
 // describes X?" stays a definition question.
 const DEFINING_QUESTION_PATTERN = /\b(which|what)\s+(of the following\s+)?(defines?|stands for|means|refers to|describes?)\b/i;
-// Reads the opening noun phrase of a stem that begins with an article, up to
-// seven words. The bound used to be five, which was short enough that a real
-// scenario whose verb sits further out, such as "A company handling classified
-// data wants to prevent brute-force attacks ...", had the match land on the
-// preposition before the verb and got filed as a definition. Widening the bound
-// lets the match reach the verb, while the connector check below still rejects
-// the stems that genuinely are noun phrases.
-const ARTICLE_SCENARIO_PATTERN = /^(?:a|an|the)\s+(?:[a-z][a-z'-]*\s+){0,6}[a-z][a-z'-]*\s+([a-z][a-z'-]*)\b/i;
-const NON_VERB_CONNECTORS = new Set(["of", "in", "on", "for", "and", "or", "to", "with", "that", "which", "whose", "as", "at", "by", "from", "between", "when", "while", "than", "then", "into", "upon", "per"]);
 const APPLICATION_MARKER_PATTERN = /\b(best|most appropriate|most likely|most correct|which concept is being|which principle is being|which approach is being|which requirement is being|what concept is being|what approach is being|what is being evaluated|what does this indicate|which benefit is|what business outcome|which technology best|which method best|which factor is|which type of)\b/i;
 
-// "This is a component of a wireless network ...", "This mobile risk category
-// covers ...", "It defines standards for ...". A preliminary examination states a
-// definition exactly this way, so it reads as conversational without being a
-// flashcard, and it is the single most common direct form in a real paper. It has
-// to be recognised before the application markers below, or a definition that
-// happens to contain an emphatic "BEST" gets filed as an application question.
+// "This is a component of a wireless network ...", "It defines standards for ...".
+// A preliminary examination states a definition exactly this way, so it reads as
+// conversational without being a flashcard, and it is the most common direct form
+// in a real paper. Only a stem that asks nothing after the definition is direct on
+// this evidence, so it has to be checked after hasNarrativeLead: "This is a serious
+// flaw: any employee can approve their own expense claim. Which risk is
+// demonstrated?" opens the same way but is an application item.
 const DEMONSTRATIVE_DEFINITION_PATTERN = /^(?:this|that|these|those|it)\b/i;
 
 // Opens a question outright. "In which of the following attacks does the attacker
@@ -75,13 +67,12 @@ const QUESTION_OPENER_PATTERN = /^(?:in\s+)?(?:which|what|who|whom|whose|when|wh
 // the concept, or asks about it from the first word. So the question is taken from
 // the last sentence, and anything in front of it is a lead clause worth reading.
 //
-// This is what catches the scenarios that open with a named subject, which the
-// article-anchored pattern above can never see: "Joan, a software developer,
-// included a password in a comment ... Which of the following risks is
-// demonstrated?". Reading the lead rather than the opening word is also why the
-// direct items stay direct. "In which of the following attacks do attackers
-// exploit web page vulnerabilities to force a browser ...?" is recall, not a
-// scenario, because the interrogative arrives before anything is described.
+// This catches the scenarios that open with a named subject, which no opening-word
+// rule can see: "Joan, a software developer, included a password in a comment ...
+// Which of the following risks is demonstrated?". Reading the lead is also why the
+// direct items stay direct. "In which of the following attacks do attackers exploit
+// web page vulnerabilities to force a browser ...?" is recall, not a scenario,
+// because the interrogative arrives before anything is described.
 function hasNarrativeLead(text) {
   const boundary = Math.max(text.lastIndexOf(". "), text.lastIndexOf("! "), text.lastIndexOf("? "));
 
@@ -98,15 +89,11 @@ export function inferQuestionStyle(questionText) {
 
   if (RECALL_QUESTION_PATTERN.test(text) || DEFINING_QUESTION_PATTERN.test(text)) return "direct";
 
+  if (hasNarrativeLead(text)) return "scenario";
+
   if (DEMONSTRATIVE_DEFINITION_PATTERN.test(text)) return "direct";
 
   if (QUESTION_OPENER_PATTERN.test(text)) return "direct";
-
-  if (hasNarrativeLead(text)) return "scenario";
-
-  const articleMatch = text.match(ARTICLE_SCENARIO_PATTERN);
-
-  if (articleMatch && !NON_VERB_CONNECTORS.has(articleMatch[1].toLowerCase())) return "scenario";
 
   return APPLICATION_MARKER_PATTERN.test(text) ? "scenario" : "direct";
 }
@@ -210,9 +197,15 @@ export function findChoiceBalanceIssues(questions) {
   return (questions || []).map((question) => getChoiceBalanceIssue(question)).filter(Boolean);
 }
 
+// The style tag the generator returns is a claim about the question. The wording
+// is the question. When the two disagree the wording wins, because it is what the
+// learner reads and what the Direct Questions Only filter acts on, and because the
+// claim cannot be checked: a tag is whatever the model felt like writing, so a
+// reviewer could report a mix it did not have and nothing would reveal it. The tag
+// is still asked for and still stored, so stored reviewers keep the field and the
+// model still reports its intent, but it is not what decides the bucket.
 export function getQuestionStyle(question) {
-  const raw = String(question?.style || "").trim().toLowerCase();
-  return ["scenario", "direct"].includes(raw) ? raw : inferQuestionStyle(question?.question);
+  return inferQuestionStyle(question?.question);
 }
 
 export function getReviewerStyleCounts(questions) {

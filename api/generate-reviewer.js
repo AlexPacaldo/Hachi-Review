@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { CHOICE_LETTERS, findChoiceBalanceIssues, getChoiceBalanceIssue, inferQuestionStyle } from "../src/utils/quizUtils.js";
+import { CHOICE_LETTERS, findChoiceBalanceIssues, getChoiceBalanceIssue, getQuestionStyle } from "../src/utils/quizUtils.js";
 
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -102,7 +102,6 @@ const DIFFICULTY_INSTRUCTIONS = {
   mixed: "Use a balanced mix of recall, concept, scenario, and application questions.",
   hard: "Favor deeper application, scenario analysis, tricky-but-fair distinctions, and synthesis across related ideas."
 };
-const QUESTION_STYLES = ["scenario", "direct"];
 const DIFFICULTY_LEVELS = ["easy", "medium", "hard"];
 // A generated reviewer is tagged across all three levels so that a learner who
 // filters to Hard still gets a real exam-length set instead of a handful of
@@ -723,14 +722,6 @@ function getQuestionPlanInstruction(count) {
 - The plan below is authoritative. Apply the difficulty and style listed for each question position instead of guessing, and keep the levels spread across the whole reviewer rather than clustered.`;
 }
 
-// Reviewers that predate the style tag, and hand-written ones, have nothing to
-// read, so the scenario wording itself decides the bucket.
-function resolveQuestionStyle(question) {
-  const raw = String(question?.style || "").trim().toLowerCase();
-  if (QUESTION_STYLES.includes(raw)) return raw;
-  return inferQuestionStyle(question?.question);
-}
-
 function buildPrompt({ sourceText, title, subject, instructions, questionCount, difficulty, questionType, fileName }) {
   const questionCountInstruction = getQuestionCountInstruction(questionCount);
   const difficultyInstruction = getDifficultyInstruction(difficulty);
@@ -932,7 +923,7 @@ function normalizeGeneratedReviewer(reviewer, fallback = {}) {
       id: index + 1,
       type,
       difficulty: DIFFICULTY_LEVELS.includes(question?.difficulty) ? String(question.difficulty).trim() : "medium",
-      style: resolveQuestionStyle(question),
+      style: getQuestionStyle(question),
       topic: String(question?.topic || fallback.subject || "Generated Reviewer").trim(),
       question: String(question?.question || "").trim(),
       choices: normalizedChoices,
@@ -986,10 +977,37 @@ function getDifficultyMix(questions) {
   (questions || []).forEach((question) => {
     const difficulty = DIFFICULTY_LEVELS.includes(question?.difficulty) ? question.difficulty : "medium";
     mix[difficulty] += 1;
-    mix[resolveQuestionStyle(question)] += 1;
+    mix[getQuestionStyle(question)] += 1;
   });
 
   return mix;
+}
+
+// The mix plan is only ever a request in the prompt, so comparing the returned
+// questions against it is the only place a model that ignored it can be caught.
+// The band has to be two sided and reasonably tight. A band derived from the
+// target the way the difficulty check derives one, at half the target, runs from
+// 17% to 84% here and waves through the most likely way to miss, which is a model
+// still writing the old scenario-heavy set at 65%. Twelve points either side of
+// the target catches that while leaving rounding and mild drift alone: 50 items
+// planned at 17 exam-style report under 6 or over 28.
+const STYLE_MIX_TOLERANCE = 0.12;
+
+function getStyleMixWarning(reviewer) {
+  const questions = reviewer?.questions || [];
+  const total = questions.length;
+
+  if (total < 10) return null;
+
+  const mix = getDifficultyMix(questions);
+  const share = mix.scenario / total;
+  const off = share < SCENARIO_MIX - STYLE_MIX_TOLERANCE || share > SCENARIO_MIX + STYLE_MIX_TOLERANCE;
+
+  if (!off) return null;
+
+  const skew = share < SCENARIO_MIX ? "scenarios" : "direct questions";
+
+  return `Exam-style mix came back at ${mix.scenario} exam-style and ${mix.direct} direct out of ${total}, well off the ${Math.round(SCENARIO_MIX * 100)}% this reviewer was planned at. It leans on ${skew}, so it is longer on one style than the paper it drills.`;
 }
 
 // A reviewer that lands far off the planned mix is still usable, but the
@@ -1385,6 +1403,10 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
   throw error;
 }
 
+// Exported so the mix warning can be tested without a live request. The handler
+// below is still the only thing Vercel calls.
+export { getStyleMixWarning, SCENARIO_MIX };
+
 export default async function handler(request, response) {
   const requestId = getRequestId();
   response.setHeader("X-Request-Id", requestId);
@@ -1546,6 +1568,7 @@ const reviewer = {
             ? `Added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - reviewer.questions.length} requested new questions.`
             : null,
           getDifficultyMixWarning(rebalancedReviewer),
+          getStyleMixWarning(rebalancedReviewer),
           getChoiceBalanceWarning(repairedCount, unresolvedCount)
         ].filter(Boolean).join(" ") || null
       });
@@ -1667,6 +1690,7 @@ const reviewer = {
         ? `Generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
         : null,
       getDifficultyMixWarning(rebalancedReviewer),
+      getStyleMixWarning(rebalancedReviewer),
       getChoiceBalanceWarning(repairedCount, unresolvedCount)
     ].filter(Boolean).join(" ") || null;
 

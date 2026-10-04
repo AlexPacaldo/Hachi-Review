@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 
 const MODULE_URL = pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href;
 
-const { inferQuestionStyle, countNegativeStemQuestions, getReviewerStyleCounts } = await import(MODULE_URL);
+const { inferQuestionStyle, getQuestionStyle, countNegativeStemQuestions, getReviewerStyleCounts } = await import(MODULE_URL);
 
 // [stem, expected style]. "direct" is recall of a term, definition, standard,
 // category or recommended practice. "scenario" puts the concept in a situation
@@ -71,6 +71,28 @@ const SYNTHETIC = [
   ["A retailer's site crashes whenever its database runs out of connections. Which component should be the first to be investigated?", "scenario"]
 ];
 
+// Statement forms. These are what a true/false, identification or flashcard
+// reviewer is made of, so every one of them is direct by definition, and they are
+// the shapes that catch a classifier reading too much into an opening noun
+// phrase. "A firewall filters inbound traffic ..." is a definition, not an agent
+// acting in a situation.
+const STATEMENTS = [
+  ["The standard that specifies wireless connectivity between fixed and portable devices is 802.11.", "direct"],
+  ["A firewall filters inbound traffic according to a rule set.", "direct"],
+  ["Encryption in transit protects data while it moves between two endpoints.", "direct"],
+  ["The OSI model separates the transport layer from the network layer.", "direct"],
+  ["Problem-Solution Fit measures whether a solution addresses the root cause of a problem.", "direct"],
+  ["A startup pivots when its core hypothesis is falsified.", "direct"],
+  ["Scalability refers to how well a system handles increased load.", "direct"]
+];
+
+// A demonstrative opener does not make a stem direct. Both of these read like a
+// definition until the trailing question is noticed.
+const DEMONSTRATIVE_SCENARIOS = [
+  ["This is a serious flaw: any employee can approve their own expense claim. Which risk is demonstrated?", "scenario"],
+  ["It has been three weeks and the pilot has no sign-ups. What should the team conclude?", "scenario"]
+];
+
 let failures = 0;
 let checks = 0;
 
@@ -95,6 +117,16 @@ SYNTHETIC.forEach(([stem, expected], index) => {
   check(`synthetic ${index + 1} ${expected}`, inferQuestionStyle(stem), expected);
 });
 
+section("statement forms stay direct");
+STATEMENTS.forEach(([stem, expected], index) => {
+  check(`statement ${index + 1} ${expected}`, inferQuestionStyle(stem), expected);
+});
+
+section("a demonstrative opener does not decide the style on its own");
+DEMONSTRATIVE_SCENARIOS.forEach(([stem, expected], index) => {
+  check(`demonstrative ${index + 1} ${expected}`, inferQuestionStyle(stem), expected);
+});
+
 section("the paper's own split is recoverable");
 {
   const questions = PAPER.map(([stem]) => ({ question: stem }));
@@ -108,6 +140,56 @@ section("the paper's own split is recoverable");
 section("an empty or missing stem is direct");
 check("empty string", inferQuestionStyle(""), "direct");
 check("undefined", inferQuestionStyle(undefined), "direct");
+
+// The tag the generator returns is a claim, and a claim cannot be checked. The
+// wording is the question, so a tag that disagrees is ignored rather than allowed
+// to report a mix the reviewer does not have. A scenario the model filed as direct
+// used to survive the Direct Questions Only filter, and a definition filed as
+// scenario used to be hidden from it.
+section("a wrong style tag cannot override the wording");
+{
+  const definition = PAPER[0][0];
+  const scenario = PAPER[15][0];
+
+  check("scenario tagged direct", getQuestionStyle({ question: scenario, style: "direct" }), "scenario");
+  check("definition tagged scenario", getQuestionStyle({ question: definition, style: "scenario" }), "direct");
+  check("garbage tag", getQuestionStyle({ question: scenario, style: "flavour" }), "scenario");
+  check("no tag", getQuestionStyle({ question: scenario }), "scenario");
+  check("empty question object", getQuestionStyle({}), "direct");
+
+  const everyTagWrong = PAPER.map(([question]) => ({ question, style: "scenario" }));
+  check("counts are unaffected by tags", getReviewerStyleCounts(everyTagWrong), { scenario: 12, direct: 23 });
+}
+
+// The mix plan is a request in the prompt, so the only thing standing between a
+// model that ignored it and a learner who never finds out is this check. The band
+// matters more than the warning: derived the way the difficulty check derives one
+// it runs 17% to 84%, which passes the old scenario-heavy set at 65% untouched.
+section("an off-plan mix is reported, an on-plan one is not");
+{
+  const { getStyleMixWarning, SCENARIO_MIX } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const reviewer = (scenario, total = 50) => ({
+    questions: Array.from({ length: total }, (_, index) => ({
+      question: index < scenario ? "A user clicks a link that installs software without asking. Which attack is demonstrated?" : "This is a component of a wireless network used to connect wireless devices to a wired LAN.",
+      difficulty: "medium"
+    }))
+  });
+
+  const warned = (reviewer) => Boolean(getStyleMixWarning(reviewer));
+
+  check("plan target is 34%", SCENARIO_MIX, 0.34);
+  check("35 items as measured on the paper", warned(reviewer(12, 35)), false);
+  check("50 items exactly on the plan", warned(reviewer(17, 50)), false);
+  check("rounding at a small size", warned(reviewer(8, 25)), false);
+  check("too many scenarios", warned(reviewer(28, 50)), true);
+  check("the old 65% scenario set", warned(reviewer(33, 50)), true);
+  check("just inside the upper band", warned(reviewer(23, 50)), false);
+  check("almost no scenarios", warned(reviewer(2, 50)), true);
+  check("under the reporting floor", warned(reviewer(0, 8)), false);
+}
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
