@@ -1623,6 +1623,14 @@ legend {
   gap: 10px;
 }
 
+/* The one grid in the app that never reflowed, so a pair of cards stayed side by
+   side down to the narrowest phone. */
+@media (max-width: 460px) {
+  .type-check-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .type-check-card {
   display: flex;
   align-items: center;
@@ -2665,7 +2673,7 @@ legend {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-top: 24px;
 }
@@ -2858,9 +2866,13 @@ legend {
   border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
 }
 
+/* minmax(0, ...) rather than a bare fraction, so the tracks can shrink with the
+   column instead of holding their content's minimum width. The card clips its
+   overflow, which turned the last few pixels of slack into silently cut off
+   buttons rather than a squeezed layout. */
 .history-card {
   display: grid;
-  grid-template-columns: 1.2fr 1.4fr auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) auto;
   gap: 18px;
   align-items: center;
 }
@@ -3416,7 +3428,7 @@ legend {
 
 .history-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -4166,6 +4178,16 @@ summary {
   border-radius: var(--radius-xl);
   box-shadow: none;
   overflow: hidden;
+}
+
+/* Stated after the clip above, which exists only for the corner radius. A dialog
+   taller than the screen was being centred with nothing to scroll it, so on a
+   720p display its top and bottom were both out of reach, and the tallest ones
+   list a row per place the reviewer exists, so they are the ones that grow. */
+.modal {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .reviewer-card,
@@ -5185,6 +5207,12 @@ strong {
     box-shadow: none;
     backdrop-filter: saturate(180%) blur(24px);
     -webkit-backdrop-filter: saturate(180%) blur(24px);
+    /* The sidebar is fixed to the full height of the window, and its links,
+       wordmark, recent list and theme toggle need about 807px between them. On a
+       768 or 720 tall display that is more than the window has, and with nothing
+       to scroll it the theme toggle was simply cut off with no way to reach it. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .brand {
@@ -5224,6 +5252,91 @@ strong {
   .notification-toasts {
     top: 76px;
     right: 24px;
+  }
+}
+
+/* Between the drawer at 760px and the fixed sidebar at 900px the bar has to hold
+   six links, the wordmark and the theme toggle on one line, which needs about
+   894px and so is always wider than the space it is given. It is the only
+   horizontal navigation in that range, and nothing clips it or scrolls it
+   sideways, so the overflow reached the document and dragged the whole page
+   sideways with it, sidebar included.
+
+   The link icons go rather than the labels: a 17px icon plus an 8px gap is a
+   fixed saving per link, which is the only one here that does not depend on how
+   wide the font measures. Placed after the rules above because several of them
+   sit later in the file than a block written next to the navbar would. */
+@media (min-width: 761px) and (max-width: 899px) {
+  .navbar {
+    gap: 12px;
+    padding: 0 20px;
+  }
+
+  .brand,
+  .nav-links {
+    min-width: 0;
+  }
+
+  .nav-links {
+    gap: 4px;
+  }
+
+  .nav-links a {
+    padding: 0 9px;
+  }
+
+  .nav-links a > svg {
+    display: none;
+  }
+
+  /* The account pill cannot sit on top of the bar at this width. The top spacer
+     already reserves a band under the bar for it to float in, so it moves down
+     into that and the toasts move below the pill rather than over it. */
+  .app-top-actions {
+    top: 84px;
+  }
+
+  .notification-toasts {
+    top: 136px;
+  }
+}
+
+/* Short windows run out of height long before they run out of width, and the
+   sidebar is the one column that cannot reflow because it is pinned to the edge
+   of the screen. Tightening it here is what keeps the whole sidebar, theme toggle
+   included, on a 768 or 720 tall display without a scrollbar. */
+@media (min-width: 900px) and (max-height: 800px) {
+  .navbar {
+    gap: 12px;
+    padding: 18px;
+  }
+
+  .brand {
+    min-height: 38px;
+    font-size: 1.5rem;
+  }
+
+  .brand-icon-wrap {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand-icon-wrap img {
+    width: 26px;
+    height: 26px;
+  }
+
+  .nav-links a {
+    min-height: 42px;
+  }
+
+  .sidebar-decks {
+    margin-top: 4px;
+    padding-top: 12px;
+  }
+
+  .sidebar-decks a {
+    min-height: 26px;
   }
 }
 
@@ -5422,7 +5535,8 @@ strong {
   .page.narrow,
   .quiz-layout,
   .generator-page,
-  .review-page {
+  .review-page,
+  .home-page {
     width: min(100% - 20px, 1180px);
   }
 
@@ -8062,9 +8176,10 @@ strong {
 }
 
 @media (min-width: 900px) {
+  /* 292px, matching the sidebar, which is what the other sticky banners use. */
   .usage-banner {
     top: 0;
-    margin-left: 300px;
+    margin-left: 292px;
   }
 }
 

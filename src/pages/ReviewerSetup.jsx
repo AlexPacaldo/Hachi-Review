@@ -119,32 +119,44 @@ export default function ReviewerSetup() {
   });
 
   if (!reviewer) {
-    return <EmptyState title="Unable to load this reviewer." message={reviewer?.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />;
+    return (
+      <div className="page narrow reviewer-setup-page">
+        <EmptyState title="Unable to load this reviewer." message={reviewer?.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />
+      </div>
+    );
   }
 
   // The list only holds a summary, so the questions are fetched here on open.
   if (isLoading) {
     return (
-      <EmptyState
-        title="Loading this reviewer"
-        message="Fetching the questions for this reviewer."
-        action={<Loader2 className="spinner" size={20} aria-hidden="true" />}
-      />
+      <div className="page narrow reviewer-setup-page">
+        <EmptyState
+          title="Loading this reviewer"
+          message="Fetching the questions for this reviewer."
+          action={<Loader2 className="spinner" size={20} aria-hidden="true" />}
+        />
+      </div>
     );
   }
 
   if (!hasQuestions) {
     return (
-      <EmptyState
-        title="Unable to load this reviewer."
-        message={loadError || "This reviewer has not been downloaded on this device. Open it while online to save it for later."}
-        action={<div className="button-row"><button className="button primary" type="button" onClick={reload}>Try again</button><Link className="button subtle" to="/home">Back to Reviewers</Link></div>}
-      />
+      <div className="page narrow reviewer-setup-page">
+        <EmptyState
+          title="Unable to load this reviewer."
+          message={loadError || "This reviewer has not been downloaded on this device. Open it while online to save it for later."}
+          action={<div className="button-row"><button className="button primary" type="button" onClick={reload}>Try again</button><Link className="button subtle" to="/home">Back to Reviewers</Link></div>}
+        />
+      </div>
     );
   }
 
   if (!reviewer.validation.isValid) {
-    return <EmptyState title="Unable to load this reviewer." message={reviewer.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />;
+    return (
+      <div className="page narrow reviewer-setup-page">
+        <EmptyState title="Unable to load this reviewer." message={reviewer.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />
+      </div>
+    );
   }
 
   const dogState = getReviewerDogState({ savedProgress, latestAttempt });

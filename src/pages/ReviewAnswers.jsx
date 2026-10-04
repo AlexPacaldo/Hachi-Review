@@ -36,7 +36,11 @@ export default function ReviewAnswers() {
   }, [attempt]);
 
   if (!attempt) {
-    return <EmptyState title="No attempt found" message="There is no completed attempt to review." action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />;
+    return (
+      <div className="page review-page">
+        <EmptyState title="No attempt found" message="There is no completed attempt to review." action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />
+      </div>
+    );
   }
 
   // A retry rebuilds a session from the reviewer's questions, which a summary

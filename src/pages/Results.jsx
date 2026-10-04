@@ -15,7 +15,11 @@ export default function Results() {
   const { reviewer, hasQuestions } = useReviewer(reviewerId);
 
   if (!attempt) {
-    return <EmptyState title="No results found" message="Complete a quiz to see results here." action={<Link className="button primary" to={`/reviewer/${reviewerId}`}>Start Reviewer</Link>} />;
+    return (
+      <div className="page narrow">
+        <EmptyState title="No results found" message="Complete a quiz to see results here." action={<Link className="button primary" to={`/reviewer/${reviewerId}`}>Start Reviewer</Link>} />
+      </div>
+    );
   }
 
   // A retry rebuilds a session from the reviewer's questions, which a summary
