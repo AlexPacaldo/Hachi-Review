@@ -45,9 +45,50 @@ const RECALL_QUESTION_PATTERN = /^(what\s+(is|are|was|were)\b|(which\s+(term|con
 // BEST describes X?" stays an application question while "Which of the following
 // describes X?" stays a definition question.
 const DEFINING_QUESTION_PATTERN = /\b(which|what)\s+(of the following\s+)?(defines?|stands for|means|refers to|describes?)\b/i;
-const ARTICLE_SCENARIO_PATTERN = /^(?:a|an|the)\s+(?:[a-z][a-z'-]*\s+){0,4}[a-z][a-z'-]*\s+([a-z][a-z'-]*)\b/i;
+// Reads the opening noun phrase of a stem that begins with an article, up to
+// seven words. The bound used to be five, which was short enough that a real
+// scenario whose verb sits further out, such as "A company handling classified
+// data wants to prevent brute-force attacks ...", had the match land on the
+// preposition before the verb and got filed as a definition. Widening the bound
+// lets the match reach the verb, while the connector check below still rejects
+// the stems that genuinely are noun phrases.
+const ARTICLE_SCENARIO_PATTERN = /^(?:a|an|the)\s+(?:[a-z][a-z'-]*\s+){0,6}[a-z][a-z'-]*\s+([a-z][a-z'-]*)\b/i;
 const NON_VERB_CONNECTORS = new Set(["of", "in", "on", "for", "and", "or", "to", "with", "that", "which", "whose", "as", "at", "by", "from", "between", "when", "while", "than", "then", "into", "upon", "per"]);
 const APPLICATION_MARKER_PATTERN = /\b(best|most appropriate|most likely|most correct|which concept is being|which principle is being|which approach is being|which requirement is being|what concept is being|what approach is being|what is being evaluated|what does this indicate|which benefit is|what business outcome|which technology best|which method best|which factor is|which type of)\b/i;
+
+// "This is a component of a wireless network ...", "This mobile risk category
+// covers ...", "It defines standards for ...". A preliminary examination states a
+// definition exactly this way, so it reads as conversational without being a
+// flashcard, and it is the single most common direct form in a real paper. It has
+// to be recognised before the application markers below, or a definition that
+// happens to contain an emphatic "BEST" gets filed as an application question.
+const DEMONSTRATIVE_DEFINITION_PATTERN = /^(?:this|that|these|those|it)\b/i;
+
+// Opens a question outright. "In which of the following attacks does the attacker
+// create a soft AP ...?" is recall even though it never names a term, because
+// there is no situation described for the learner to interpret first.
+const QUESTION_OPENER_PATTERN = /^(?:in\s+)?(?:which|what|who|whom|whose|when|where|why|how)\b/i;
+
+// The discriminator between the two styles is not the opening word but whether
+// the stem asserts anything before it asks. A scenario describes a situation and
+// then asks the learner to map it onto a concept; a direct item hands the learner
+// the concept, or asks about it from the first word. So the question is taken from
+// the last sentence, and anything in front of it is a lead clause worth reading.
+//
+// This is what catches the scenarios that open with a named subject, which the
+// article-anchored pattern above can never see: "Joan, a software developer,
+// included a password in a comment ... Which of the following risks is
+// demonstrated?". Reading the lead rather than the opening word is also why the
+// direct items stay direct. "In which of the following attacks do attackers
+// exploit web page vulnerabilities to force a browser ...?" is recall, not a
+// scenario, because the interrogative arrives before anything is described.
+function hasNarrativeLead(text) {
+  const boundary = Math.max(text.lastIndexOf(". "), text.lastIndexOf("! "), text.lastIndexOf("? "));
+
+  if (boundary < 0) return false;
+
+  return Boolean(text.slice(0, boundary).trim()) && QUESTION_OPENER_PATTERN.test(text.slice(boundary + 2));
+}
 
 export function inferQuestionStyle(questionText) {
   const text = String(questionText || "").trim();
@@ -56,6 +97,12 @@ export function inferQuestionStyle(questionText) {
   if (isNegativeStem(text)) return "scenario";
 
   if (RECALL_QUESTION_PATTERN.test(text) || DEFINING_QUESTION_PATTERN.test(text)) return "direct";
+
+  if (DEMONSTRATIVE_DEFINITION_PATTERN.test(text)) return "direct";
+
+  if (QUESTION_OPENER_PATTERN.test(text)) return "direct";
+
+  if (hasNarrativeLead(text)) return "scenario";
 
   const articleMatch = text.match(ARTICLE_SCENARIO_PATTERN);
 

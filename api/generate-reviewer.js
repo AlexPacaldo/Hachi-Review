@@ -108,24 +108,35 @@ const DIFFICULTY_LEVELS = ["easy", "medium", "hard"];
 // filters to Hard still gets a real exam-length set instead of a handful of
 // items, while the remaining questions stay reachable under Easy and Medium.
 const DIFFICULTY_MIX = { easy: 0.3, medium: 0.4, hard: 0.3 };
-const SCENARIO_MIX = 0.65;
+// A real preliminary examination paper leans on direct recall for the bulk of
+// its items and saves scenarios for where a situation genuinely has to be
+// identified. Measured on a 35-item paper (IT2511, 1st Term SY 2026-2027): 23
+// direct items against 12 scenario items, or about 34% exam-style. Setting the
+// target near two thirds the other way round produced reviewers that read like
+// an application casebook instead of the paper they are meant to drill.
+const SCENARIO_MIX = 0.34;
 const EXAM_STYLE_INSTRUCTIONS = `EXAM QUESTION STYLE:
 - Write questions the way a real college preliminary examination would, not like a flashcard list.
-- Do not let the set collapse into simple definition questions such as "What is X?", "Which of the following defines X?", or "What does X stand for?".
-- Prefer questions that ask how to APPLY a concept, principle, technology, process, framework, or term from the material.
+- A real preliminary examination is mostly direct items with a minority of scenarios. Target that shape: roughly a third of the items put the concept in a situation, and the rest ask for the definition, the term, the standard, the category, or the recommended practice straight from the material.
+- Never open a question with conversational tutoring wording such as "What is X?", "What does X stand for?", or "What is the difference between X and Y?" on their own. State the item as an examination question instead, using the direct and scenario forms below.
+- Do not let the set drift into all-application either. If every item opens with a situation, the reviewer no longer resembles the paper it is drilling.
 
-APPLICATION OVER MEMORIZATION:
-- For each major concept the material allows, prefer an application question over a recall question.
-- For example, instead of "What is Problem-Solution Fit?", ask: "A team checks whether a proposed solution actually addresses the root cause of a customer's problem. What concept is being evaluated?"
-- Not every question has to be scenario-based. Keep a deliberate mixture of scenario/application questions, concept identification, definitions, comparisons, numerical or factual questions, process and stage questions, terminology questions, and cause-and-effect questions.
-- Tag each question with style "scenario" when it puts the concept in a situation and asks the learner to apply or identify it, or style "direct" when it asks for a fact, term, definition, or comparison straight from the material.
+DIRECT ITEMS ARE THE MAJORITY:
+- A direct item is still a real examination question. It is not a flashcard. Open it by naming the thing being defined and give it in the voice of the paper: "This is the amount of information broadcast over a connection and is measured in terms of number of bits per second (bps).", "This type of attack intercepts traffic between two communicating parties.", "This category covers the analysis of the final binary to determine its source code and libraries.", "This tool creates a virtual tunnel interface to monitor encrypted traffic.", "It defines standards for wireless connectivity between fixed or portable devices."
+- Keep these other direct forms in circulation too, because examinations use them constantly: "Which of the following practices should be followed while configuring a wireless network to defend against potential attacks?", "Which of the following guidelines helps users protect sensitive data on their devices?", "In which of the following attacks does the attacker ...?", "Which of the following standards specifies ...?", "Which of the following categories covers ...?"
+- Distractors for a direct item come from the same subject area and are genuinely confusable, so the item is decided by knowing the term rather than by elimination.
 
-QUESTION STRUCTURE:
-- Whenever appropriate, open with a short realistic scenario involving a student, technician, developer, programmer, system administrator, business owner, entrepreneur, startup team, user, organization, customer, company, or project team.
+SCENARIO ITEMS:
+- For a scenario item, open with a short realistic situation. Name the subject directly instead of hiding it behind a vague noun, because examinations do both: "Joan, a software developer, included a password in a comment inside an application meant only for internal use. Which of the following risks is demonstrated?", "A user receives a text message claiming to be from their bank, containing a link that steals login credentials when clicked. Which of the following actions BEST prevents this?", "A company handling classified data wants to prevent brute-force attacks on its wireless network. Which protocol should be implemented?", "A user believes they are clicking a harmless button on a webpage, but the click performs a different action than expected. Which of the following attacks is demonstrated?"
 - Then ask which concept, solution, principle, technology, standard, framework, or approach BEST applies to the situation.
 - Keep scenarios to 1-3 sentences. Do not turn every question into a long story.
 - A scenario must give enough information to identify the answer without naming the concept outright.
 - When the material contains easily confused concepts, write scenarios that force the learner to tell them apart (for example macro vs micro vs super-macro, B2C vs B2B vs B2G, buyer vs user, demographic vs psychographic vs behavioral vs geographic segmentation, feature vs benefit, problem identification vs solution validation, design thinking vs lean startup, persist vs refine vs pivot).
+
+TAGGING:
+- Tag each question with style "scenario" when it puts the concept in a situation and asks the learner to apply or identify it, or style "direct" when it asks for a fact, term, definition, comparison, category, or recommended practice straight from the material.
+- A question that names a person, product, tool, or company and then says "This is ..." or "This type of ..." is still style "direct".
+- Follow the style listed for each position in the mix plan below. That plan is what the ratio is measured against, so do not override it with your own sense of balance.
 
 EXAM-LIKE WORDING:
 - Use concise, formal phrasing such as "Which among the following is...", "Which of the following BEST...", "Which of these factors...", "Who among the following commonly deals with...", "What concept is being demonstrated?", "Which approach is being applied?", "Which requirement is being addressed?", "What does this situation indicate?", "Which factor is primarily responsible?", "Which type of ... is being used?", and "What outcome is demonstrated?"
@@ -138,14 +149,15 @@ DIFFICULTY LEVELS:
 - medium: requires choosing the right concept, cause, process stage, or comparison from closely related alternatives.
 - hard: requires applying the concept to an unfamiliar situation, resolving a tricky-but-fair distinction, or combining two or more ideas from the material.
 - A hard question must still be answerable from the study material. Difficulty comes from the reasoning required, never from an unfair or missing detail.`;
-// Roughly a quarter of a real preliminary examination is the odd-one-out form,
-// "Which among the following is NOT a ...?", so the generator gets the form
-// spelled out. It inverts the usual rule: three choices genuinely belong to the
-// category and only one does not, which is the easiest way to ship three weak
-// distractors without noticing.
+// The odd-one-out form is worth keeping, because it is the one exam question
+// that discriminates between close concepts without needing a scenario. But it
+// is tagged "scenario", so it draws from the same budget as the application
+// items, and at the old 20-25% share it took most of that budget. The measured
+// paper used the form zero times in 35 items, so this is set low enough to stay
+// a garnish rather than become the exam-style section.
 const NEGATIVE_STEM_INSTRUCTIONS = `NEGATIVE-STEM QUESTIONS ("WHICH IS NOT"):
-- Real exams lean on the odd-one-out form. Real examples: "Which among the following is NOT a business model in the software industry?", "Which among the following is NOT a common situation of deliberate deviations?", "Which among the following is NOT a coding error?", "Which among the following is NOT a subfactor of reliability?", "Which among the following is NOT a product revision factor?".
-- Aim for roughly 20-25% of the multiple-choice questions to use this form, and spread them across the reviewer instead of clustering them in one section.
+- Real exams sometimes lean on the odd-one-out form. Real examples: "Which among the following is NOT a business model in the software industry?", "Which among the following is NOT a common situation of deliberate deviations?", "Which among the following is NOT a coding error?", "Which among the following is NOT a subfactor of reliability?", "Which among the following is NOT a product revision factor?".
+- Aim for roughly 10% of the multiple-choice questions to use this form, and spread them across the reviewer instead of clustering them in one section. This form consumes a position the plan tags "scenario", so do not spend the exam-style budget on it at the expense of ordinary application items.
 - Use the wordings examiners use: "Which among the following is NOT ...?", "Which of the following is NOT ...?", and "Which of the following is least likely to be ...?".
 - Always tag a negative-stem question with style "scenario", never "direct". It discriminates between close concepts, so it belongs with the exam-style pool. A position the plan tags "scenario" is satisfied by a negative-stem question.
 
