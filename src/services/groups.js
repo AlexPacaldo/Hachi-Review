@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabaseClient.js";
 import { SOCIAL_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
+import { GROUP_VISIBILITIES, isFriendVisible, resolveVisibility } from "./reviewerVisibility.js";
 
 const GROUPS_TABLE = "study_groups";
 const MEMBERS_TABLE = "group_members";
@@ -58,12 +59,13 @@ function isMissingRelation(error) {
 
 async function readGroupReviewers(groupId) {
   // The inner hint keeps the visibility rule, so this returns exactly what the
-  // shared_groups filter returned before the share table existed.
+  // shared_groups filter returned before the share table existed. Both group
+  // audiences count, because a reviewer can be shared with groups and friends.
   const { data, error } = await supabase
     .from(SHARES_TABLE)
     .select("reviewers!inner(*)")
     .eq("group_id", groupId)
-    .eq("reviewers.visibility", "group");
+    .in("reviewers.visibility", GROUP_VISIBILITIES);
 
   if (!error) return { rows: (data || []).map((row) => row.reviewers).filter(Boolean), error: null };
   if (!isMissingRelation(error)) return { rows: [], error };
@@ -71,7 +73,7 @@ async function readGroupReviewers(groupId) {
   const fallback = await supabase
     .from(REVIEWERS_TABLE)
     .select("*")
-    .eq("visibility", "group")
+    .in("visibility", GROUP_VISIBILITIES)
     .contains("shared_groups", sharedWithGroupFilter(groupId));
 
   return { rows: fallback.data || [], error: fallback.error || null };
@@ -89,7 +91,7 @@ async function readGroupReviewerCount(groupId) {
   const fallback = await supabase
     .from(REVIEWERS_TABLE)
     .select("id", { count: "exact", head: true })
-    .eq("visibility", "group")
+    .in("visibility", GROUP_VISIBILITIES)
     .contains("shared_groups", sharedWithGroupFilter(groupId));
 
   return { count: fallback.count || 0, error: fallback.error || null };
@@ -453,15 +455,19 @@ export async function listGroupReviewers(groupId) {
   };
 }
 
-// Detaches a reviewer from every group without touching visibility, so a
-// reviewer can move from group sharing back to friends or private cleanly.
-export async function clearReviewerGroupShares(userId, reviewerId) {
+// Detaches a reviewer from every group. visibility is only written when the
+// caller passes it, because dropping the last group changes the audience unless
+// the reviewer was also shared with friends.
+export async function clearReviewerGroupShares(userId, reviewerId, { visibility } = {}) {
   if (!supabase || !userId) return NOT_CONFIGURED();
   if (!reviewerId) return { error: new Error("This reviewer is missing an ID.") };
 
+  const updates = { shared_groups: null, updated_at: new Date().toISOString() };
+  if (visibility) updates.visibility = visibility;
+
   const { data, error } = await supabase
     .from(REVIEWERS_TABLE)
-    .update({ shared_groups: null, updated_at: new Date().toISOString() })
+    .update(updates)
     .eq("owner_id", userId)
     .eq("reviewer_id", reviewerId)
     .select()
@@ -477,7 +483,7 @@ export async function unshareReviewerFromGroup(userId, reviewerId, groupId) {
 
   const { data: reviewer, error: readError } = await supabase
     .from(REVIEWERS_TABLE)
-    .select("shared_groups")
+    .select("visibility, shared_groups")
     .eq("owner_id", userId)
     .eq("reviewer_id", reviewerId)
     .maybeSingle();
@@ -486,7 +492,11 @@ export async function unshareReviewerFromGroup(userId, reviewerId, groupId) {
   if (!reviewer) return { error: new Error("Could not find that reviewer in your account.") };
 
   const remaining = normalizeGroupIds(reviewer.shared_groups).filter((id) => id !== groupId);
-  return shareReviewerWithGroups(userId, reviewerId, remaining);
+  // Removing the last group leaves the friend audience exactly as it was, so a
+  // reviewer shared with both stays shared with friends.
+  return shareReviewerWithGroups(userId, reviewerId, remaining, {
+    friendsVisible: isFriendVisible(reviewer.visibility)
+  });
 }
 
 // Counts the reviewers shared into each of the given groups, one count-only
@@ -514,7 +524,10 @@ export async function listGroupReviewerCounts(groupIds) {
   return { data: counts, error: null };
 }
 
-export async function shareReviewerWithGroups(userId, reviewerId, groupIds) {
+// Shares with groups without disturbing the friend audience, so friendsVisible
+// has to say whether friends can still see this. Dropping the last group leaves
+// the reviewer private unless that was left on.
+export async function shareReviewerWithGroups(userId, reviewerId, groupIds, { friendsVisible = false } = {}) {
   if (!supabase || !userId) return NOT_CONFIGURED();
   if (!reviewerId) return { error: new Error("This reviewer is missing an ID.") };
 
@@ -523,7 +536,7 @@ export async function shareReviewerWithGroups(userId, reviewerId, groupIds) {
   const { data, error } = await supabase
     .from(REVIEWERS_TABLE)
     .update({
-      visibility: nextGroupIds.length ? "group" : "private",
+      visibility: resolveVisibility({ friends: friendsVisible, groups: Boolean(nextGroupIds.length) }),
       shared_groups: nextGroupIds.length ? nextGroupIds : null,
       updated_at: new Date().toISOString()
     })

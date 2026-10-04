@@ -110,6 +110,21 @@ requests per minute, which makes concurrency more damaging than total volume.
   Errors opt in to being shown with `isClientSafe`; everything else becomes
   `GENERIC_AI_FAILURE_MESSAGE`.
 
+## Sharing
+
+Friends and groups are two independent audiences on one `visibility` column, with
+`'friends+groups'` naming both. The read policy is the only thing that enforces
+it, so `'friends+groups'` needs `supabase-migration-2026-10-visibility-toggles.sql`.
+Without it the value writes fine and then reads as owner-only, because both
+policy branches still test for their own single value. The vocabulary lives in
+`src/services/reviewerVisibility.js`; read it from there rather than testing the
+string, so an unrecognised value cannot be mistaken for private.
+
+That policy is also the reason the migration exists as its own file rather than
+only as part of `supabase-schema.sql`. Postgres stops a multi-statement script at
+the first error, so one unrelated failure in the long schema file leaves the
+policy unapplied with nothing on screen to say so.
+
 Admin access is `app_metadata.admin = true` on the account. A row in
 `private.admin_emails` is the alternative, but an address is public the moment it is
 written down, so prefer the flag. Do not add an address to a committed SQL file.

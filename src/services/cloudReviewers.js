@@ -1,4 +1,12 @@
 import { supabase } from "../lib/supabaseClient.js";
+import {
+  isFriendVisible,
+  isGroupVisible,
+  normalizeVisibility,
+  readVisibilityToggles,
+  resolveVisibility,
+  VISIBILITY_PRIVATE
+} from "./reviewerVisibility.js";
 
 const REVIEWERS_TABLE = "reviewers";
 const REVIEWER_SUMMARIES_VIEW = "reviewer_summaries";
@@ -73,6 +81,13 @@ function getGroupScope(reviewer) {
   return ids.length ? ids : null;
 }
 
+// A reviewer listed in groups has to keep the group audience whatever the stored
+// value says, otherwise a save would leave a group list that nobody can see.
+function resolveAudience(visibility, groupScope) {
+  const toggles = readVisibilityToggles(visibility);
+  return { friends: toggles.friends, groups: toggles.groups || Boolean(groupScope) };
+}
+
 // Restoring progress needs the full question list, so a signed-in account with a
 // long history would otherwise pull every reviewer in one unbounded query. These
 // rows are large, so the fetch is batched to keep a sync from stalling.
@@ -115,9 +130,7 @@ export async function upsertCloudReviewer(userId, reviewer) {
 
   let groupScope = getGroupScope(reviewer);
   let sharedWith = getSharingScope(reviewer);
-  let visibility = groupScope
-    ? "group"
-    : reviewer.visibility === "friends" ? "friends" : "private";
+  let visibility = resolveVisibility(resolveAudience(reviewer.visibility, groupScope));
 
   // The stored row is the only current source for who a reviewer is shared
   // with, because sharing is recorded on the row and not in the payload. Most
@@ -130,9 +143,11 @@ export async function upsertCloudReviewer(userId, reviewer) {
 
     groupScope = existingGroups;
     sharedWith = getSharingScope(existing || {});
-    visibility = groupScope
-      ? "group"
-      : existing?.visibility === "friends" ? "friends" : "private";
+    // A reviewer that is not in the account yet has never been shared, so it
+    // starts private rather than inheriting the column default.
+    visibility = existing
+      ? resolveVisibility(resolveAudience(existing.visibility, groupScope))
+      : VISIBILITY_PRIVATE;
   }
 
   const payload = {
@@ -250,14 +265,17 @@ export async function listVisibleCloudReviewers(userId) {
   if (error) return { data: [], error };
 
   // RLS already limits rows to owner, accepted friends, and groups, but filter
-  // defensively so a group-shared reviewer never leaks into the wrong list.
+  // defensively so a shared reviewer never leaks into the wrong list. The two
+  // audiences are independent, so either one is enough to see the row.
   const visibleRows = (rows || []).filter((row) => {
     if (row.owner_id === userId) return true;
-    if (row.visibility === "group") {
+
+    if (isGroupVisible(row.visibility)) {
       const shared = Array.isArray(row.shared_groups) ? row.shared_groups.map(String) : [];
-      return shared.some((groupId) => groupMemberIds.includes(groupId));
+      if (shared.some((groupId) => groupMemberIds.includes(groupId))) return true;
     }
-    if (row.visibility !== "friends") return false;
+
+    if (!isFriendVisible(row.visibility)) return false;
     if (!friendIds.includes(row.owner_id)) return false;
     if (row.shared_with == null || (Array.isArray(row.shared_with) && !row.shared_with.length)) return true;
     return (row.shared_with || []).map(String).includes(userId);
@@ -312,7 +330,7 @@ export async function getCloudReviewerById(reviewerId, ownerId) {
       ...data.data,
       reviewerId: data.reviewer_id,
       ownerId: data.owner_id,
-      visibility: data.visibility || data.data?.visibility || "friends",
+      visibility: normalizeVisibility(data.visibility || data.data?.visibility),
       sharedWith: data.shared_with || data.data?.sharedWith || null,
       sharedGroups: data.shared_groups || data.data?.sharedGroups || null,
       updatedAt: data.updated_at
@@ -321,13 +339,16 @@ export async function getCloudReviewerById(reviewerId, ownerId) {
   };
 }
 
+// Writes the friend audience and which friends, leaving shared_groups alone so
+// that turning friends on or off never disturbs a group share. Group audiences
+// go through shareReviewerWithGroups in the groups service instead.
 export async function updateCloudReviewerVisibility(userId, reviewerId, { visibility, sharedWith }) {
   if (!supabase || !userId) {
     return { data: null, error: new Error("Supabase is not configured.") };
   }
 
   const payload = {
-    visibility: visibility === "private" ? "private" : "friends",
+    visibility: normalizeVisibility(visibility),
     shared_with: Array.isArray(sharedWith) && sharedWith.length ? sharedWith : null,
     updated_at: new Date().toISOString()
   };

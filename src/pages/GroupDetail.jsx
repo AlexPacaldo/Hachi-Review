@@ -34,6 +34,7 @@ import {
 } from "../services/groups.js";
 import { listFriendships, searchProfiles } from "../services/social.js";
 import { getCloudReviewerById } from "../services/cloudReviewers.js";
+import { isFriendVisible } from "../services/reviewerVisibility.js";
 import {
   getAllProgress,
   getAttemptHistory,
@@ -181,7 +182,9 @@ export default function GroupDetail() {
           ownerId: row.owner_id,
           ownerName: row.ownerName,
           updatedAt: row.updated_at,
-          visibility: "group",
+          // The row knows whether its owner also shared it with friends, and
+          // that audience has to survive into the cache.
+          visibility: row.visibility || "group",
           sharedGroups: row.shared_groups || null
         };
       });
@@ -386,8 +389,12 @@ export default function GroupDetail() {
     if (!pendingUnshare) return;
 
     const title = pendingUnshare.title;
+    // Stopping a group share only touches the group audience, so the owner keeps
+    // whatever friend sharing the reviewer already had.
     const result = await runAction("unshare", () =>
-      shareReviewerWithGroups(user.id, pendingUnshare.reviewer_id, pendingUnshare.remaining)
+      shareReviewerWithGroups(user.id, pendingUnshare.reviewer_id, pendingUnshare.remaining, {
+        friendsVisible: pendingUnshare.friendsVisible
+      })
     );
     setPendingUnshare(null);
 
@@ -782,6 +789,7 @@ export default function GroupDetail() {
                       onClick={() => setPendingUnshare({
                         title: card.title,
                         reviewer_id: reviewerId,
+                        friendsVisible: isFriendVisible(row.visibility),
                         remaining: (row.shared_groups || []).filter((id) => String(id) !== String(groupId))
                       })}
                     >
@@ -803,14 +811,15 @@ export default function GroupDetail() {
       ) : (
         <EmptyState
           title="No reviewers shared yet"
-          message="Open a reviewer you own and choose Groups from its sharing menu."
+          message="Open a reviewer you own and turn on Groups from its sharing menu."
           action={<Link className="button subtle" to="/library">Go to Library</Link>}
         />
       )}
 
       <p className="reviewer-menu-note">
         <UsersRound size={14} aria-hidden="true" />
-        Reviewers shared with a group are only visible to that group, not to your friends.
+        Group sharing is separate from friend sharing, so friends outside this group only see what the
+        owner shared with them directly.
       </p>
 
       {editOpen ? (

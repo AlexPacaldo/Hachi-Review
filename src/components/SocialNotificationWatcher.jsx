@@ -4,6 +4,7 @@ import { useNotifications } from "../contexts/NotificationContext.jsx";
 import { acceptFriendRequest, listFriendships, removeFriendship } from "../services/social.js";
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";
 import { listMyGroupMembers, listMyGroups } from "../services/groups.js";
+import { isFriendVisible, isGroupVisible, normalizeVisibility } from "../services/reviewerVisibility.js";
 import { mergeCloudReviewerCache, SOCIAL_DATA_CHANGED_EVENT, SOCIAL_NOTIFICATION_STATE_KEY } from "../utils/storageUtils.js";
 import { supabase } from "../lib/supabaseClient.js";
 
@@ -124,19 +125,34 @@ export default function SocialNotificationWatcher() {
         const acceptedByFriends = friendships.filter(
           (friendship) => friendship.requester_id === user.id && friendship.status === "accepted"
         );
-        // Group shares are handled separately below, so they must not also fire
-        // the plain "shared with you" notification.
-        const friendReviewers = (visibleResult.data || []).filter(
-          (row) => row.owner_id !== user.id && row.visibility !== "group"
+        const visibleRows = visibleResult.data || [];
+
+        // A reviewer shared with groups and with friends reaches this account
+        // through either audience. Group shares are announced per group below, so
+        // one that already announced a reviewer must not also fire the plain
+        // "shared with you" notification for it.
+        const groupAnnouncedIds = new Set(
+          visibleRows
+            .filter((row) => row.owner_id !== user.id && isGroupVisible(row.visibility))
+            .filter((row) => (row.shared_groups || []).some((groupId) => myGroupIds.has(String(groupId))))
+            .map((row) => row.reviewer_id)
         );
 
-        const cachedReviewers = (visibleResult.data || []).map((item) => {
+        const friendReviewers = visibleRows.filter(
+          (row) => (
+            row.owner_id !== user.id
+            && isFriendVisible(row.visibility)
+            && !groupAnnouncedIds.has(row.reviewer_id)
+          )
+        );
+
+        const cachedReviewers = visibleRows.map((item) => {
           const reviewerData = item.data || item;
           return {
             ...reviewerData,
             ownerId: item.owner_id,
             ...(item.ownerName ? { ownerName: item.ownerName } : {}),
-            visibility: item.visibility || reviewerData.visibility || "friends",
+            visibility: normalizeVisibility(item.visibility || reviewerData.visibility),
             sharedWith: Array.isArray(item.shared_with) ? item.shared_with : reviewerData.sharedWith || null,
             sharedGroups: Array.isArray(item.shared_groups) ? item.shared_groups : reviewerData.sharedGroups || null
           };
@@ -267,9 +283,11 @@ export default function SocialNotificationWatcher() {
               });
             });
 
-            // Reviewers shared into any group I belong to, excluding my own.
-            const groupReviewers = (visibleResult.data || []).filter(
-              (row) => row.owner_id !== user.id && row.visibility === "group"
+            // Reviewers shared into any group I belong to, excluding my own. This covers
+            // the group audience on its own and a reviewer shared with groups and
+            // friends, which is announced here rather than as a friend share.
+            const groupReviewers = visibleRows.filter(
+              (row) => row.owner_id !== user.id && isGroupVisible(row.visibility)
             );
 
             const currentKeys = new Set();
@@ -321,7 +339,7 @@ export default function SocialNotificationWatcher() {
                 actionLabel: "Open group",
                 actionHref: `/groups/${key.split(":")[1]}`
               });
-              if (!visibleResult.data?.some((row) => row.reviewer_id === reviewerId)) {
+              if (!visibleRows.some((row) => row.reviewer_id === reviewerId)) {
                 delete groupReviewerMeta[key];
               }
             });
@@ -338,8 +356,8 @@ export default function SocialNotificationWatcher() {
             });
             myGroupMembers.forEach((member) => groupMemberSeen.add(member.id));
 
-            (visibleResult.data || [])
-              .filter((row) => row.owner_id !== user.id && row.visibility === "group")
+            visibleRows
+              .filter((row) => row.owner_id !== user.id && isGroupVisible(row.visibility))
               .forEach((row) => {
                 (row.shared_groups || []).forEach((sharedGroupId) => {
                   const key = `${row.reviewer_id}:${sharedGroupId}`;

@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Check,
-  Cloud,
   Loader2,
   MoreVertical,
   Pencil,
@@ -25,6 +24,13 @@ import {
 import ConfirmModal from "./ConfirmModal.jsx";
 import { deleteReviewerSharesForOwner, listFriendships } from "../services/social.js";
 import { clearReviewerGroupShares, listMyGroups, shareReviewerWithGroups } from "../services/groups.js";
+import {
+  isFriendVisible,
+  isGroupVisible,
+  normalizeVisibility,
+  resolveVisibility,
+  VISIBILITY_PRIVATE
+} from "../services/reviewerVisibility.js";
 import { pushRemovedProgressToCloud, saveReviewerToAccount } from "../services/syncEngine.js";
 import {
   deleteLocalReviewer,
@@ -41,11 +47,14 @@ function getProfileName(profile) {
 export default function ReviewerMenu({ reviewer, user, configured, onMessage, onChanged }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [visibility, setVisibility] = useState(
-    reviewer.visibility === "private" ? "private" : reviewer.visibility === "group" ? "group" : "friends"
-  );
+  // Friends and groups are two independent audiences. Both are derived from the
+  // one stored value so a row that names either or both reads the same here.
+  const [visibility, setVisibility] = useState(normalizeVisibility(reviewer.visibility));
   const [sharedWith, setSharedWith] = useState(
     Array.isArray(reviewer.sharedWith) && reviewer.sharedWith.length ? reviewer.sharedWith : null
+  );
+  const [sharedGroups, setSharedGroups] = useState(
+    Array.isArray(reviewer.sharedGroups) ? reviewer.sharedGroups : []
   );
   const [sharingError, setSharingError] = useState(null);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
@@ -76,6 +85,14 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       : reviewer.source !== "built-in"
     : reviewer.source !== "cloud" && reviewer.source !== "built-in";
   const isBuiltIn = reviewer.source === "built-in";
+  const friendsVisible = isFriendVisible(visibility);
+  const groupsVisible = isGroupVisible(visibility);
+  const friendAudienceText = !friendsVisible
+    ? "Off"
+    : sharedWith ? `${sharedWith.length} chosen` : "All friends";
+  const groupAudienceText = groupsVisible
+    ? `${sharedGroups.length} group${sharedGroups.length === 1 ? "" : "s"}`
+    : "Off";
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [newTitle, setNewTitle] = useState(reviewer.title || "");
@@ -168,8 +185,9 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       if (!isMounted) return;
 
       if (data) {
-        setVisibility(data.visibility === "private" ? "private" : data.visibility === "group" ? "group" : "friends");
+        setVisibility(normalizeVisibility(data.visibility));
         setSharedWith(Array.isArray(data.shared_with) && data.shared_with.length ? data.shared_with : null);
+        setSharedGroups(Array.isArray(data.shared_groups) ? data.shared_groups : []);
       }
     }
 
@@ -259,43 +277,57 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     onMessage({ type: "success", text: "Reviewer renamed." });
   }
 
-  async function changeVisibility(nextVisibility) {
+  // Applies both audiences at once, so turning one off can never quietly take the
+  // other with it. Turning groups on goes through the picker instead, because a
+  // group audience needs groups to point at before it can be saved.
+  async function changeVisibility(next) {
     if (!user || !isOwner) return;
 
-    if (nextVisibility === "group") {
+    if (next.groups && !groupsVisible) {
       await openGroupPicker();
       return;
     }
 
-    setVisibilitySaving(true);
-    const { error } = await updateCloudReviewerVisibility(user.id, reviewer.reviewerId, {
-      visibility: nextVisibility,
-      sharedWith
-    });
+    const nextVisibility = resolveVisibility(next);
 
-    if (error) {
-      onMessage({ type: "error", text: error.message || "Could not update visibility." });
+    setVisibilitySaving(true);
+
+    // Leaving groups clears the group list in the same write, so a reviewer never
+    // keeps a group audience that no longer names any group.
+    const result = next.groups === groupsVisible
+      ? await updateCloudReviewerVisibility(user.id, reviewer.reviewerId, {
+          visibility: nextVisibility,
+          sharedWith: next.friends ? sharedWith : null
+        })
+      : await clearReviewerGroupShares(user.id, reviewer.reviewerId, { visibility: nextVisibility });
+
+    if (result.error) {
+      onMessage({ type: "error", text: result.error.message || "Could not update visibility." });
       setVisibilitySaving(false);
       return;
     }
 
-    if (nextVisibility === "private") {
+    if (nextVisibility === VISIBILITY_PRIVATE) {
       await deleteReviewerSharesForOwner(user.id, reviewer.reviewerId);
     }
 
-    // Leaving group sharing clears the group list without changing visibility,
-    // so switching to Groups then back to Friends works.
-    if (visibility === "group") {
-      await clearReviewerGroupShares(user.id, reviewer.reviewerId);
+    if (next.groups !== groupsVisible) {
+      setSharedGroups([]);
+      syncMetadata({ visibility: nextVisibility, sharedGroups: null });
+    } else {
+      syncMetadata({ visibility: nextVisibility, sharedWith: next.friends ? sharedWith : null });
     }
 
     setVisibility(nextVisibility);
-    syncMetadata({ visibility: nextVisibility, sharedGroups: null });
-    onMessage({
-      type: "success",
-      text: nextVisibility === "friends" ? "Visible to friends." : "Now private. Only you can see it."
-    });
+    onMessage({ type: "success", text: describeAudience(next) });
     setVisibilitySaving(false);
+  }
+
+  function describeAudience(next) {
+    const parts = [];
+    if (next.friends) parts.push(sharedWith ? `${sharedWith.length} friends` : "your friends");
+    if (next.groups) parts.push("your groups");
+    return parts.length ? `Shared with ${parts.join(" and ")}.` : "Now private. Only you can see it.";
   }
 
   async function openGroupPicker() {
@@ -310,6 +342,9 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
 
     const groupsResult = await listMyGroups(user.id);
     setGroupList(groupsResult.data || []);
+    // Without this a database that is missing the group tables looks exactly like
+    // an account with no groups, which sends the owner down the wrong path.
+    if (groupsResult.error) setSharingError(groupsResult.error.message);
     setGroupLoading(false);
   }
 
@@ -323,12 +358,17 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     if (!user || !isOwner || groupSaving) return;
 
     if (!selectedGroups.length) {
-      onMessage({ type: "error", text: "Pick at least one group, or switch back to Private." });
+      onMessage({ type: "error", text: "Pick at least one group, or turn Groups off." });
       return;
     }
 
     setGroupSaving(true);
-    const { error } = await shareReviewerWithGroups(user.id, reviewer.reviewerId, selectedGroups);
+    // The friend audience is separate, so saving groups has to say whether it
+    // should survive.
+    const nextVisibility = resolveVisibility({ friends: friendsVisible, groups: true });
+    const { error } = await shareReviewerWithGroups(user.id, reviewer.reviewerId, selectedGroups, {
+      friendsVisible
+    });
 
     if (error) {
       onMessage({ type: "error", text: error.message || "Could not save group sharing." });
@@ -336,13 +376,16 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       return;
     }
 
-    setVisibility("group");
-    syncMetadata({ visibility: "group", sharedGroups: selectedGroups });
+    setVisibility(nextVisibility);
+    setSharedGroups(selectedGroups);
+    syncMetadata({ visibility: nextVisibility, sharedGroups: selectedGroups });
     setGroupSaving(false);
     setGroupOpen(false);
     onMessage({
       type: "success",
-      text: `Shared with ${selectedGroups.length} group${selectedGroups.length === 1 ? "" : "s"}.`
+      text: friendsVisible
+        ? `Shared with ${selectedGroups.length} group${selectedGroups.length === 1 ? "" : "s"} and your friends.`
+        : `Shared with ${selectedGroups.length} group${selectedGroups.length === 1 ? "" : "s"}.`
     });
   }
 
@@ -350,8 +393,10 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     if (!user || !isOwner) return;
 
     setVisibilitySaving(true);
+    // Widening the friend audience must not close the group one.
+    const nextVisibility = resolveVisibility({ friends: true, groups: groupsVisible });
     const { error } = await updateCloudReviewerVisibility(user.id, reviewer.reviewerId, {
-      visibility: "friends",
+      visibility: nextVisibility,
       sharedWith: null
     });
 
@@ -361,9 +406,13 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       return;
     }
 
+    setVisibility(nextVisibility);
     setSharedWith(null);
-    syncMetadata({ sharedWith: null });
-    onMessage({ type: "success", text: "Shared with all your friends." });
+    syncMetadata({ visibility: nextVisibility, sharedWith: null });
+    onMessage({
+      type: "success",
+      text: groupsVisible ? "Shared with all your friends and groups." : "Shared with all your friends."
+    });
     setVisibilitySaving(false);
   }
 
@@ -398,8 +447,9 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
     }
 
     setPickSaving(true);
+    const nextVisibility = resolveVisibility({ friends: true, groups: groupsVisible });
     const { error } = await updateCloudReviewerVisibility(user.id, reviewer.reviewerId, {
-      visibility: "friends",
+      visibility: nextVisibility,
       sharedWith: nextSharedWith
     });
 
@@ -409,8 +459,9 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       return;
     }
 
+    setVisibility(nextVisibility);
     setSharedWith(nextSharedWith);
-    syncMetadata({ sharedWith: nextSharedWith });
+    syncMetadata({ visibility: nextVisibility, sharedWith: nextSharedWith });
     setPickSaving(false);
     setPickOpen(false);
     onMessage({
@@ -538,55 +589,49 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
             <>
               <div className="reviewer-menu-section">
                 <span className="reviewer-menu-label">Visibility</span>
-                <div className="reviewer-menu-seg">
+                <div className="reviewer-menu-toggles">
                   <button
                     type="button"
-                    className={visibility === "friends" ? "active" : ""}
-                    onClick={() => changeVisibility("friends")}
+                    role="switch"
+                    aria-checked={friendsVisible}
+                    className={`reviewer-menu-toggle${friendsVisible ? " on" : ""}`}
+                    onClick={() => changeVisibility({ friends: !friendsVisible, groups: groupsVisible })}
                     disabled={visibilitySaving}
                   >
                     <Users size={15} aria-hidden="true" />
-                    Friends can see
+                    <span className="reviewer-menu-toggle-copy">
+                      <strong>Friends</strong>
+                      <small>{friendAudienceText}</small>
+                    </span>
+                    <span className="reviewer-menu-switch" aria-hidden="true" />
                   </button>
+
                   <button
                     type="button"
-                    className={visibility === "private" ? "active" : ""}
-                    onClick={() => changeVisibility("private")}
-                    disabled={visibilitySaving}
-                  >
-                    <Cloud size={15} aria-hidden="true" />
-                    Private
-                  </button>
-                  <button
-                    type="button"
-                    className={visibility === "group" ? "active" : ""}
-                    onClick={() => changeVisibility("group")}
+                    role="switch"
+                    aria-checked={groupsVisible}
+                    className={`reviewer-menu-toggle${groupsVisible ? " on" : ""}`}
+                    onClick={() => changeVisibility({ friends: friendsVisible, groups: !groupsVisible })}
                     disabled={visibilitySaving}
                   >
                     <UsersRound size={15} aria-hidden="true" />
-                    Groups
+                    <span className="reviewer-menu-toggle-copy">
+                      <strong>Groups</strong>
+                      <small>{groupAudienceText}</small>
+                    </span>
+                    <span className="reviewer-menu-switch" aria-hidden="true" />
                   </button>
                 </div>
+                <p className="reviewer-menu-note">
+                  {friendsVisible || groupsVisible
+                    ? "Turn both off to make this private to you."
+                    : "Only you can see this."}
+                </p>
               </div>
 
-              {visibility === "group" ? (
+              {friendsVisible ? (
                 <div className="reviewer-menu-section">
-                  <span className="reviewer-menu-label">Shared with</span>
-                  <div className="reviewer-menu-seg">
-                    <button type="button" onClick={openGroupPicker}>
-                      <UsersRound size={15} aria-hidden="true" />
-                      Choose groups
-                    </button>
-                  </div>
-                  <p className="reviewer-menu-note">
-                    Only members of the groups you pick can see this.
-                  </p>
-                </div>
-              ) : null}
-
-              {visibility === "friends" ? (
-                <div className="reviewer-menu-section">
-                  <span className="reviewer-menu-label">Shared with</span>
+                  <span className="reviewer-menu-label">Shared with friends</span>
                   <div className="reviewer-menu-seg">
                     <button
                       type="button"
@@ -610,6 +655,23 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
                     {sharedWith
                       ? `${sharedWith.length} friend${sharedWith.length === 1 ? "" : "s"} can see this.`
                       : "Visible on every accepted friend's Home."}
+                  </p>
+                </div>
+              ) : null}
+
+              {groupsVisible ? (
+                <div className="reviewer-menu-section">
+                  <span className="reviewer-menu-label">Shared with groups</span>
+                  <div className="reviewer-menu-seg single">
+                    <button type="button" onClick={openGroupPicker}>
+                      <UsersRound size={15} aria-hidden="true" />
+                      Choose groups
+                    </button>
+                  </div>
+                  <p className="reviewer-menu-note">
+                    {sharedGroups.length
+                      ? `Members of ${sharedGroups.length} group${sharedGroups.length === 1 ? "" : "s"} can see this.`
+                      : "Pick the groups that can see this."}
                   </p>
                 </div>
               ) : null}
@@ -781,7 +843,10 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
             <div className="modal-head">
               <div>
                 <h2 id="reviewer-group-pick-title">Share with groups</h2>
-                <p className="muted">Every member of a group you pick can see "{reviewer.title}".</p>
+                <p className="muted">
+                  Every member of a group you pick can see "{reviewer.title}".
+                  {friendsVisible ? " Your friends can already see it too." : null}
+                </p>
               </div>
               <button className="icon-button small" type="button" onClick={() => setGroupOpen(false)} aria-label="Close">
                 <X size={16} aria-hidden="true" />

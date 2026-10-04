@@ -369,8 +369,9 @@ alter table public.reviewers add column if not exists visibility text not null d
 alter table public.reviewers add column if not exists shared_with jsonb;
 
 -- Group sharing reuses the same row as the reviewer. shared_groups holds the
--- study_groups ids this reviewer is shared with, and visibility = 'group'
--- means "no friends, groups only".
+-- study_groups ids this reviewer is shared with. visibility names the audiences
+-- the reviewer is shared with: 'friends', 'group', or 'friends+groups' for both,
+-- so a group share adds to the friend audience instead of replacing it.
 alter table public.reviewers add column if not exists shared_groups jsonb;
 
 create index if not exists reviewers_visibility_owner_idx
@@ -518,12 +519,12 @@ alter table public.reviewers enable row level security;
 
 grant select, insert, update, delete on public.reviewers to authenticated;
 
--- Anyone can see their own reviewers, plus reviewers that their accepted friends
--- chose to share. A shared reviewer is visible when visibility = 'friends' and it
--- was shared with all friends (shared_with is null/empty) or with this user
--- specifically (shared_with contains the current user id). Reviewers shared to a
--- group are visible to every member of a group listed in shared_groups, as long
--- as the owner is still in that group.
+-- Anyone can see their own reviewers, plus reviewers their accepted friends or
+-- their groups chose to share. Those are two independent audiences, so visibility
+-- names either or both: 'friends', 'group', or 'friends+groups'. A friend sees
+-- the reviewer when shared_with is null/empty or contains the current user id,
+-- and a group member sees it when it is shared into a group the owner is still in.
+-- Either audience on its own is enough.
 drop policy if exists "Users can read own or friends' shared reviewers" on public.reviewers;
 create policy "Users can read own or friends' shared reviewers"
 on public.reviewers
@@ -532,7 +533,7 @@ to authenticated
 using (
   auth.uid() = owner_id
   or (
-    visibility = 'friends'
+    visibility in ('friends', 'friends+groups')
     and exists (
       select 1
       from public.friendships
@@ -549,7 +550,7 @@ using (
     )
   )
   or (
-    visibility = 'group'
+    visibility in ('group', 'friends+groups')
     and shared_groups is not null
     and shared_groups <> '[]'::jsonb
     -- Each id is validated before it is cast, so one malformed value in
