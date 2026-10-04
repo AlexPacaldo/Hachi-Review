@@ -183,7 +183,9 @@ NEGATIVE-STEM PITFALLS:
 - Never use "None of the above", "All of the above", "Both A and B", or similar giveaways in a negative-stem question. Three of the four choices must be defensibly correct for the NOT reading to work.
 - A negative-stem question is a discrimination task, so it is normally "medium" or "hard". Do not force one into an "easy" position unless the material makes the odd one out unmistakable.
 - If the material cannot support three genuine members of a category, do not write the negative-stem question at all. Pick a different form instead of inventing members.
-- Never repeat the stem's category inside the choices, and never let the three true choices read as obviously weaker or more vague than the odd one out.`;
+- Never repeat the stem's category inside the choices, and never let the three true choices read as obviously weaker or more vague than the odd one out.
+- The odd one out must also match the three true choices in length, grammatical shape, and tone. It is already the most distinct option in the item, so any second difference hands it over as well.
+- In particular, the odd one out must not be the only choice claiming something absolute ("elimination of all risks", "guarantees", "always"). Three genuine members of a category are stated plainly, and an absolute claim is usually the sign that the option is not a member at all.`;
 const EXPLANATION_INSTRUCTIONS = `EXPLANATION QUALITY - CRITICAL:
 - An explanation must TEACH the concept behind the answer. It must never simply repeat or paraphrase the correct answer.
 - Every explanation should do at least 2-3 of the following: explain the underlying concept; explain why the correct answer fits this question; connect the concept to the scenario; explain the relationship between the ideas; clarify the distinction from a closely related concept; explain why the situation leads to this answer; give a simple example when useful.
@@ -225,7 +227,33 @@ ANSWER CHOICE BALANCE - CRITICAL:
 - Do not add unnecessary detail to the correct answer just to make it accurate. Match its information density to the distractors: if the correct answer carries three components, the distractors need a comparable level of detail.
 - Every choice must be similar in topic and level of specificity. All four must be real concepts from the same subject area, so a learner who half-understood the lesson finds all four plausible.
 - Never make the correct answer the only choice that uses technical terminology, the only professionally worded choice, or the only grammatically complete sentence when the others are fragments.
-- Never repeat the correct choice's wording in the question stem, and never let the stem hint at which choice is right.
+- Write all four options as terse noun phrases of comparable length, the way a real paper writes them. One full sentence sitting among three fragments is a tell on its own.
+
+BUILD THE OPTIONS AS SIBLINGS - THIS IS WHAT A REAL PAPER DOES:
+- Draw all four options from ONE closed list that the material itself names, so that no option is out of place. Real examples: "802.11e / 802.11g / 802.11n / 802.11d"; "WEP / LEAP / WPA3 / CCMP"; "Airtun-ng / Aircrack-ng / Easside-ng / Packetforge-ng"; "M8 Code Tampering / M9 Reverse Engineering / M4 Insecure Authentication / M10 Extraneous Functionality"; "BlueSniff / BluePrinting / KNOB Attack / MAC Spoofing Attack".
+- Options that differ in a single token are the strongest items you can write, because shape carries no information at all.
+- Rotate one option vocabulary across the whole reviewer. Reusing the same term list in several questions is what stops a learner solving the paper by elimination or by spotting the one unfamiliar word.
+- If the material names a family, do not reach outside it for a distractor. Ask which member of the family the stem describes and offer four members.
+
+THE THREE DISTRACTORS MUST NOT BE THE SAME IDEA THREE TIMES:
+- This is the most damaging failure after an off-topic distractor, because it inverts the item: the correct answer becomes the only distinct option and a learner picks it without reading. "Strictly local or regional", "Limited exclusively to municipal town boundaries", and "Restricted by physical inventory and store locations" are one wrong idea written three times.
+- Give each distractor a different reason to be wrong. Siblings from the same list, a plausible sibling concept from another part of the material, and a common misconception all fail in different ways.
+- Never let all three distractors be restrictive, prohibitive, dismissive, or absolute while the correct answer is the only option that recommends something. Tone is a tell just as much as length is.
+- Never let the correct answer be the only choice claiming something absolute ("all", "every", "always", "never", "completely", "guarantees", "only"). Real members of a list and real recommendations are not stated as universals, so the absolute one is the one that does not belong. This is the usual way a "which is NOT" item gives itself away, where length and tone both look ordinary.
+- A learner who knows only which lesson this is from must not be able to eliminate three options. Each of the four has to be defensible on the material.
+
+NEVER WRITE AN ITEM WITH TWO ANSWERS:
+- Never let two options be partly right at once, or let them differ only by a synonym. "Popularized blockchain-based financial services and digital wallets through Coins.ph" and "Expanded digital payments and financial inclusion through PayMaya" cannot both be the answer to one stem, and a learner who knows the material still cannot choose.
+- Overlapping wording is the usual sign. If two options share most of their content words, one of them is wrong about the facts you were given.
+
+DO NOT ECHO THE QUESTION OR THE TOPIC HEADING:
+- Never repeat the question's own wording inside the correct choice, and never spell the topic heading back at the learner. A stem about "Customer Problem Fit" whose correct answer begins "How well the startup's idea aligns with real customer needs" is answered by a learner who only read the stem and the options.
+- The correct choice must share no more vocabulary with the stem and topic than the distractors do.
+- Naming a technical fingerprint in the stem is allowed and is how a real paper forces a match, as in a stem that supplies "GCMP-256 for encryption and HMAC-SHA-384 for authentication" and asks which protocol is employed. That is different from restating the topic heading, because the fingerprint is the thing being tested.
+
+PREFER CONSTRAINTS OVER ELIMINATION:
+- Where the material supports it, put two requirements in the stem and make sure exactly one option satisfies both while each other option satisfies only one. "Hidden from discovery scans but still connectable by paired devices" is a far better item than four options of which three are simply wrong.
+- A scenario that names a specific artefact, such as a password left in a code comment or a session token stored in plain text, gives the learner something concrete to map onto a concept.
 
 UNBALANCED EXAMPLE, DO NOT WRITE THIS:
 - Question: "How do emerging technologies drive sustainability and social responsibility in modern business?"
@@ -242,28 +270,23 @@ BALANCED VERSION, WRITE SOMETHING LIKE THIS:
 - D. By replacing digital systems with conventional business practices
 - Every choice now carries the same amount of information and looks equally plausible.
 
-DISTRACTOR QUALITY:
+OFF-TOPIC AND ABSURD DISTRACTORS ARE THE OTHER HALF OF THIS:
 - Every distractor must come from the SAME subject area as the question. Importing a distractor from an unrelated field is the most common way this section fails, and it gives the item away even when the lengths match.
-- For a question about customer insights in technopreneurship, the other three choices must be other real concepts from technopreneurship or customer research. Never "software source code architectures", "government patent approvals", "corporate accounting", or anything from a different subject.
+- For a question about customer insights in technopreneurship, the other three choices must be other real concepts from technopreneurship or customer research. Never "software source code architectures", "government patent approvals", "corporate accounting", "server hardware specifications", "quarterly dividend declarations", or anything from a different subject. Those are not distractors, they are eliminations.
 - Incorrect choices must be plausible enough that a student who does not fully understand the material could reasonably consider them.
-- Avoid obviously negative or extreme wording such as "By eliminating all technology", "By doing nothing", "By always increasing costs", "By completely removing users", or "By never using digital systems", unless the source material specifically supports those concepts.
 - Distractors should represent realistic misunderstandings, related concepts, alternative approaches, or other concepts from the same topic.
 - Every distractor must be clearly incorrect according to the material, and wrong for a defensible reason rather than obviously out of scope.
-- Never use absurd or joke distractors. A distractor must be something a confused learner would genuinely write.
+- Never use absurd or joke distractors. A distractor must be something a confused learner would genuinely write. At most one obviously weak option per item, never three.
 - Never make the correct answer the only positive-sounding option while the distractors read as obviously negative.
 - Never use "All of the above", "None of the above", "Both A and B", or similar giveaways unless those exact choices already exist in an original quiz.
 
-DISTRACTOR LENGTH RULE, THE ONE THAT MATTERS MOST:
-- Before returning, count the words in all four choices. If the correct choice is more than about two words longer than the others, rewrite the distractors until the four match.
-- Do not shorten a correct answer that is naturally wordy just to make it fit. Lengthen the distractors to meet it, or reword all four so they carry one idea each.
-- A correct answer may be one or two words longer. It must never be the clear outlier.
-
 DISTRACTOR DESIGN EXAMPLE:
-- If the answer is "Demographic segmentation", the other choices should be "Behavioral segmentation", "Psychographic segmentation", and "Geographic segmentation": four real methods from the same topic, only one of which fits the scenario.
+- If the answer is "Demographic segmentation", the other choices should be "Behavioral segmentation", "Psychographic segmentation", and "Geographic segmentation": four real methods from the same topic, only one of which fits the scenario. They must be four different methods, not four phrasings of the one that is wrong.
 
 ANSWER CHOICE AUDIT, FOR EVERY QUESTION:
-- Ask: "Could a student guess the correct answer without knowing the material, just by picking the longest or most detailed option?" The answer must be NO.
-- Rewrite the choices, keeping the same correct concept, if any of these are true: the correct answer is the longest; it is the most technical; it is the only positive-sounding option; the incorrect choices use obviously negative wording; the correct answer is the only grammatically complete sentence; it carries more examples than every other choice; it is the only choice that directly repeats terminology from the question.
+- Ask: "Could a student guess the correct answer without knowing the material, just by picking the longest, most detailed, most positive, or most on-topic-sounding option?" The answer must be NO.
+- Then ask: "Could a student guess it by noticing that the other three options are all variations of the same idea, all negative in tone, or all from a different subject?" The answer must be NO.
+- Rewrite the choices, keeping the same correct concept, if any of these are true: the correct answer is the longest or the shortest; it is the most technical; it is the only positive-sounding option; the incorrect choices use obviously negative wording; the correct answer is the only grammatically complete sentence; it carries more examples than every other choice; it is the only choice that claims something absolute; it is the only choice that repeats wording from the stem or the topic heading; two choices are so similar that both look correct; two or more distractors are the same idea reworded.
 - The student must understand the material to pick the answer, not read the formatting of the choices.
 
 ANSWER POSITION RULES:
@@ -396,6 +419,7 @@ const choiceRepairSchema = {
 function buildChoiceRepairPrompt(issues, sourceText) {
   const workOrder = issues.map((issue) => [
     `id ${issue.id}: ${issue.question}`,
+    issue.topic ? `- The topic heading shown above this question is "${issue.topic}".` : null,
     `- The current choices give it away because ${issue.reasons.join("; ")}.`,
     `- A: ${issue.choices.A}`,
     `- B: ${issue.choices.B}`,
@@ -403,22 +427,47 @@ function buildChoiceRepairPrompt(issues, sourceText) {
     `- D: ${issue.choices.D}`,
     `- The correct answer is currently ${issue.correctAnswer}.`,
     `- The current explanation is: ${issue.explanation}`
-  ].join("\n")).join("\n\n");
+  ].filter(Boolean).join("\n")).join("\n\n");
 
-  return `The following multiple-choice questions were written so that the answer gives itself away by its shape. Rewrite just those questions.
+  // The work order already says which rule each item broke, so this section only has
+  // to name the families of failure rather than assert one that is no longer true.
+  const kinds = new Set(issues.flatMap((issue) => issue.kinds || []));
+  const whatWentWrong = [
+    kinds.has("overlong") || kinds.has("overshort") || kinds.has("clause")
+      ? "- Some items put the answer in a visibly different shape: longer, shorter, or the only one carrying a list. Read the four options and ask which one a learner could pick without the subject."
+      : null,
+    kinds.has("echo") || kinds.has("topic-restatement")
+      ? "- Some items wrote the answer in the question's own words, or spelled the topic heading back at the learner."
+      : null,
+    kinds.has("polarity")
+      ? "- Some items made all three distractors negative or prohibitive, leaving the correct answer as the only option that recommends anything."
+      : null,
+    kinds.has("absolutist")
+      ? "- Some items made the correct answer the only choice claiming something absolute. The real options it sits beside are not stated that way."
+      : null,
+    kinds.has("near-duplicate")
+      ? "- Some items wrote the correct answer and a distractor so close that both are defensible, which leaves the question with two possible answers. Keep the correct concept, and rewrite whichever option overlaps it."
+      : null
+  ].filter(Boolean);
+
+  return `The following multiple-choice questions were written so that the answer gives itself away without the learner knowing the subject. Rewrite just those questions.
 
 ${workOrder}
 
 WHAT WENT WRONG:
-- The correct choice is visibly longer, more detailed, or the only one carrying more than one idea, so a learner can pick it without knowing the subject.
-- In these items the distractors are also drawn from unrelated subject areas, which makes them easy to rule out rather than hard to choose between.
+${whatWentWrong.length ? whatWentWrong.join("\n") : "- The shape of the options points at the answer before the subject is read."}
 
 REWRITE EACH QUESTION SO THAT:
 - Keep the same concept as the correct answer. Do not change what the question is really asking, and do not change which answer is correct. Only the wording and the explanations get rewritten.
 - Keep the same id, and return exactly the ${issues.length} question(s) listed above and nothing else.
-- Match all four choices to each other on length, detail, and specificity. Count the words and aim for all four to land within about two words of each other.
-- Keep all four choices in the same subject area as the question. A learner who half-understood the lesson must find all four plausible, so never import a distractor from an unrelated field.
-- Never repeat the question's own wording inside the correct choice.
+- Draw all four options from one closed list the material actually names, so that no option is out of place: sibling standards, sibling protocols, sibling tools, sibling categories, or sibling codes. Options that differ in one token are the strongest you can write.
+- The three distractors must fail for three different reasons. Never offer three rewordings of the same wrong idea, because that leaves the correct answer as the only distinct option.
+- Never let all three distractors be negative, prohibitive, or dismissive while the correct answer is the only option that recommends something.
+- Keep all four choices in the same subject area as the question, at the same level of specificity, and in the same register. Never import a distractor from an unrelated field, and never write an option a confused learner would not seriously consider.
+- Never let two options be partly right at once, or differ only by a synonym. If two options share most of their content words, one of them is wrong about the material.
+- Match all four choices to each other on length, detail, and specificity. Count the words and aim for all four to land within about two words of each other, and write them all as terse noun phrases rather than one sentence among three fragments.
+- Never repeat the question's own wording or the topic heading inside the correct choice. The correct choice must share no more vocabulary with the stem than the distractors do.
+- Where the material supports it, put two requirements in the stem and make sure exactly one option meets both while each other option meets only one. That beats four options of which three are simply wrong.
 - No "All of the above", "None of the above", or "Both A and B".
 - answerText must exactly equal choices[correctAnswer].
 - Rewrite the explanation so it teaches the concept instead of restating the correct choice. A learner who has not read the choices should still learn something useful from it.
@@ -801,7 +850,7 @@ FINAL SELF-CHECK BEFORE RETURNING JSON:
 - No obvious duplicate questions.
 - For generated questions, correct-answer positions are reasonably balanced and not patterned.
 - No question gives the answer away in its own wording.
-- CHOICE AUDIT: for every multiple-choice question, ask whether a student could pick the correct answer without knowing the material, just by choosing the longest or most detailed option. The answer must be no. If the correct answer is the longest, the most technical, the only positive-sounding option, the only complete sentence, or the only one carrying more examples than the rest, rewrite the choices and keep the same correct concept.
+- CHOICE AUDIT: for every multiple-choice question, ask whether a student could pick the correct answer without knowing the material, just by reading the shape of the options. If the correct answer is the longest or shortest, the most technical, the only positive-sounding option, the only complete sentence, the only one carrying more examples than the rest, the only one that repeats the stem's or the topic heading's wording, or the only one that is not a reworded version of the same idea as another option, rewrite the choices and keep the same correct concept. Then check the other direction too: if all three distractors are negative, out of the subject, or variations of one idea, rewrite them even when the correct answer looks fine.
 ${negativeStemAudit}
 - EXPLANATION AUDIT: for every question, hide the correct choice and read the explanation on its own. If it no longer teaches anything useful about the concept, rewrite it. An explanation that only rearranges the answer choice's own words has failed.
 - EXPLANATION SUPPORT: no explanation introduces a fact that the study material does not contain.
@@ -867,7 +916,7 @@ JSON RULES:
 - The returned questions array must contain exactly ${missingCount} new questions.
 - Use question IDs starting at 1 inside this completion response.
 - questionCount must equal ${missingCount}.
-- For every multiple-choice question, run the answer choice audit and rewrite the choices if the correct answer is the longest, the most technical, the only positive-sounding option, or the only one carrying more examples than the rest.
+- For every multiple-choice question, run the answer choice audit and rewrite the choices if the correct answer is the longest or shortest, the most technical, the only positive-sounding option, the only one carrying more examples than the rest, the only one repeating the stem's wording, or the only one that is not a reworded version of another option. Then check the distractors themselves: if all three are negative, out of the subject, or variations of one idea, rewrite them too.
 ${completionNegativeStemAudit}
 - For every question, run the explanation audit. Hide the correct choice and read the explanation alone; if it teaches nothing beyond the answer's own wording, rewrite it.
 
@@ -1026,8 +1075,11 @@ function getDifficultyMixWarning(reviewer) {
 }
 
 // One repair call has to stay cheap, so only the worst offenders go back to the
-// model. Anything past this is still reported to the learner as a warning.
-const MAX_CHOICE_REPAIR_QUESTIONS = 12;
+// model, and findChoiceBalanceIssues already sorted them worst-first. This is a cap
+// on prompt size rather than on provider calls: the pass is a single request however
+// many items it carries, so it was raised once the detector found more per reviewer.
+// Restore it upward before lowering it.
+const MAX_CHOICE_REPAIR_QUESTIONS = 16;
 
 // A repair is only accepted if it actually fixed the item. The model sometimes
 // returns choices that are still lopsided, or answers pointing at a blank, and
@@ -1063,6 +1115,9 @@ function applyChoiceRepairs(reviewer, rawRepair, issues) {
       explanation: String(repair?.explanation || question.explanation || "").trim()
     };
 
+    // Checked against the same rules that found the fault, so acceptance and
+    // detection can never drift apart. A repair that trades one give-away for another
+    // is worse than the original, because it spends a rewrite and reports a fix.
     if (getChoiceBalanceIssue(candidate)) return question;
 
     repairedCount += 1;
@@ -1115,7 +1170,7 @@ function getChoiceBalanceWarning(repairedCount, unresolvedCount) {
     ? `${repairedCount} give-away ${repairedCount === 1 ? "question was" : "questions were"} rewritten, `
     : "";
 
-  return `${repaired}but ${unresolvedCount} still ${unresolvedCount === 1 ? "has" : "have"} an answer that stands out by its length or detail. Regenerate if that bothers you.`;
+  return `${repaired}but ${unresolvedCount} still ${unresolvedCount === 1 ? "has" : "have"} an answer that can be spotted without knowing the material. Regenerate if that bothers you.`;
 }
 
 async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs, schema }) {
@@ -1403,9 +1458,10 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
   throw error;
 }
 
-// Exported so the mix warning can be tested without a live request. The handler
-// below is still the only thing Vercel calls.
-export { getStyleMixWarning, SCENARIO_MIX };
+// Exported so the mix and choice warnings, and the repair prompt they are written
+// around, can be tested without a live request. The handler below is still the only
+// thing Vercel calls.
+export { buildChoiceRepairPrompt, getChoiceBalanceWarning, getStyleMixWarning, SCENARIO_MIX };
 
 export default async function handler(request, response) {
   const requestId = getRequestId();

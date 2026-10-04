@@ -113,14 +113,77 @@ export function countNegativeStemQuestions(questions) {
 export const CHOICE_LETTERS = ["A", "B", "C", "D"];
 
 // A learner's fastest tell is shape, not knowledge: whichever choice is longer,
-// or the only one carrying two ideas, gets picked without reading. Prompt rules
-// alone did not stop that, so the same check runs in code and hands the failures
-// to a repair pass. These thresholds sit above ordinary wording variance so a
-// genuinely shorter-but-correct answer is not flagged.
-const BALANCE_LENGTH_RATIO = 1.5;
-const BALANCE_MIN_WORD_GAP = 3;
-const BALANCE_MAX_WORD_GAP = 4;
-const BALANCE_MIN_SHORT_RATIO = 0.6;
+// packs in the only list, repeats the question back, overstates, or is the only one
+// written in a hopeful tone gets picked without reading. Prompt rules alone did not
+// stop that, so the same checks run in code and hand the failures to a repair pass.
+//
+// Every rule below is measured against the options that are actually in front of the
+// learner rather than against a fixed idea of what a good question looks like, because
+// the alternatives were tested against the option sets of a real preliminary
+// examination and the rules that survived are the ones that leave those items alone.
+const BALANCE_MIN_OUTLIER_GAP = 2;
+const BALANCE_MIN_OUTLIER_SPREAD = 4;
+// One repeated word is ordinary, because a scenario legitimately names the thing its
+// answer names ("two-factor authentication" answered with "Insecure Authentication").
+// Two of them, while the distractors share none, means the answer is the only choice
+// written in the question's own words.
+const ECHO_MIN_SHARED_WORDS = 2;
+// Three distractors that are all restrictive, prohibitive or dismissive is a tone
+// tell: the correct answer is then the only option that recommends anything.
+const POLARITY_MIN_DISTRACTORS = 3;
+// Two choices that share two content words are one option written twice, which leaves
+// the item holding two defensible answers instead of one.
+const NEAR_DUPLICATE_MIN_SHARED_WORDS = 2;
+
+// Function words plus the vocabulary an examination stem itself is built from. Kept
+// deliberately short: every entry here is a word that can no longer contribute to an
+// echo or a near-duplicate, so the list is where false negatives come from.
+const CHOICE_STOP_WORDS = new Set([
+  "a", "about", "above", "across", "after", "again", "against", "all", "also", "among",
+  "an", "and", "another", "any", "applied", "approach", "are", "answer", "applies",
+  "apply", "as", "at", "be", "because", "been", "before", "being", "below", "best",
+  "better", "between", "both", "but", "by", "can", "concept", "correct", "described",
+  "describes", "describe", "did", "do", "does", "doing", "during", "each", "either",
+  "else", "enough", "explain", "explains", "factor", "first", "for", "form", "from",
+  "further", "given", "has", "have", "having", "her", "here", "hers", "him", "his",
+  "how", "idea", "if", "in", "indicate", "indicates", "into", "is", "it", "its",
+  "itself", "just", "kind", "least", "less", "let", "like", "list", "made", "make",
+  "makes", "many", "may", "me", "might", "more", "most", "much", "must", "name",
+  "need", "neither", "never", "next", "no", "nor", "not", "now", "of", "off", "on",
+  "once", "one", "only", "option", "or", "order", "other", "others", "ought", "our",
+  "out", "over", "own", "part", "per", "phrase", "pick", "question", "rather",
+  "reason", "right", "same", "see", "sentence", "set", "several", "she", "should",
+  "show", "shows", "since", "so", "some", "something", "state", "states", "still",
+  "such", "take", "than", "that", "the", "their", "them", "then", "there", "these",
+  "they", "thing", "things", "this", "those", "through", "to", "too", "type", "under",
+  "until", "up", "upon", "us", "use", "used", "using", "very", "via", "was", "way",
+  "we", "well", "were", "what", "whatever", "when", "where", "whether", "which",
+  "while", "who", "whom", "whose", "why", "will", "with", "within", "without", "would",
+  "you", "your"
+]);
+
+// A content word is an alphabetic token of three letters or more that is not a stop
+// word. Digits and part numbers are dropped on purpose, because "802.11e", "802.11g",
+// "802.11n" and "802.11d" are four sibling labels in a real paper and treating their
+// digits as shared wording would report that item as four identical options.
+const CONTENT_WORD_PATTERN = /^[a-z]{3,}$/;
+// Runs of capitals are acronyms and product codes (GCMP-256, HMAC-SHA-384, OWASP,
+// GPS). A stem that names one is handing over a fingerprint to match, which is how a
+// real paper forces a choice, so these are not read as the stem echoing itself.
+const ACRONYM_PATTERN = /[A-Z]{2,}/;
+// A hyphenated prefix that only carries grammar, not topic. Without this,
+// "Non-pairable Mode" and "Non-discoverable Mode" share both "non" and "mode" and the
+// item is reported as having two answers when it plainly has one. Splitting the
+// compound is what makes these visible at all, so they are dropped here rather than by
+// keeping hyphens inside the token, which would cost every other compound word.
+const GRAMMATICAL_PREFIXES = new Set([
+  "anti", "dis", "inter", "intra", "mis", "multi", "non", "out", "over", "post",
+  "pre", "semi", "sub", "super", "under"
+]);
+
+function tokenize(text) {
+  return String(text || "").split(/[^A-Za-z0-9]+/).filter(Boolean);
+}
 
 function countWords(text) {
   return String(text || "").trim().split(/\s+/).filter(Boolean).length;
@@ -137,6 +200,107 @@ function getMedian(values) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor((sorted.length - 1) / 2)];
+}
+
+function getContentWords(text, { skipAcronyms = false } = {}) {
+  const words = new Set();
+
+  for (const token of tokenize(text)) {
+    if (skipAcronyms && ACRONYM_PATTERN.test(token)) continue;
+    const word = token.toLowerCase();
+    if (GRAMMATICAL_PREFIXES.has(word)) continue;
+    if (CONTENT_WORD_PATTERN.test(word) && !CHOICE_STOP_WORDS.has(word)) words.add(word);
+  }
+
+  return words;
+}
+
+function getSharedWords(left, right) {
+  const shared = [];
+  for (const word of left) if (right.has(word)) shared.push(word);
+  return shared;
+}
+
+function getChoiceIndices(index) {
+  return CHOICE_LETTERS.map((_, choiceIndex) => choiceIndex).filter((choiceIndex) => choiceIndex !== index);
+}
+
+// Both marker lists are matched through getMarkerStem below, which strips the endings
+// that turn a base into an adverb, a gerund or a past participle. Spelling out
+// "exclusive", "exclusively", "limit", "limited", "limiting", "ignore" and "ignoring"
+// as separate entries is how "exclusively" went missing once already, and a forgotten
+// entry is a give-away the detector silently stops seeing. Every list here is written
+// the way the word is actually used and stemmed on the way in, so any of those
+// spellings would have worked.
+const RESTRICTIVE_MARKER_LIST = [
+  "abandon", "absent", "ancient", "avoid", "ban", "bar", "block", "cannot", "cease",
+  "chiefly", "completely", "concentrate", "decrease", "deny", "deprecated", "dismiss",
+  "disqualify", "disregard", "drop", "eliminate", "entirely", "exclude", "exclusive",
+  "excessive", "expired", "fail", "failure", "forego", "forgo", "forbid", "halt",
+  "harder", "ignore", "impossible", "incorrect", "ineffective", "invalid", "lack",
+  "lacking", "least", "limit", "mainly", "merely", "minimal", "minor", "missing",
+  "narrow", "neglect", "never", "nobody", "nothing", "nowhere", "obsolete", "omit",
+  "only", "outdated", "overlook", "pause", "pointless", "primarily", "prevent",
+  "prohibit", "reduce", "refuse", "reject", "remove", "restrict", "skip", "solely",
+  "strictly", "suppress", "unable", "unnecessary", "useless", "veto", "waste",
+  "worst", "wrong"
+];
+
+// A choice that is the only one making an absolute claim is not answering the stem, it
+// is standing out. Real members of a list and real recommendations are not stated as
+// universals, so this is what usually gives away the odd one out in a "which is NOT"
+// item, where length and tone both look ordinary.
+const ABSOLUTIST_MARKER_LIST = [
+  "absolutely", "all", "always", "any", "anyone", "anymore", "completely", "entirely",
+  "every", "everyone", "everything", "forever", "guarantee", "impossible", "never",
+  "nobody", "none", "nothing", "nowhere", "only", "permanent", "totally",
+  "unconditional", "whatever", "whenever"
+];
+
+// A marker list kept as base forms, matched after stripping the endings that turn a
+// base into an adverb, a gerund or a past participle. The trailing "e" comes off last
+// and off both sides, because "ignoring" stems to "ignor" while "ignore" only stems to
+// "ignor" once its own "e" is gone.
+const MARKER_SUFFIXES = ["ly", "ing", "ed", "es", "s"];
+
+function getMarkerStem(word) {
+  let stem = word;
+
+  for (const suffix of MARKER_SUFFIXES) {
+    if (stem.length > suffix.length + 2 && stem.endsWith(suffix)) {
+      stem = stem.slice(0, -suffix.length);
+      break;
+    }
+  }
+
+  return stem.endsWith("e") ? stem.slice(0, -1) : stem;
+}
+
+// Both sides of every comparison go through getMarkerStem, so a list may be written in
+// whichever form reads best without one entry quietly failing to match.
+const RESTRICTIVE_MARKERS = new Set(RESTRICTIVE_MARKER_LIST.map(getMarkerStem));
+const ABSOLUTIST_MARKERS = new Set(ABSOLUTIST_MARKER_LIST.map(getMarkerStem));
+
+// Returns the tokens that matched, as the learner sees them, so a repair prompt can
+// quote the word that gave the item away rather than its stem.
+function getMarkerHits(text, markers) {
+  return [...new Set(tokenize(text)
+    .map((token) => token.toLowerCase())
+    .filter((token) => markers.has(getMarkerStem(token))))];
+}
+
+// A near-duplicate is the one failure that is a broken question rather than a guessable
+// one: the learner can read every option, understand every option, and still be unable
+// to choose. So it outranks everything else when the repair pass can only take a fixed
+// number of items, and it is the one failure a learner cannot be warned about.
+const NEAR_DUPLICATE_SEVERITY = 3;
+
+// The topic heading is printed above the stem, so a choice that spells it out is
+// quoting the question to the learner.
+function getTopicPhrase(topic) {
+  const phrase = String(topic || "").toLowerCase().trim().replace(/\s+/g, " ");
+  if (!phrase || getContentWords(phrase).size < 2) return "";
+  return phrase;
 }
 
 // Returns null when the question is fine, or an object describing exactly what
@@ -157,25 +321,81 @@ export function getChoiceBalanceIssue(question) {
   const wordCounts = texts.map(countWords);
   const clauseCounts = texts.map(countClauses);
   const correctWords = wordCounts[correctIndex];
-  const distractorWords = wordCounts.filter((_, index) => index !== correctIndex);
-  const medianDistractorWords = getMedian(distractorWords);
-  if (!correctWords || !medianDistractorWords) return null;
+  if (!correctWords) return null;
 
-  const reasons = [];
-  const wordGap = correctWords - medianDistractorWords;
+  const distractorIndices = getChoiceIndices(correctIndex);
   const plural = (count) => `${count} ${count === 1 ? "word" : "words"}`;
+  const kinds = [];
+  const reasons = [];
+  const report = (kind, reason) => {
+    kinds.push(kind);
+    reasons.push(reason);
+  };
 
-  if (wordGap >= BALANCE_MIN_WORD_GAP && correctWords / medianDistractorWords >= BALANCE_LENGTH_RATIO) {
-    reasons.push(`the correct answer is ${plural(correctWords)} while the other choices sit around ${plural(medianDistractorWords)}`);
+  // Ranked descending, so the comparison that matters is the correct answer against the
+  // option it has to be mistaken for. A median is the wrong statistic here: it ignores
+  // the runner-up, so a correct answer of twelve words sitting next to one of eleven
+  // reads as an outlier when the learner cannot see anything odd about it. Comparing
+  // against the runner-up also exempts ties for free, which is what a set of sibling
+  // labels the same length looks like.
+  const ranked = [...wordCounts].sort((a, b) => b - a);
+  const [longest, runnerUpLongest] = ranked;
+  const [shortest, runnerUpShortest] = [...ranked].reverse();
+
+  if (correctWords >= longest
+    && correctWords - runnerUpLongest >= BALANCE_MIN_OUTLIER_GAP
+    && correctWords - shortest >= BALANCE_MIN_OUTLIER_SPREAD) {
+    report("overlong", `the correct answer is ${plural(correctWords)} while the next longest choice is ${plural(runnerUpLongest)} and the shortest is ${plural(shortest)}, so it is the one that reads as a different shape`);
   }
 
-  if (wordGap <= -BALANCE_MAX_WORD_GAP && correctWords / medianDistractorWords <= BALANCE_MIN_SHORT_RATIO) {
-    reasons.push(`the correct answer is ${plural(correctWords)} while the other choices sit around ${plural(medianDistractorWords)}, so it stands out as the short one`);
+  if (correctWords <= shortest
+    && runnerUpShortest - correctWords >= BALANCE_MIN_OUTLIER_GAP
+    && longest - correctWords >= BALANCE_MIN_OUTLIER_SPREAD) {
+    report("overshort", `the correct answer is ${plural(correctWords)} while the next shortest choice is ${plural(runnerUpShortest)} and the longest is ${plural(longest)}, so it stands out as the short one`);
   }
 
-  const maxDistractorClauses = Math.max(...clauseCounts.filter((_, index) => index !== correctIndex));
+  const maxDistractorClauses = Math.max(...distractorIndices.map((index) => clauseCounts[index]));
   if (clauseCounts[correctIndex] >= 2 && maxDistractorClauses < 2) {
-    reasons.push(`the correct answer is the only choice that packs in more than one idea (${clauseCounts[correctIndex]} clauses against ${maxDistractorClauses})`);
+    report("clause", `the correct answer is the only choice that packs in more than one idea (${clauseCounts[correctIndex]} clauses against ${maxDistractorClauses})`);
+  }
+
+  // The topic heading is part of what the learner reads, so it counts as question
+  // wording when deciding whether the correct answer is the only choice that echoes.
+  const stemWords = getContentWords(
+    `${String(question?.question || "")} ${String(question?.topic || "")}`,
+    { skipAcronyms: true }
+  );
+  const sharedWithStem = texts.map((text) => getSharedWords(getContentWords(text), stemWords));
+  const maxDistractorEcho = Math.max(...distractorIndices.map((index) => sharedWithStem[index].length));
+
+  if (sharedWithStem[correctIndex].length >= ECHO_MIN_SHARED_WORDS
+    && sharedWithStem[correctIndex].length > maxDistractorEcho) {
+    report("echo", `the correct answer is the only choice written in the question's own words (${sharedWithStem[correctIndex].join(", ")})`);
+  }
+
+  const topicPhrase = getTopicPhrase(question?.topic);
+  if (topicPhrase && texts[correctIndex].toLowerCase().includes(topicPhrase)) {
+    report("topic-restatement", `the correct answer restates the topic heading "${String(question?.topic).trim()}" back to the learner`);
+  }
+
+  const restrictives = texts.map((text) => getMarkerHits(text, RESTRICTIVE_MARKERS).length);
+  const markedDistractors = distractorIndices.filter((index) => restrictives[index] > 0);
+  if (markedDistractors.length === POLARITY_MIN_DISTRACTORS && restrictives[correctIndex] === 0) {
+    report("polarity", "all three distractors tell the learner not to do something while the correct answer is the only choice that recommends anything, so its tone gives it away");
+  }
+
+  const absolutes = texts.map((text) => getMarkerHits(text, ABSOLUTIST_MARKERS));
+  if (absolutes[correctIndex].length && !distractorIndices.some((index) => absolutes[index].length)) {
+    report("absolutist", `the correct answer is the only choice claiming something absolute (${absolutes[correctIndex].join(", ")}), and the real options it sits beside are not stated that way`);
+  }
+
+  const correctChoiceWords = getContentWords(texts[correctIndex]);
+  const nearDuplicate = distractorIndices.find((index) => (
+    getSharedWords(correctChoiceWords, getContentWords(texts[index])).length >= NEAR_DUPLICATE_MIN_SHARED_WORDS
+  ));
+  if (nearDuplicate !== undefined) {
+    const overlapping = getSharedWords(correctChoiceWords, getContentWords(texts[nearDuplicate]));
+    report("near-duplicate", `the correct answer and choice ${CHOICE_LETTERS[nearDuplicate]} overlap on ${overlapping.join(" and ")}, so both read as defensible and the item has two possible answers`);
   }
 
   if (!reasons.length) return null;
@@ -183,18 +403,28 @@ export function getChoiceBalanceIssue(question) {
   return {
     id: question?.id,
     question: String(question?.question || "").trim(),
+    topic: String(question?.topic || "").trim(),
     choices: { ...choices },
     correctAnswer,
     answerText: String(question?.answerText || "").trim(),
     explanation: String(question?.explanation || "").trim(),
     correctWords,
-    medianDistractorWords,
-    reasons
+    medianDistractorWords: getMedian(distractorIndices.map((index) => wordCounts[index])),
+    kinds,
+    reasons,
+    severity: kinds.reduce((total, kind) => total + (kind === "near-duplicate" ? NEAR_DUPLICATE_SEVERITY : 1), 0)
   };
 }
 
+// Worst first, because the repair pass can only take a fixed number of items and an
+// item with two defensible answers costs the learner more than one that merely looks
+// long. Array.prototype.sort is stable, so items of equal severity keep the order the
+// reviewer already had them in and the work order stays reproducible.
 export function findChoiceBalanceIssues(questions) {
-  return (questions || []).map((question) => getChoiceBalanceIssue(question)).filter(Boolean);
+  return (questions || [])
+    .map((question) => getChoiceBalanceIssue(question))
+    .filter(Boolean)
+    .sort((a, b) => b.severity - a.severity);
 }
 
 // The style tag the generator returns is a claim about the question. The wording

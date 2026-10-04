@@ -320,6 +320,458 @@ section("editing a question keeps the shape the validator demands");
     null);
 }
 
+// The standout-answer filter is the only thing standing between a give-away item and
+// a learner, because nothing on screen tells them the shape gave it away. Two sets of
+// fixtures decide how far it reaches: questions a reader picked out by hand as
+// guessable, and the option sets of a real preliminary examination, which must not be
+// swept up with them.
+//
+// The exam set is the constraint that matters. Every rule added here has to leave the
+// paper clean, because the paper is what this generator is trying to imitate: sibling
+// option sets that differ in one token, one option vocabulary rotated across items,
+// stems that hand over a technical fingerprint, and items where the correct answer is
+// legitimately the most detailed one all have to survive.
+section("hand-picked give-aways are reported");
+{
+  const { getChoiceBalanceIssue } = await import(
+    pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  // Each of these was answered correctly by reading the shape of the options rather
+  // than the material. The reason recorded first is the one that gives it away.
+  const GIVE_AWAYS = [
+    {
+      label: "the correct answer is the only choice built from the stem's own words",
+      topic: "Customer Problem Fit",
+      question: "What does 'Customer Problem Fit' measure in a startup's development journey?",
+      choices: {
+        A: "How well the startup's idea aligns with real customer needs and urgent challenges",
+        B: "The technical speed of software code execution on mobile servers",
+        C: "The exact amount of venture capital funding secured from investors",
+        D: "The number of social media followers acquired during product launch"
+      },
+      correctAnswer: "A"
+    },
+    {
+      label: "the correct answer restates the topic heading and is the only positive option",
+      topic: "Macro Perspective",
+      question: "A family retail business owner wants to protect the company against unexpected technological disruptions and changing consumer shopping habits. What approach should be applied?",
+      choices: {
+        A: "Focus exclusively on internal employee attendance records.",
+        B: "Reduce spending on software tools and increase manual bookkeeping.",
+        C: "Ignore online trends and rely solely on local foot traffic.",
+        D: "Adopt a macro perspective to spot external threats and identify digital expansion opportunities."
+      },
+      correctAnswer: "D"
+    },
+    {
+      label: "three distractors share one tone and the correct answer does not",
+      topic: "Technopreneurship Characteristics",
+      question: "Which of the following best describes the market reach of technopreneurship compared to traditional entrepreneurship?",
+      choices: {
+        A: "Strictly local or regional unless physical expansion occurs",
+        B: "Limited exclusively to municipal town boundaries",
+        C: "Restricted by physical inventory and store locations",
+        D: "Global reach through online platforms and digital distribution"
+      },
+      correctAnswer: "D"
+    },
+    {
+      label: "the correct answer and a distractor are the same option twice",
+      topic: "Technopreneur Contributions",
+      question: "What notable contribution was made by Ron Hose in the Philippine technopreneurship landscape?",
+      choices: {
+        A: "Pioneered mobile content and led an Initial Public Offering with Xurpas",
+        B: "Popularized blockchain-based financial services and digital wallets through Coins.ph",
+        C: "Innovated online journalism using data analytics through Rappler",
+        D: "Expanded digital payments and financial inclusion through PayMaya"
+      },
+      correctAnswer: "B"
+    },
+    {
+      label: "the correct answer is the only list",
+      topic: "Customer Personas",
+      question: "What information forms the foundation of a semi-fictional customer persona in technopreneurship?",
+      choices: {
+        A: "Demographics, psychographics, goals, pain points, jobs-to-be-done, and behavior patterns",
+        B: "Randomly generated fictional names and arbitrary office addresses",
+        C: "Server hardware specifications and cloud database schemas",
+        D: "Corporate stock prices and quarterly dividend declarations"
+      },
+      correctAnswer: "A"
+    },
+    {
+      // The reason is the absolute claim, not the length. Three of the four are real
+      // listed benefits stated plainly, so nothing about the shape is unusual.
+      label: "the correct answer is the only one claiming something absolute",
+      topic: "Customer Segmentation Benefits",
+      question: "Which among the following is NOT listed as a direct benefit of effective customer segmentation?",
+      choices: {
+        A: "Improved long-term profitability",
+        B: "Lower marketing and operational costs",
+        C: "Elimination of all startup financial risks",
+        D: "Stronger product-market fit"
+      },
+      correctAnswer: "C"
+    }
+  ];
+
+  GIVE_AWAYS.forEach((giveaway) => {
+    const issue = getChoiceBalanceIssue(giveaway);
+    check(giveaway.label, Boolean(issue), true);
+    check(`  ... and says why (${giveaway.label})`, (issue?.reasons || []).length > 0, true);
+  });
+
+  // A question the detector must not report, so a rule cannot be loosened into
+  // "flag anything that looks unusual". Four siblings of one vocabulary, one of which
+  // the scenario names.
+  const SEGMENTATION = {
+    topic: "Customer Segmentation",
+    question: "A startup divides its customers by age, income, and education level before running a survey. Which segmentation method is being used?",
+    choices: {
+      A: "Demographic segmentation",
+      B: "Behavioral segmentation",
+      C: "Geographic segmentation",
+      D: "Psychographic segmentation"
+    },
+    correctAnswer: "A"
+  };
+
+  check("four siblings of one vocabulary are not reported", getChoiceBalanceIssue(SEGMENTATION), null);
+}
+
+section("the exam's own option sets are not reported as give-aways");
+{
+  const { getChoiceBalanceIssue } = await import(
+    pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  // Option sets transcribed from the same 35-item preliminary examination the style
+  // fixtures above come from. Four of these are longer or shorter than the rest on
+  // purpose: they pin down that the length rules are unchanged, so a rule added here
+  // can be told apart from the behaviour that was already there.
+  const EXAM_OPTION_SETS = [
+    ["sibling labels differing in one digit", "Wireless Standards",
+      "This wireless standards guides prioritizing data, voice, and video transmissions, enabling QoS.",
+      ["802.11e", "802.11g", "802.11n", "802.11d"], "A"],
+    ["sibling labels of different lengths", "Wireless Standards",
+      "It defines standards for a wireless personal area network (WPAN) and describes the specifications for wireless connectivity with fixed or portable devices.",
+      ["802.12", "802.15", "802.11i", "802.15.4"], "B"],
+    ["sibling tools sharing a suffix", "Attacking Tools",
+      "This tool creates a virtual tunnel interface to monitor encrypted traffic and inject arbitrary traffic into a network.",
+      ["Airtun-ng", "Aircrack-ng", "Easside-ng", "Packetforge-ng"], "A"],
+    ["sibling risk categories", "Mobile Risk Categories",
+      "This mobile risk category covers the misuse of a platform feature or the failure to use platform security controls.",
+      ["Client Code Quality", "Improper Platform Usage", "Extraneous Functionality", "Insufficient Cryptography"], "B"],
+    ["sibling categories where the stem names a code's subject", "Mobile Security Risks",
+      "Joan, a software developer, unintentionally included a password as a comment in a hybrid mobile application that was developed for internal purposes and not expected to be released into a production environment. Which of the following mobile security risks is demonstrated?",
+      ["M8 - Code Tampering", "M9 - Reverse Engineering", "M4 - Insecure Authentication", "M10 - Extraneous Functionality"], "C"],
+    ["a stem that hands over a technical fingerprint", "Wireless Protocols",
+      "Ashley, a security professional, analyzed the authentication and wireless encryption techniques implemented in her organization to support its BYOD policy. While doing so, she noticed that certain techniques were outdated. In this regard, she implemented a Wi-Fi security protocol using GCMP-256 for encryption and HMAC-SHA-384 for authentication. Which of the following protocols is employed?",
+      ["WEP", "LEAP", "WPA3", "CCMP"], "C"],
+    ["sibling attacks sharing a word", "Attacking Tools",
+      "Jack, a professional hacker, has performed an attack on Bluetooth paired devices. He leveraged a vulnerability in Bluetooth and breached the security mechanisms to eavesdrop on all the data being shared. Which of the following attacks did Jack perform?",
+      ["BlueSniff", "BluePrinting", "KNOB Attack", "MAC Spoofing Attack"], "A"],
+    ["two constraints, one option that meets both", "Bluetooth Hardening",
+      "A user wants the device hidden from discovery scans but still connectable by paired devices. What should the user do next with the Bluetooth device?",
+      ["Enable non-discoverable mode", "Block all requests for pairing", "Set the device to limited discoverable", "Disable all the connected Bluetooth devices"], "C"],
+    ["sibling attacks, one of which is a joke", "Phishing Defence",
+      "A user receives a text message claiming to be from their bank, containing a link that steals login credentials when clicked. Which of the following actions BEST prevents this?",
+      ["Block all incoming network traffic", "Ignore links from unknown senders", "Update the browser cache manually", "Change the phone's wallpaper to reset the link"], "B"],
+    ["real practices, one of which is the answer", "Mobile Data Protection",
+      "Which of the following guidelines helps users identify and protect sensitive data on their mobile devices?",
+      ["Maintain configuration control and management", "Do not install applications from trusted application stores", "Securely keep the data when disposing of the device", "Load too many applications, and avoid auto-upload of photos to social networks"], "C"],
+    ["sibling answers where the correct one names the standard's parts", "Wireless Protocols",
+      "A company handling classified data wants to prevent brute-force attacks and ensure stronger encryption against its Wi-Fi network. Which protocol should be implemented?",
+      ["WPA with TKIP", "WPA2 using AES", "WEP with 128-bit keys", "WPA3 using GCMP-256 and HMAC-SHA-384"], "D"],
+    ["sibling attacks, none of them a joke", "Attacking Tools",
+      "In which of the following attacks does an attacker create a soft AP, typically on a laptop, by running a tool that makes the laptop's NIC appear as a legitimate AP?",
+      ["Rogue AP Attack", "AP MAC Spoofing", "Unauthorized Association", "Ad-hoc Connection Attack"], "A"],
+    // These three are what the length rules used to get wrong. The correct answer is
+    // the longest in each of them, but the option right behind it is nearly as long,
+    // so a reader comparing lengths sees nothing unusual. Measuring against the middle
+    // of the set instead of the runner-up flagged all three and would have sent them
+    // to the repair pass, which is the expensive kind of wrong: it rewrites a good
+    // question and reports a fix.
+    ["the longest choice with the runner-up right behind it", "Wireless Hardening",
+      "Which of the following practices can make mobile devices vulnerable to online attacks?",
+      ["Maintain configuration control and management", "Always share the information within GPS-enabled apps", "Disable wireless access, such as Wi-Fi and Bluetooth, if not in use", "Never connect two separate networks, such as Wi-Fi and Bluetooth, simultaneously"], "C"],
+    ["the longest choice one word clear of the runner-up", "Password Handling",
+      "Employees store company passwords in plain-text notes on their smartphones. Which guideline should the organization enforce?",
+      ["Set custom enforcement", "Use SMS instead of encrypted messaging", "Keep sensitive data off shared or personal mobile devices", "Store credentials in browser history for quick access"], "C"],
+    // Two of the three options above are real settings changes a learner might make,
+    // so nothing here is absurd and nothing is absolute. A stem that names both
+    // alternatives cannot be solved by tone, only by reading it.
+    ["defensible wrong options with no absolute and no joke", "Mobile Data Protection",
+      "Which of the following guidelines helps users identify and protect sensitive data on their mobile devices?",
+      ["Maintain configuration control and management", "Do not install applications from trusted application stores", "Securely keep the data when disposing of the device", "Load too many applications, and avoid auto-upload of photos to social networks"], "C"],
+    ["sibling practices, one of them the answer", "Wireless Hardening",
+      "Which of the following practices should be followed while configuring a wireless network to defend against potential wireless attacks?",
+      ["Enable SSID broadcasts", "Enable MAC address filtering on AP's or routers", "Keep the default ID as it is after WLAN configuration", "Enable remote router login and wireless administration"], "B"],
+    // "Non-pairable Mode" against "Non-discoverable Mode" and "Limited Discoverable
+    // Mode". Splitting a compound on its hyphen puts the bare negation in front of both,
+    // so the two options share "non" and "mode" and the item reads as having two
+    // answers. Grammatical prefixes are not topical content, which is the same reason
+    // the digits in 802.11e are not.
+    ["sibling modes whose names share a negation prefix", "Bluetooth Hardening",
+      "This Bluetooth mode rejects connection requests sent by any device in the vicinity.",
+      ["Discoverable", "Non-pairable Mode", "Non-discoverable Mode", "Limited Discoverable Mode"], "B"]
+  ];
+
+  EXAM_OPTION_SETS.forEach(([label, topic, question, choices, correctAnswer]) => {
+    check(label, getChoiceBalanceIssue({ topic, question, choices: { A: choices[0], B: choices[1], C: choices[2], D: choices[3] }, correctAnswer }), null);
+  });
+
+  // Two items the paper does get wrong, kept here so a future change cannot quietly
+  // make them pass by loosening a threshold. Each has a correct answer that is a clear
+  // length outlier against the other three, which is exactly the pick a test-wise
+  // learner makes, so reporting them is the intended answer rather than an accident.
+  // The repair pass would shorten or lengthen them, which is an improvement to the
+  // paper rather than damage to it.
+  const SHAPE_OUTLIERS = [
+    ["the correct answer is the shortest of four long options", "Wireless Hardening",
+      "Which of the following practices should be followed while configuring a wireless network to defend against potential wireless network attacks?",
+      ["Disable SSID broadcasts", "Enable unused ports to prevent attacks on APs", "Disable MAC ports to prevent attacks on APs or routers", "Enable remote router login and wireless administration"], "A"],
+    ["the correct answer is the longest of four short options", "Mobile Data Protection",
+      "A finance app stores session tokens locally in plain text. A stolen phone reveals tokens and allows account takeover. Which of the following offers the BEST resolution?",
+      ["Use longer usernames", "Disable push notifications", "Increase screen brightness and lock timeout", "Store sensitive data encrypted and minimize local storage of secrets"], "D"]
+  ];
+
+  SHAPE_OUTLIERS.forEach(([label, topic, question, choices, correctAnswer]) => {
+    check(label, getChoiceBalanceIssue({ topic, question, choices: { A: choices[0], B: choices[1], C: choices[2], D: choices[3] }, correctAnswer })?.kinds.length > 0, true);
+  });
+}
+
+section("the wording rules match every inflection of the word they name");
+{
+  const { getChoiceBalanceIssue } = await import(
+    pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  // The tone and absolute rules name base words, so each of these has to be caught by
+  // the ending it actually appears with. "exclusively" went missing from the list once
+  // already, and nothing reported it: the detector simply stopped seeing that fault on
+  // every item where it was the only one present.
+  const tone = (distractors) => getChoiceBalanceIssue({
+    topic: "Wireless Hardening",
+    question: "Which of the following practices should be followed while configuring a wireless network?",
+    choices: { A: "Enable scheduled firmware reviews", B: distractors[0], C: distractors[1], D: distractors[2] },
+    correctAnswer: "A"
+  })?.kinds.includes("polarity") === true;
+
+  const neutrals = ["Ignore online trends", "Reduce spending on software tools", "Focus exclusively on internal records"];
+
+  check("a base form is caught", tone(["Strictly local operations", "Limited to one site", "Restricted by inventory levels"]), true);
+  check("an adverb is caught", tone(["Strictly local operations", "Solely a local footprint", "Exclusively within one region"]), true);
+  check("a past participle is caught", tone(["Limited to one site", "Restricted by inventory levels", "Narrowed to a single office"]), true);
+  check("a gerund is caught", tone(["Ignoring every online channel", "Reducing all software spend", "Overlooking cloud adoption"]), true);
+  check("a negation is caught", tone(["Never connected to a supplier", "Never advertising online", "Never running a test order"]), true);
+
+  // The negative has to be on the three distractors, not on the answer, or the rule
+  // would fire on every item whose answer happens to be phrased carefully.
+  check("a carefully worded answer is not reported",
+    getChoiceBalanceIssue({
+      topic: "Wireless Hardening",
+      question: "Which of the following practices should be followed while configuring a wireless network?",
+      choices: { A: "Never connect to an unverified network", B: "Strictly local operations", C: "Solely a local footprint", D: "Exclusively within one region" },
+      correctAnswer: "A"
+    })?.kinds.includes("polarity"),
+    false);
+
+  // The absolute rule has the same obligation. Q48 was previously reported for its
+  // length, which was a coincidence of wording and stopped applying the moment the
+  // length rule was corrected.
+  const absolute = (choice, distractors) => getChoiceBalanceIssue({
+    topic: "Customer Segmentation Benefits",
+    question: "Which among the following is NOT listed as a direct benefit of effective customer segmentation?",
+    choices: { A: distractors[0], B: distractors[1], C: choice, D: distractors[2] },
+    correctAnswer: "C"
+  })?.kinds.includes("absolutist") === true;
+
+  const realBenefits = ["Improved long-term profitability", "Lower marketing and operational costs", "Stronger product-market fit"];
+
+  check("an absolute noun is caught", absolute("Elimination of all startup financial risks", realBenefits), true);
+  check("an absolute verb form is caught", absolute("Guarantees a return on every campaign", realBenefits), true);
+  check("an absolute adverb is caught", absolute("Completely removes operational risk", realBenefits), true);
+  check("a plainly overstated option is caught", absolute("Every segment converts at the same rate", realBenefits), true);
+
+  // One absolute among four is a signal only when the others are plain. If a
+  // distractor also claims something absolute, none of them stands out on this.
+  check("an absolute shared with a distractor is not reported",
+    absolute("Elimination of all startup financial risks", ["Improved profitability on every account", "Lower costs", "Stronger product-market fit"]),
+    false);
+}
+
+section("the length rules compare against the runner-up, not the middle");
+{
+  const { getChoiceBalanceIssue } = await import(
+    pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const shape = (choices, correctAnswer) => getChoiceBalanceIssue({
+    topic: "Wireless Hardening",
+    question: "Which of the following practices should be followed while configuring a wireless network?",
+    choices,
+    correctAnswer
+  });
+
+  const kinds = (issue) => (issue?.kinds || []);
+
+  // Twelve words against eleven and seven is an outlier on the median and not an
+  // outlier to a reader. This is the case a ratio or a median gets wrong.
+  check("a runner-up one word behind is not a length give-away",
+    kinds(shape({
+      A: "Disable wireless access, such as Wi-Fi and Bluetooth, if not in use",
+      B: "Never connect two separate networks, such as Wi-Fi and Bluetooth, simultaneously",
+      C: "Maintain configuration control and management",
+      D: "Always share the information within GPS-enabled apps"
+    }, "A")),
+    []);
+
+  // Four words clear of the runner-up is not wording variance, which is what the old
+  // gap of three against the median was unable to tell apart from the case above. The
+  // distractors are deliberately neutral, so this checks the length rule alone and
+  // cannot pass or fail because a wording rule also fires.
+  check("a runner-up four words behind is a length give-away",
+    kinds(shape({
+      A: "Rotate credentials on a fixed schedule and audit each account that holds production access",
+      B: "Upgrade the firmware on the building controllers",
+      C: "Record the serial number of each handset",
+      D: "Publish the quarterly support schedule"
+    }, "A")),
+    ["overlong"]);
+
+  // The same test in the other direction: a correct answer that is the short one is a
+  // tell for the same reason a long one is.
+  check("a correct answer that is the short one is reported",
+    kinds(shape({
+      A: "Disable SSID broadcasts",
+      B: "Enable unused ports to prevent attacks on AP's or routers",
+      C: "Disable MAC ports to prevent attacks on AP's or routers and on the access points themselves",
+      D: "Enable remote router login and wireless administration of every device on the network"
+    }, "A")),
+    ["overshort"]);
+
+  // Ties are the sibling-label case and must never be reported, which is what makes a
+  // set of part numbers safe.
+  check("a set of equal-length siblings is not reported",
+    kinds(shape({ A: "802.11e", B: "802.11g", C: "802.11n", D: "802.11d" }, "A")),
+    []);
+
+  check("a correct answer tied with a distractor is not reported",
+    kinds(shape({ A: "802.12", B: "802.15", C: "802.11i", D: "802.15.4" }, "B")),
+    []);
+}
+
+section("the repair pass is handed the worst items first");
+{
+  const { getChoiceBalanceIssue, findChoiceBalanceIssues } = await import(
+    pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  // An item with two defensible answers costs a learner more than one that merely
+  // looks long, because there is nothing on screen to warn them, so it has to win the
+  // place when the pass can only take a fixed number of items.
+  const long = {
+    id: 1,
+    topic: "Security Controls",
+    question: "Which control should the team put in place first?",
+    choices: {
+      A: "Rotate credentials on a fixed schedule and audit each account that holds production access",
+      B: "Patch the operating system",
+      C: "Enable multi-factor authentication",
+      D: "Restrict access to the backup console"
+    },
+    correctAnswer: "A"
+  };
+
+  const ambiguous = {
+    id: 2,
+    topic: "Technopreneur Contributions",
+    question: "What notable contribution was made by Ron Hose in the Philippine technopreneurship landscape?",
+    choices: {
+      A: "Pioneered mobile content and led an Initial Public Offering with Xurpas",
+      B: "Popularized blockchain-based financial services and digital wallets through Coins.ph",
+      C: "Innovated online journalism using data analytics through Rappler",
+      D: "Expanded digital payments and financial inclusion through PayMaya"
+    },
+    correctAnswer: "B"
+  };
+
+  check("the long item is a give-away", getChoiceBalanceIssue(long)?.kinds, ["overlong"]);
+  check("the ambiguous item is a give-away", getChoiceBalanceIssue(ambiguous)?.kinds, ["near-duplicate"]);
+  check("the ambiguous item ranks above the long one",
+    getChoiceBalanceIssue(ambiguous).severity > getChoiceBalanceIssue(long).severity, true);
+  check("issues come back worst first",
+    findChoiceBalanceIssues([long, ambiguous]).map((issue) => issue.id),
+    [2, 1]);
+  check("a clean reviewer has no issues to repair",
+    findChoiceBalanceIssues([
+      { ...long, choices: { A: "Demographic segmentation", B: "Behavioral segmentation", C: "Geographic segmentation", D: "Psychographic segmentation" } },
+      ambiguous
+    ]).map((issue) => issue.id),
+    [2]);
+  check("a missing reviewer has no issues to repair", findChoiceBalanceIssues(undefined), []);
+}
+
+section("the repair work order names the faults it was given");
+{
+  const { getChoiceBalanceIssue, findChoiceBalanceIssues } = await import(
+    pathToFileURL(new URL("../src/utils/quizUtils.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+  const { buildChoiceRepairPrompt, getChoiceBalanceWarning } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const question = (id, topic, stem, choices, correctAnswer) => ({
+    id, topic, question: stem,
+    choices: { A: choices[0], B: choices[1], C: choices[2], D: choices[3] },
+    correctAnswer
+  });
+
+  const issues = findChoiceBalanceIssues([
+    question(1, "Macro Perspective", "A retail owner wants to guard against disruption. What should be applied?",
+      ["Focus exclusively on internal employee attendance records", "Reduce spending on software tools and increase manual bookkeeping", "Ignore online trends and rely solely on local foot traffic", "Adopt a macro perspective to spot external threats and identify digital expansion opportunities"], "D"),
+    question(2, "Technopreneur Contributions", "What notable contribution was made by Ron Hose in the Philippine technopreneurship landscape?",
+      ["Pioneered mobile content and led an Initial Public Offering with Xurpas", "Popularized blockchain-based financial services and digital wallets through Coins.ph", "Innovated online journalism using data analytics through Rappler", "Expanded digital payments and financial inclusion through PayMaya"], "B"),
+    question(3, "Customer Personas", "What information forms the foundation of a semi-fictional customer persona in technopreneurship?",
+      ["Demographics, psychographics, goals, pain points, jobs-to-be-done, and behavior patterns", "Randomly generated fictional names and arbitrary office addresses", "Server hardware specifications and cloud database schemas", "Corporate stock prices and quarterly dividend declarations"], "A")
+  ]);
+
+  check("three of the three are reported", issues.length, 3);
+
+  const workOrder = buildChoiceRepairPrompt(issues, "");
+
+  // The work order states the measured reason per item. It used to open with a single
+  // sentence about the correct choice being "visibly longer", which was simply false
+  // for every item where the tone or the ambiguity was the actual fault.
+  check("each item carries its own reason", issues.every((issue) => workOrder.includes(issue.reasons[0])), true);
+  check("the work order names the item's topic heading", workOrder.includes('The topic heading shown above this question is "Macro Perspective"'), true);
+
+  // One bullet per family of fault present, and none for a fault that is not there.
+  check("the length fault is described", workOrder.includes("visibly different shape"), true);
+  check("the tone fault is described", workOrder.includes("three distractors negative"), true);
+  check("the ambiguity fault is described", workOrder.includes("two possible answers"), true);
+  check("a fault that was not found is not described", workOrder.includes("claiming something absolute"), false);
+  check("it asks for exactly the items it listed", workOrder.includes("return exactly the 3 question(s) listed above"), true);
+
+  // A single-fault reviewer gets a single bullet rather than a list of the others, so
+  // the model is not sent looking for problems that are not there.
+  const oneFault = buildChoiceRepairPrompt([getChoiceBalanceIssue(question(
+    9, "Customer Personas", "What information forms the foundation of a semi-fictional customer persona in technopreneurship?",
+    ["Demographics, psychographics, goals, pain points, jobs-to-be-done, and behavior patterns", "Randomly generated fictional names and arbitrary office addresses", "Server hardware specifications and cloud database schemas", "Corporate stock prices and quarterly dividend declarations"], "A"
+  ))], "");
+
+  check("a single-fault work order describes only that fault", oneFault.includes("visibly different shape"), true);
+  check("a single-fault work order omits the others", oneFault.includes("two possible answers"), false);
+
+  // The learner is told about whatever survived the pass, in words that fit every rule
+  // rather than only the length one it used to name.
+  check("nothing left to report says nothing", getChoiceBalanceWarning(3, 0), null);
+  check("what survived is reported without a repair count", getChoiceBalanceWarning(0, 1), "but 1 still has an answer that can be spotted without knowing the material. Regenerate if that bothers you.");
+  check("what survived is reported with a repair count", getChoiceBalanceWarning(2, 3), "2 give-away questions were rewritten, but 3 still have an answer that can be spotted without knowing the material. Regenerate if that bothers you.");
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;
