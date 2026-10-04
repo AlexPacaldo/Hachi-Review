@@ -218,6 +218,13 @@ const QUESTION_TYPE_INSTRUCTIONS = {
 - Every question must have exactly 4 choices: A, B, C, and D.
 - Every question must have exactly one correct answer.
 
+THE CORRECT ANSWER IS A TERM, NOT A SENTENCE:
+- This is the rule that prevents the commonest fault in this whole format, so it comes before the balancing rules below. Write the correct answer as the label of the thing being tested: a term, a name, a standard, a category, or a short phrase of a few words. Real examinations do exactly this, so match them. "Access Point", "802.11e", "Cross-Site Scripting", "Code Tampering", "Improper Platform Usage", "WPA3".
+- Do not write the correct answer as a sentence or as a definition. A choice such as "The rate at which a network carries data, measured in bits per second" is not an answer, it is an explanation that has leaked into the wrong field. A long correct answer sitting next to three short ones can be picked out without reading the question, which is the single most common way a question gives itself away.
+- Everything the learner needs to understand goes in the explanation field instead, where it belongs and where it cannot affect the length of a choice.
+- Write the three distractors in the same shape as the correct answer. If the answer is a term then every distractor is a term from the same family, so all four are the same length before a word of explanation is written and there is nothing left to balance.
+- If a question genuinely cannot be answered by naming something, then write all four choices as short phrases of similar length. Never leave one choice a full sentence while the other three are bare terms.
+
 ANSWER CHOICE BALANCE - CRITICAL:
 - Never make the correct answer noticeably longer, more detailed, more specific, or more technically sophisticated than the incorrect choices. The correct answer must NOT be identifiable because it contains more information.
 - Keep all four choices reasonably similar in length, level of detail, specificity, grammatical structure, complexity, and number of ideas.
@@ -424,6 +431,7 @@ WHAT WENT WRONG:
 
 MOVE THE DISTRACTORS, NOT THE ANSWER:
 - This is the part that decides whether the rewrite works. The correct answer is right and has to stay right, so its wording is the one thing you may not sacrifice to make the lengths match.
+- Check first whether the correct answer is written as a sentence or a definition rather than as a term. If it is, that is the fault, and the fix is the easiest one available: compress it to the term it names and move the removed words into the explanation. "The rate at which a network carries data, measured in bits per second" becomes "Bandwidth", and the detail belongs in the explanation. The term was already in there.
 - Bring the three wrong choices UP to the correct answer's length. Never cut the correct answer down to the length of the distractors.
 - If the correct answer is a technical term of two or more words and the distractors are single words, the term stays exactly as it is and each distractor is rewritten to carry a matching qualifier. "Entrepreneurship" becomes "Entrepreneurship in general", "Intrapreneurship" becomes "Intrapreneurship inside an existing firm". Never reduce the correct answer to "Entrepreneurship" to make the set look even.
 - Only shorten the correct answer when it is padded with words that carry no meaning, in which case drop those and nothing else.
