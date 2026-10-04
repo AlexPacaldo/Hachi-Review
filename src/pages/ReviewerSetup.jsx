@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, BookOpen, Cloud, Eye, EyeOff, HardDrive, Layers, Loader2, Play, Users, Zap } from "lucide-react";
 import EmptyState from "../components/EmptyState.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
@@ -69,6 +69,8 @@ function getReviewerDogState({ savedProgress, latestAttempt }) {
 export default function ReviewerSetup() {
   const { reviewerId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const autoOpenQuestions = searchParams.get("edit") === "1";
   const { configured, user } = useAuth();
   const [refreshKey, setRefreshKey] = useState(0);
   const [menuMessage, setMenuMessage] = useState(null);
@@ -240,6 +242,7 @@ export default function ReviewerSetup() {
               configured={configured}
               onMessage={setMenuMessage}
               onChanged={() => setRefreshKey((current) => current + 1)}
+              autoOpenQuestions={autoOpenQuestions}
             />
           </div>
           <p className="muted">{reviewer.instructions}</p>

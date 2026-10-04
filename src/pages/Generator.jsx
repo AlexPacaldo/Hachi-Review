@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileJson, FileText, Loader2, Plus, RotateCcw, Save, Sparkles, Upload, Wifi, WifiOff } from "lucide-react";
+import { FileJson, FileText, ListChecks, Loader2, Plus, RotateCcw, Save, Sparkles, Upload, Wifi, WifiOff } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { validateReviewer } from "../data/reviewerRegistry.js";
 import { upsertCloudReviewer } from "../services/cloudReviewers.js";
@@ -1175,6 +1175,12 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
                   {isGenerating ? <Loader2 className="spinner" size={17} aria-hidden="true" /> : <RotateCcw size={17} aria-hidden="true" />}
                   Regenerate
                 </button>
+                {savedReviewer ? (
+                  <button className="button subtle" type="button" onClick={() => navigate(`/reviewer/${savedReviewer.reviewerId}?edit=1`)}>
+                    <ListChecks size={17} aria-hidden="true" />
+                    Edit Questions
+                  </button>
+                ) : null}
                 {savedReviewer ? (
                   <button className="button primary" type="button" onClick={() => navigate(`/reviewer/${savedReviewer.reviewerId}`)}>
                     Open Reviewer

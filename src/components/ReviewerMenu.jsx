@@ -46,9 +46,10 @@ function getProfileName(profile) {
   return profile?.display_name || "Hachi user";
 }
 
-export default function ReviewerMenu({ reviewer, user, configured, onMessage, onChanged }) {
+export default function ReviewerMenu({ reviewer, user, configured, onMessage, onChanged, autoOpenQuestions = false }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const didAutoOpen = useRef(false);
   // Friends and groups are two independent audiences. Both are derived from the
   // one stored value so a row that names either or both reads the same here.
   const [visibility, setVisibility] = useState(normalizeVisibility(reviewer.visibility));
@@ -104,6 +105,13 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
   const [newSubject, setNewSubject] = useState(reviewer.subject || "");
   const [renameSaving, setRenameSaving] = useState(false);
   const [renameError, setRenameError] = useState(null);
+
+  useEffect(() => {
+    if (autoOpenQuestions && !didAutoOpen.current && Array.isArray(reviewer?.questions)) {
+      didAutoOpen.current = true;
+      setQuestionsOpen(true);
+    }
+  }, [autoOpenQuestions, reviewer]);
 
   useEffect(() => {
     if (!open) {
