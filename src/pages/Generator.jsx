@@ -237,6 +237,10 @@ function checkAiRateLimit(userId = "") {
   }
 }
 
+function isUnreadableFileError(message) {
+  return /paste the study material as text|cannot read the uploaded file|cannot read the file|could not be sent to this provider|too large to send to the ai/i.test(message || "");
+}
+
 async function extractPdfText(file) {
   if (!Promise.withResolvers) {
     Promise.withResolvers = function withResolvers() {
@@ -475,7 +479,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
 
     setErrors([]);
     setGenerationSteps([]);
-    setGenerationMessage(isPdfFile(file) ? "Reading PDF text..." : "");
+    setGenerationMessage(isPdfFile(file) && file.size > MAX_AI_FILE_UPLOAD_SIZE ? "Reading PDF text..." : "");
 
     try {
       if (isTextFile(file)) {
@@ -492,50 +496,31 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
       }
 
       if (isPdfFile(file)) {
-        setProgressStep("Extracting PDF text");
-
-        // A PDF with a text layer can be sent as text, which every AI provider
-        // understands. A scanned PDF with no text layer has to be sent as a file,
-        // which only providers that can read images can make sense of.
-        let extractedText = "";
-        try {
-          extractedText = await extractPdfText(file);
-        } catch {
-          extractedText = "";
-        }
-
-        const hasTextLayer = extractedText.length >= MIN_PDF_TEXT_LENGTH;
-
-        if (hasTextLayer && file.size > MAX_AI_FILE_UPLOAD_SIZE) {
-          setSourceText(extractedText);
-          setStudyFile({
-            name: `${file.name} (text extracted)`,
-            mimeType: "text/plain",
-            size: file.size,
-            data: null
-          });
-          setGenerationMessage(`Extracted text from ${file.name}. It is too large to upload, so the text version will be used.`);
-          setProgressStep("PDF text ready");
-          return;
-        }
-
-        if (hasTextLayer) {
-          // Send the text and the PDF together, so providers that can read the PDF
-          // get the original while the fallback providers still get usable text.
-          const [, base64Data = ""] = (await readFileAsDataUrl(file)).split(",");
-          setSourceText(extractedText);
-          setStudyFile({
-            name: file.name,
-            mimeType: file.type || "application/pdf",
-            size: file.size,
-            data: base64Data
-          });
-          setGenerationMessage(`Extracted text from ${file.name} and kept the PDF for the AI.`);
-          setProgressStep("PDF text ready");
-          return;
-        }
-
         if (file.size > MAX_AI_FILE_UPLOAD_SIZE) {
+          setProgressStep("Extracting PDF text");
+
+          // Too large to upload: fall back to its text layer up front, since the
+          // server cannot receive the file either way.
+          let extractedText = "";
+          try {
+            extractedText = await extractPdfText(file);
+          } catch {
+            extractedText = "";
+          }
+
+          if (extractedText.length >= MIN_PDF_TEXT_LENGTH) {
+            setSourceText(extractedText);
+            setStudyFile({
+              name: `${file.name} (text extracted)`,
+              mimeType: "text/plain",
+              size: file.size,
+              data: null
+            });
+            setGenerationMessage(`Extracted text from ${file.name}. It is too large to upload, so the text version will be used.`);
+            setProgressStep("PDF text ready");
+            return;
+          }
+
           setStudyFile(null);
           setErrors(["That PDF has no readable text and is too large to upload. It may be scanned images. Compress/split it, OCR it, or paste the important notes into Extra Notes."]);
           setGenerationMessage("");
@@ -556,7 +541,8 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
         name: file.name,
         mimeType: file.type || "application/pdf",
         size: file.size,
-        data: base64Data
+        data: base64Data,
+        file
       });
       setGenerationMessage("File ready for the AI.");
     } catch (error) {
@@ -702,16 +688,17 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     }
   }
 
-  async function generateReviewerWithAi({ regenerate = false } = {}) {
-    const trimmedSourceText = sourceText.trim().slice(0, MAX_AI_SOURCE_TEXT_LENGTH);
-    const hasUploadedFile = Boolean(studyFile?.data);
+  async function generateReviewerWithAi({ regenerate = false, triedTextFallback = false, sourceTextOverride, fileOverride } = {}) {
+    const activeSourceText = (sourceTextOverride ?? sourceText).trim().slice(0, MAX_AI_SOURCE_TEXT_LENGTH);
+    const activeStudyFile = fileOverride === undefined ? studyFile : fileOverride;
+    const hasUploadedFile = Boolean(activeStudyFile?.data);
 
     if (!isOnline) {
       setErrors(["Connect to the internet before using AI generation."]);
       return;
     }
 
-    if (!hasUploadedFile && trimmedSourceText.length < 100) {
+    if (!hasUploadedFile && activeSourceText.length < 100) {
       setErrors(["Upload a study file or paste more study material before generating a reviewer."]);
       return;
     }
@@ -741,12 +728,12 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     try {
       setProgressStep("Sending material to the AI");
       const request = await buildAiRequestBody({
-        sourceText: trimmedSourceText,
+        sourceText: activeSourceText,
         file: hasUploadedFile
           ? {
-              name: studyFile.name,
-              mimeType: studyFile.mimeType,
-              data: studyFile.data
+              name: activeStudyFile.name,
+              mimeType: activeStudyFile.mimeType,
+              data: activeStudyFile.data
             }
           : null,
         title: details.title,
@@ -804,18 +791,45 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
         difficulty,
         questionType,
         hasUploadedFile,
-        sourceLength: trimmedSourceText.length
+        sourceLength: activeSourceText.length
       });
       setGenerationMessage("");
+
+      if (!triedTextFallback && isUnreadableFileError(error?.message) && activeStudyFile?.file) {
+        try {
+          const extractedText = await extractPdfText(activeStudyFile.file);
+
+          if (extractedText.length >= MIN_PDF_TEXT_LENGTH) {
+            setSourceText(extractedText);
+            setStudyFile({
+              name: `${activeStudyFile.name} (text extracted)`,
+              mimeType: "text/plain",
+              size: activeStudyFile.size,
+              data: null
+            });
+            setGenerationMessage("The AI could not read the uploaded file, so its text was extracted into Extra Notes. Retrying...");
+            return generateReviewerWithAi({
+              regenerate,
+              triedTextFallback: true,
+              sourceTextOverride: extractedText,
+              fileOverride: null
+            });
+          }
+        } catch {
+          // Fall through to the normal error below.
+        }
+      }
+
       setErrors([getFriendlyGenerationError(error)]);
     } finally {
       setIsGenerating(false);
     }
   }
 
-  async function makeMoreQuestions() {
-    const trimmedSourceText = sourceText.trim().slice(0, MAX_AI_SOURCE_TEXT_LENGTH);
-    const hasUploadedFile = Boolean(studyFile?.data);
+  async function makeMoreQuestions({ triedTextFallback = false, sourceTextOverride, fileOverride } = {}) {
+    const activeSourceText = (sourceTextOverride ?? sourceText).trim().slice(0, MAX_AI_SOURCE_TEXT_LENGTH);
+    const activeStudyFile = fileOverride === undefined ? studyFile : fileOverride;
+    const hasUploadedFile = Boolean(activeStudyFile?.data);
 
     if (!isOnline) {
       setErrors(["Connect to the internet before asking for more questions."]);
@@ -860,12 +874,12 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     try {
       const request = await buildAiRequestBody({
         mode: "extend",
-        sourceText: trimmedSourceText,
+        sourceText: activeSourceText,
         file: hasUploadedFile
           ? {
-              name: studyFile.name,
-              mimeType: studyFile.mimeType,
-              data: studyFile.data
+              name: activeStudyFile.name,
+              mimeType: activeStudyFile.mimeType,
+              data: activeStudyFile.data
             }
           : null,
         title: currentReviewer.title || details.title,
@@ -921,9 +935,34 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
         moreQuestionCount,
         difficulty,
         questionType: currentReviewer?.questionType || questionType,
-        sourceLength: trimmedSourceText.length
+        sourceLength: activeSourceText.length
       });
       setGenerationMessage("");
+
+      if (!triedTextFallback && isUnreadableFileError(error?.message) && activeStudyFile?.file) {
+        try {
+          const extractedText = await extractPdfText(activeStudyFile.file);
+
+          if (extractedText.length >= MIN_PDF_TEXT_LENGTH) {
+            setSourceText(extractedText);
+            setStudyFile({
+              name: `${activeStudyFile.name} (text extracted)`,
+              mimeType: "text/plain",
+              size: activeStudyFile.size,
+              data: null
+            });
+            setGenerationMessage("The AI could not read the uploaded file, so its text was extracted into Extra Notes. Retrying...");
+            return makeMoreQuestions({
+              triedTextFallback: true,
+              sourceTextOverride: extractedText,
+              fileOverride: null
+            });
+          }
+        } catch {
+          // Fall through to the normal error below.
+        }
+      }
+
       setErrors([getFriendlyGenerationError(error)]);
     } finally {
       setIsAddingQuestions(false);

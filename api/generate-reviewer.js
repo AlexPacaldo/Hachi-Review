@@ -13,13 +13,25 @@ const AI_PROVIDERS = [
     defaultModel: DEFAULT_GEMINI_MODEL
   },
   {
+    name: "OpenRouter",
+    kind: "openai",
+    endpoint: "https://openrouter.ai/api/v1/chat/completions",
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    modelEnv: "OPENROUTER_MODEL",
+    defaultModel: "qwen/qwen2.5-vl-72b-instruct:free",
+    supportsVision: true,
+    supportsJsonMode: false,
+    maxTokens: 16384,
+    timeoutMs: 90000
+  },
+  {
     name: "Groq",
     kind: "openai",
     endpoint: "https://api.groq.com/openai/v1/chat/completions",
     apiKeyEnv: "GROQ_API_KEY",
     modelEnv: "GROQ_MODEL",
-    defaultModel: "llama-3.3-70b-versatile",
-    supportsVision: false,
+    defaultModel: "meta-llama/llama-4-scout-17b-16e-instruct",
+    supportsVision: true,
     supportsJsonMode: true,
     maxTokens: 8192,
     timeoutMs: 60000
@@ -30,23 +42,11 @@ const AI_PROVIDERS = [
     endpoint: "https://api.groq.com/openai/v1/chat/completions",
     apiKeyEnv: "GROQ_API_KEY",
     modelEnv: "GROQ_VISION_MODEL",
-    defaultModel: "llama-3.2-90b-vision-instruct",
+    defaultModel: "meta-llama/llama-4-scout-17b-16e-instruct",
     supportsVision: true,
     supportsJsonMode: false,
     visionOnly: true,
     maxTokens: 8192,
-    timeoutMs: 90000
-  },
-  {
-    name: "OpenRouter",
-    kind: "openai",
-    endpoint: "https://openrouter.ai/api/v1/chat/completions",
-    apiKeyEnv: "OPENROUTER_API_KEY",
-    modelEnv: "OPENROUTER_MODEL",
-    defaultModel: "meta-llama/llama-3.3-70b-instruct:free",
-    supportsVision: false,
-    supportsJsonMode: false,
-    maxTokens: 16384,
     timeoutMs: 90000
   }
 ];
