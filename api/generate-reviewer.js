@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { CHOICE_LETTERS, findChoiceBalanceIssues, getChoiceBalanceIssue, getQuestionStyle } from "../src/utils/quizUtils.js";
+
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 const AI_PROVIDERS = [
@@ -217,21 +218,6 @@ const QUESTION_TYPE_INSTRUCTIONS = {
 - Every question must have exactly 4 choices: A, B, C, and D.
 - Every question must have exactly one correct answer.
 
-THE CORRECT ANSWER IS A TERM, NOT A SENTENCE:
-- This is the rule that prevents the commonest fault in this whole format, so it comes before the balancing rules below. Write the correct answer as the label of the thing being tested: a term, a name, a standard, a category, or a short phrase of a few words. Real examinations do exactly this, so match them. "Access Point", "802.11e", "Cross-Site Scripting", "Code Tampering", "Improper Platform Usage", "WPA3".
-- Do not write the correct answer as a sentence or as a definition. A choice such as "The rate at which a network carries data, measured in bits per second" is not an answer, it is an explanation that has leaked into the wrong field. A long correct answer sitting next to three short ones can be picked out without reading the question, which is the single most common way a question gives itself away.
-- Everything the learner needs to understand goes in the explanation field instead, where it belongs and where it cannot affect the length of a choice.
-- Write the three distractors in the same shape as the correct answer. If the answer is a term then every distractor is a term from the same family, so all four are the same length before a word of explanation is written and there is nothing left to balance.
-- If a question genuinely cannot be answered by naming something, then write all four choices as short phrases of similar length. Never leave one choice a full sentence while the other three are bare terms.
-
-DISTRACTORS MUST BE WEIGHABLE, NOT DISMISSIBLE:
-- A distractor is something a learner who half-remembers the lesson would put on a shortlist and then rule out for a reason. If it would be crossed out the instant it is read, it is not a distractor, and the question was decided without being read.
-- Apply the test to each wrong choice on its own: "Could someone who half-understood this lesson seriously consider this?" If the honest answer is no, it has to be replaced, not reworded.
-- Every distractor must be the same KIND of thing as the correct answer, answering the same question in the same form. When the question asks what something provides, produces, or consists of, then all four choices must be candidate answers of that kind. A macroeconomic report, a spreadsheet, and a legal framework are not candidates for what customer personas provide, however plausible each sounds on its own.
-- Never pad a wrong choice with filler to make its length match the correct one. Words added to reach a word count are exactly what turns a distractor into an absurd claim: "It allows startups to operate without any financial capital requirements" is longer than the real answer and is also nonsense. If a distractor cannot be made genuinely plausible at the right length, the correct answer is too wordy. Fix the answer instead.
-- Never use absolutes in a wrong choice: guarantees, absolute, immunity, immune, risk-free, impossible, never, always, without any, solely, ignore, replaces the need for. A real distractor is a claim a person could hold and be wrong about. "It removes market uncertainties and guarantees absolute financial immunity" is a claim about the world rather than about the subject, so no learner weighs it.
-- Do not put an obviously wrong claim in the correct answer's place while leaving the other three plausible either. Fix every choice that fails the test.
-
 ANSWER CHOICE BALANCE - CRITICAL:
 - Never make the correct answer noticeably longer, more detailed, more specific, or more technically sophisticated than the incorrect choices. The correct answer must NOT be identifiable because it contains more information.
 - Keep all four choices reasonably similar in length, level of detail, specificity, grammatical structure, complexity, and number of ideas.
@@ -407,42 +393,7 @@ const choiceRepairSchema = {
 // Repairs only the give-away items, so the prompt is a short work order instead
 // of a second full generation. Rewriting in place is what makes this cheaper
 // than the original call and what keeps every other question untouched.
-// Which side of the imbalance to move. This prompt used to ask the model to
-// "match all four choices to each other on length", which is symmetric, so on an
-// item where the correct answer was a dozen words against one-word distractors
-// the model had to guess whether to truncate the answer or pad the distractors.
-// Truncating is the one option that breaks the question, and the main generation
-// prompt has always said so explicitly. This one did not, and the items it failed
-// on were the majority of what survived.
-// The fault that survived round one decides what round two has to say. Escalating
-// towards "move the distractors up in length" is the right nudge for a lopsided
-// answer and useless for a wrong choice nobody would weigh, which is why a retry
-// round was fixing so little: it kept giving the same advice about a different
-// fault. Costs nothing extra, it only aims the call that is already being made.
-const BALANCE_KIND_FOCUS = {
-  length:
-    "These items give themselves away through length. Bring the three wrong choices up to the correct answer's length and cut nothing that carries meaning out of the correct answer.",
-  multiIdea:
-    "These items give themselves away because the correct answer is the only choice carrying more than one idea. Split it so each choice states a single idea, and keep the correct concept intact while doing it.",
-  unweighable:
-    "These items give themselves away because the wrong choices are claims nobody would seriously weigh. Replace those choices outright with plausible siblings the material actually names. Do not reword them: a wrong choice cannot be rescued by rewording, only replaced. A good replacement is a real concept from the same family as the correct answer, of the same length, and something a learner who half-remembers the lesson would put on a shortlist and then rule out for a reason.",
-  oddFrame:
-    "These items give themselves away because all three wrong choices open the same way and the correct answer does not. Rewrite so that all four open the same way as each other, or so that the correct answer is not the odd one out in its opening words."
-};
-
-function getDominantBalanceKind(issues) {
-  const counts = {};
-  (issues || []).forEach((issue) => {
-    const kinds = issue.kinds?.length ? issue.kinds : ["length"];
-    kinds.forEach((kind) => {
-      counts[kind] = (counts[kind] || 0) + 1;
-    });
-  });
-
-  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || "length";
-}
-
-function buildChoiceRepairPrompt(issues, sourceText, { retry = false } = {}) {
+function buildChoiceRepairPrompt(issues, sourceText) {
   const workOrder = issues.map((issue) => [
     `id ${issue.id}: ${issue.question}`,
     `- The current choices give it away because ${issue.reasons.join("; ")}.`,
@@ -452,50 +403,25 @@ function buildChoiceRepairPrompt(issues, sourceText, { retry = false } = {}) {
     `- D: ${issue.choices.D}`,
     `- The correct answer is currently ${issue.correctAnswer}.`,
     `- The current explanation is: ${issue.explanation}`
-  ]).join("\n\n");
+  ].join("\n")).join("\n\n");
 
-  return `${retry
-    ? `A previous attempt to fix the questions below did not work, so try a different tactic this time.
-
-WHAT TO DO DIFFERENTLY THIS TIME:
-${BALANCE_KIND_FOCUS[getDominantBalanceKind(issues)]}`
-    : `The following multiple-choice questions were written so that the answer gives itself away by its shape. Rewrite just those questions.`}
+  return `The following multiple-choice questions were written so that the answer gives itself away by its shape. Rewrite just those questions.
 
 ${workOrder}
 
 WHAT WENT WRONG:
 - The correct choice is visibly longer, more detailed, or the only one carrying more than one idea, so a learner can pick it without knowing the subject.
 - In these items the distractors are also drawn from unrelated subject areas, which makes them easy to rule out rather than hard to choose between.
-- Some of these items are the right length throughout and still give themselves away, because the wrong choices are claims no learner would seriously consider. Check every wrong choice on its own and ask: could someone who half-understood this lesson put this on a shortlist? If not, it has to be replaced, not reworded.
-
-REPLACE ANY DISTRACTOR THAT NO LEARNER WOULD WEIGH:
-- This is the more important half of the job when the lengths already match. A balanced question full of absurd choices is still a giveaway.
-- Every wrong choice must be the same KIND of thing as the correct answer, answering the same question in the same form. If the question asks what something provides or consists of, all four choices must be candidate answers of that kind, so a macroeconomic report, a spreadsheet, and a legal framework are all wrong because they are not candidates for the thing being asked about.
-- Keep claims a person could hold and be wrong about. Never write an absolute: guarantees, absolute, immunity, immune, risk-free, impossible, never, always, without any, solely, ignore, replaces the need for. "It removes market uncertainties and guarantees absolute financial immunity" is a claim about the world, not about the subject, so it is discarded on sight.
-- Do not pad a wrong choice with filler to make its length match. Words added to hit a word count are what turn a distractor into nonsense. If a wrong choice cannot be made genuinely plausible at the right length, the correct answer is too wordy, so shorten the correct answer to its term instead.
-- Replace the worst distractor first. Replacing one of three absurd choices with a plausible one is worth more than rebalancing all four.
-
-MOVE THE DISTRACTORS, NOT THE ANSWER:
-- This is the part that decides whether the rewrite works. The correct answer is right and has to stay right, so its wording is the one thing you may not sacrifice to make the lengths match.
-- Check first whether the correct answer is written as a sentence or a definition rather than as a term. If it is, that is the fault, and the fix is the easiest one available: compress it to the term it names and move the removed words into the explanation. "The rate at which a network carries data, measured in bits per second" becomes "Bandwidth", and the detail belongs in the explanation. The term was already in there.
-- Bring the three wrong choices UP to the correct answer's length. Never cut the correct answer down to the length of the distractors.
-- If the correct answer is a technical term of two or more words and the distractors are single words, the term stays exactly as it is and each distractor is rewritten to carry a matching qualifier. "Entrepreneurship" becomes "Entrepreneurship in general", "Intrapreneurship" becomes "Intrapreneurship inside an existing firm". Never reduce the correct answer to "Entrepreneurship" to make the set look even.
-- Only shorten the correct answer when it is padded with words that carry no meaning, in which case drop those and nothing else.
-- If a distractor is a bare term, give it a short accurate qualifier drawn from the material. Padding with a true and relevant qualifier also makes it a better distractor, because it now looks plausible instead of thin.
 
 REWRITE EACH QUESTION SO THAT:
-- Keep the same concept as the correct answer. Do not change what the question is really asking, and do not change which answer is correct.
+- Keep the same concept as the correct answer. Do not change what the question is really asking, and do not change which answer is correct. Only the wording and the explanations get rewritten.
 - Keep the same id, and return exactly the ${issues.length} question(s) listed above and nothing else.
-- Count the words in all four choices before returning. All four must land within about two words of each other, and none may be more than about a third longer than another. Recount and adjust until that is true.
+- Match all four choices to each other on length, detail, and specificity. Count the words and aim for all four to land within about two words of each other.
 - Keep all four choices in the same subject area as the question. A learner who half-understood the lesson must find all four plausible, so never import a distractor from an unrelated field.
 - Never repeat the question's own wording inside the correct choice.
 - No "All of the above", "None of the above", or "Both A and B".
 - answerText must exactly equal choices[correctAnswer].
 - Rewrite the explanation so it teaches the concept instead of restating the correct choice. A learner who has not read the choices should still learn something useful from it.
-
-WORKED EXAMPLE OF THE FIX:
-- Broken, correct answer is nine words and the distractors are one word each: "Technopreneurship, which applies entrepreneurial methods to creating a new venture" against "Entrepreneurship", "Intrapreneurship", "Innovation". A learner picks A without reading.
-- Fixed, same correct answer untouched, every distractor given a matching qualifier: "Technopreneurship, which applies entrepreneurial methods to creating a new venture" against "Entrepreneurship in a small independent firm", "Intrapreneurship inside a large company", "Innovation without a new venture". Now all four are the same shape and the answer is decided by knowing the term.
 
 Study material for reference:
 ${(sourceText || "[The study material was not pasted as text.]").slice(0, 24000)}`;
@@ -794,64 +720,6 @@ function getQuestionPlanInstruction(count) {
 - Roughly ${Math.round(DIFFICULTY_MIX.easy * 100)}% of the questions must be tagged "easy", ${Math.round(DIFFICULTY_MIX.medium * 100)}% "medium", and ${Math.round(DIFFICULTY_MIX.hard * 100)}% "hard", so a learner who filters to Hard still gets a full set.
 - Roughly ${Math.round(SCENARIO_MIX * 100)}% of the questions must be tagged style "scenario" (application or situation based) and the rest style "direct" (definition, fact, terminology, comparison, process, number).
 - The plan below is authoritative. Apply the difficulty and style listed for each question position instead of guessing, and keep the levels spread across the whole reviewer rather than clustered.`;
-}
-
-// The last gate before a reviewer is saved. Every earlier stage is an attempt to
-// stop the model writing give-away choices, and across repeated real generations
-// the prose rules never once reached zero: the best run flagged nothing and the
-// worst flagged almost half, because plausibility is a semantic judgement and the
-// model writing the question already knows the answer. What can be made certain is
-// the shipping decision, not the model's output. So the surplus asked for above
-// exists to be spent here, and anything still failing the check after the repair
-// pass is dropped rather than shipped with a warning attached.
-//
-// This guarantees no detectable give-away reaches a learner. It does not
-// guarantee a good question: wrong-kind distractors, such as a macroeconomic
-// report offered as an answer to what a persona provides, pass the check because
-// nothing in the wording gives them away. Catching those needs judgement the
-// check does not have.
-const MAX_BALANCE_SURPLUS = 20;
-const BALANCE_SURPLUS_RATIO = 0.3;
-
-function getBalanceSurplus(count) {
-  if (!count) return 0;
-
-  return Math.min(MAX_BALANCE_SURPLUS, Math.max(2, Math.ceil(count * BALANCE_SURPLUS_RATIO)));
-}
-
-// Keeps the questions that pass, in the order they were written, up to the limit,
-// and renumbers so the ids stay sequential for the quiz and the repair pass.
-function applyBalanceGate(reviewer, limit) {
-  const questions = reviewer?.questions || [];
-  const passing = questions.filter((question) => !getChoiceBalanceIssue(question));
-  const kept = (limit ? passing.slice(0, limit) : passing).map((question, index) => ({ ...question, id: index + 1 }));
-
-  if (kept.length === questions.length) {
-    return { reviewer, droppedCount: 0, shortBy: 0 };
-  }
-
-  return {
-    reviewer: { ...reviewer, questionCount: kept.length, questions: kept },
-    droppedCount: questions.length - kept.length,
-    shortBy: limit ? Math.max(0, limit - kept.length) : 0
-  };
-}
-
-// "Left out" rather than "gave itself away", because from the learner's side a
-// missing question is a smaller problem than a broken one, and saying so keeps
-// the tone honest. The repaired count is folded in so the work done before the
-// gate is not lost from the account: those questions were fixed and then kept.
-function getBalanceGateWarning(droppedCount, shortBy, repairedCount = 0) {
-  if (!droppedCount) return null;
-
-  const repaired = repairedCount
-    ? `${repairedCount} give-away ${repairedCount === 1 ? "question was" : "questions were"} rewritten and kept, `
-    : "";
-  const dropped = `${droppedCount} ${droppedCount === 1 ? "was" : "were"} still too obvious to save and ${droppedCount === 1 ? "was" : "were"} left out`;
-
-  return shortBy
-    ? `${repaired}${dropped}, which leaves ${shortBy} fewer than requested. Generating again usually finds replacements.`
-    : `${repaired}${dropped}, and replacements were used to make up the count.`;
 }
 
 function buildPrompt({ sourceText, title, subject, instructions, questionCount, difficulty, questionType, fileName }) {
@@ -1157,20 +1025,13 @@ function getDifficultyMixWarning(reviewer) {
   return `Difficulty mix came back thin (${sparse.map((level) => `${mix[level]} ${level}`).join(", ")} out of ${total}). Filtering to ${sparse.join(" or ")} in the reviewer will return fewer questions than expected.`;
 }
 
-// Prompt rules for balanced choices demonstrably leak, so the finished reviewer
-// is measured instead and only the give-away items are sent back for a rewrite.
-// One round is often not enough. The model regularly returns a rewrite that is
-// still lopsided, and under an all-or-nothing check that item kept the give-away
-// it started with while the request still counted as spent, leaving the learner
-// told to regenerate. So there is a second round for whatever survived the first.
-// That round is escalated, because replaying the same prompt against the same
-// material reproduced the same failure: it fixed nothing and still cost a call.
+// One repair call has to stay cheap, so only the worst offenders go back to the
+// model. Anything past this is still reported to the learner as a warning.
 const MAX_CHOICE_REPAIR_QUESTIONS = 12;
-const CHOICE_REPAIR_ROUNDS = 2;
 
-// A repair is only accepted if it actually made the item better. The model
-// sometimes returns choices that are still lopsided, or answers pointing at a
-// blank, and keeping the original is always better than shipping something worse.
+// A repair is only accepted if it actually fixed the item. The model sometimes
+// returns choices that are still lopsided, or answers pointing at a blank, and
+// keeping the original is always better than shipping a half-finished rewrite.
 function applyChoiceRepairs(reviewer, rawRepair, issues) {
   const repairsById = new Map(
     (Array.isArray(rawRepair?.questions) ? rawRepair.questions : [])
@@ -1202,9 +1063,7 @@ function applyChoiceRepairs(reviewer, rawRepair, issues) {
       explanation: String(repair?.explanation || question.explanation || "").trim()
     };
 
-    // Strictly better, not merely different. A rewrite that swaps one lopsided
-    // set for an equally lopsided one is churn, and the original is no worse.
-    if (!isBetterBalanced(candidate, question)) return question;
+    if (getChoiceBalanceIssue(candidate)) return question;
 
     repairedCount += 1;
     return candidate;
@@ -1213,89 +1072,50 @@ function applyChoiceRepairs(reviewer, rawRepair, issues) {
   return { reviewer: { ...reviewer, questions }, repairedCount, attemptedCount: issues.length };
 }
 
-// How far a question sits from balanced, split into the two things that give an
-// answer away. Length is the dominant one, because a learner scanning a list
-// finds the longest choice without reading it, and the multi-idea tell is
-// secondary. The ratio is logged so a correct answer that is too long and one
-// that is too short score the same.
-function getBalanceRank(question) {
-  const issue = getChoiceBalanceIssue(question);
-
-  if (!issue) return { length: 0, tells: 0 };
-
-  return {
-    length: Math.abs(Math.log(issue.correctWords / issue.medianDistractorWords)),
-    tells: issue.reasons.length
-  };
-}
-
-// Ordered rather than summed on purpose. As one score the secondary tell could
-// outweigh a worse primary one, which let a wordier rewrite that gave itself
-// away a single way beat a tighter rewrite that gave itself away twice. Telling
-// them apart is what a learner actually does, so compare them the same way: the
-// length decides, and the extra tell only separates two of the same length.
-function isBetterBalanced(candidate, original) {
-  const after = getBalanceRank(candidate);
-  const before = getBalanceRank(original);
-
-  if (after.length !== before.length) return after.length < before.length;
-
-  return after.tells < before.tells;
-}
-
+// Prompt rules for balanced choices demonstrably leak, so the finished reviewer
+// is measured instead and only the give-away items are sent back for a rewrite.
 // Best effort by design: a reviewer with one long distractor beats a failed
 // request, so any error here returns the reviewer untouched.
 async function rebalanceReviewerChoices({ reviewer, sourceText, requestId, budget }) {
-  let current = reviewer;
-  let repairedCount = 0;
-  let issues = findChoiceBalanceIssues(current?.questions);
+  const issues = findChoiceBalanceIssues(reviewer?.questions);
+  if (!issues.length) return { reviewer, repairedCount: 0, unresolvedCount: 0 };
 
-  for (let round = 0; round < CHOICE_REPAIR_ROUNDS && issues.length; round += 1) {
-    // The cap keeps any single prompt small, so a reviewer with many give-aways
-    // spreads them across rounds instead of one very large call.
-    const repairable = issues.slice(0, MAX_CHOICE_REPAIR_QUESTIONS);
-    const before = issues.length;
+  const repairable = issues.slice(0, MAX_CHOICE_REPAIR_QUESTIONS);
 
-    try {
-      const { reviewer: rawRepair } = await requestReviewerWithFallback({
-        parts: [{ text: buildChoiceRepairPrompt(repairable, sourceText, { retry: round > 0 }) }],
-        hasReadableMaterial: true,
-        requestId,
-        budget
-      });
+  try {
+    const { reviewer: rawRepair } = await requestReviewerWithFallback({
+      parts: [{ text: buildChoiceRepairPrompt(repairable, sourceText) }],
+      hasReadableMaterial: true,
+      requestId,
+      budget
+    });
+    const result = applyChoiceRepairs(reviewer, rawRepair, repairable);
 
-      const result = applyChoiceRepairs(current, rawRepair, repairable);
-      current = result.reviewer;
-      repairedCount += result.repairedCount;
-      issues = findChoiceBalanceIssues(current?.questions);
-
-      // A round that moved nothing will not move anything on the same material,
-      // and the call budget is not worth spending to find that out twice.
-      if (issues.length >= before) break;
-    } catch (error) {
-      console.warn(`[${requestId}] Could not rebalance give-away choices: ${error?.message || "Unknown error"}`);
-      break;
+    if (result.repairedCount) {
+      console.warn(`[${requestId}] Rewrote ${result.repairedCount} of ${issues.length} give-away choices.`);
     }
-  }
 
-  if (repairedCount || issues.length) {
-    // Names the surviving items and why they are still lopsided. Without this the
-    // only evidence was a count, which cannot distinguish a threshold that is too
-    // aggressive from a concept the model is unable to reword at all.
-    const detail = issues.map((issue) => `#${issue.id} (${issue.reasons.join("; ")})`).join(" | ");
-    console.warn(
-      `[${requestId}] Rewrote ${repairedCount} give-away choices; ${issues.length} still lopsided${detail ? `: ${detail}` : "."}`
-    );
+    return {
+      reviewer: result.reviewer,
+      repairedCount: result.repairedCount,
+      unresolvedCount: issues.length - result.repairedCount
+    };
+  } catch (error) {
+    console.warn(`[${requestId}] Could not rebalance give-away choices: ${error?.message || "Unknown error"}`);
+    return { reviewer, repairedCount: 0, unresolvedCount: issues.length };
   }
+}
 
-  // Measured on the reviewer as it now stands rather than inferred from the
-  // issue count, so items past the per-round cap are reported as untouched
-  // instead of being quietly counted as attempts that failed.
-  return {
-    reviewer: current,
-    repairedCount,
-    unresolvedIssues: issues
-  };
+// A give-away choice that survived the repair pass is still a flaw in the
+// reviewer, so say how many rather than shipping it silently.
+function getChoiceBalanceWarning(repairedCount, unresolvedCount) {
+  if (!unresolvedCount) return null;
+
+  const repaired = repairedCount
+    ? `${repairedCount} give-away ${repairedCount === 1 ? "question was" : "questions were"} rewritten, `
+    : "";
+
+  return `${repaired}but ${unresolvedCount} still ${unresolvedCount === 1 ? "has" : "have"} an answer that stands out by its length or detail. Regenerate if that bothers you.`;
 }
 
 async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs, schema }) {
@@ -1583,9 +1403,9 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
   throw error;
 }
 
-// Exported so the mix and repair logic can be tested without a live request. The
-// handler below is still the only thing Vercel calls.
-export { applyBalanceGate, applyChoiceRepairs, buildChoiceRepairPrompt, getBalanceGateWarning, getBalanceSurplus, getStyleMixWarning, SCENARIO_MIX };
+// Exported so the mix warning can be tested without a live request. The handler
+// below is still the only thing Vercel calls.
+export { getStyleMixWarning, SCENARIO_MIX };
 
 export default async function handler(request, response) {
   const requestId = getRequestId();
@@ -1730,31 +1550,26 @@ const reviewer = {
         ...mergeReviewers(baseReviewer, additionalReviewer, requestedCount),
         reviewerId: existingReviewer.reviewerId || baseReviewer.reviewerId
       };
-      const { reviewer: rebalancedReviewer, repairedCount, unresolvedIssues } = await rebalanceReviewerChoices({
+      const { reviewer: rebalancedReviewer, repairedCount, unresolvedCount } = await rebalanceReviewerChoices({
         reviewer,
         sourceText: safeSourceText,
         requestId,
         budget
       });
 
-      // Same last gate as a fresh generation, so adding questions to an existing
-      // reviewer cannot reintroduce the give-aways the gate already removed.
-      const gated = applyBalanceGate(rebalancedReviewer, requestedCount);
-      const finalReviewer = gated.reviewer;
-
       return sendJson(response, 200, {
-        reviewer: finalReviewer,
+        reviewer: rebalancedReviewer,
         requestedQuestionCount: requestedCount,
-        generatedQuestionCount: finalReviewer.questions.length,
-        addedQuestionCount: Math.max(0, finalReviewer.questions.length - baseReviewer.questions.length),
-        difficultyMix: getDifficultyMix(finalReviewer.questions),
+        generatedQuestionCount: rebalancedReviewer.questions.length,
+        addedQuestionCount: Math.max(0, rebalancedReviewer.questions.length - baseReviewer.questions.length),
+        difficultyMix: getDifficultyMix(rebalancedReviewer.questions),
         warning: [
-          finalReviewer.questions.length < requestedCount
-            ? `Added ${Math.max(0, finalReviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - baseReviewer.questions.length} requested new questions.`
+          reviewer.questions.length < requestedCount
+            ? `Added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - reviewer.questions.length} requested new questions.`
             : null,
-          getBalanceGateWarning(gated.droppedCount, gated.shortBy, repairedCount),
-          getDifficultyMixWarning(finalReviewer),
-          getStyleMixWarning(finalReviewer)
+          getDifficultyMixWarning(rebalancedReviewer),
+          getStyleMixWarning(rebalancedReviewer),
+          getChoiceBalanceWarning(repairedCount, unresolvedCount)
         ].filter(Boolean).join(" ") || null
       });
     } catch (error) {
@@ -1770,20 +1585,12 @@ const reviewer = {
     }
   }
 
-  // Asked for up front so the balance gate below has replacements to spend.
-  // Costs output tokens in one larger response rather than an extra round trip,
-  // so it does not eat into the upstream call budget. Capped at the same 150 the
-  // mix plan is built for, because a plan of 150 positions alongside a request
-  // for 170 questions is a contradiction the model would have to resolve itself.
-  const targetCount = getNumericTarget(parsedQuestionCount);
-  const requestedWithSurplus = targetCount ? Math.min(150, targetCount + getBalanceSurplus(targetCount)) : parsedQuestionCount;
-
   const prompt = buildPrompt({
     sourceText: safeSourceText,
     title: String(title).trim(),
     subject: String(subject).trim(),
     instructions: String(instructions).trim(),
-    questionCount: String(requestedWithSurplus),
+    questionCount: parsedQuestionCount,
     difficulty: safeDifficulty,
     questionType: safeQuestionType,
     fileName: file?.name ? String(file.name).trim() : ""
@@ -1871,42 +1678,27 @@ const reviewer = {
       reviewer = mergeReviewers(reviewer, additionalReviewer, requestedCount);
     }
 
-    const { reviewer: rebalancedReviewer, repairedCount, unresolvedIssues } = await rebalanceReviewerChoices({
+    const { reviewer: rebalancedReviewer, repairedCount, unresolvedCount } = await rebalanceReviewerChoices({
       reviewer,
       sourceText: safeSourceText,
       requestId,
       budget
     });
 
-    // Last gate. Anything the repair pass could not fix is dropped rather than
-    // saved, and the surplus asked for up front is what keeps the count intact.
-    const gated = applyBalanceGate(rebalancedReviewer, targetCount || 0);
-    const finalReviewer = gated.reviewer;
-
-    if (gated.droppedCount) {
-      console.warn(
-        `[${requestId}] Balance gate left out ${gated.droppedCount} give-away questions${gated.shortBy ? `, ${gated.shortBy} short of the target` : ""}.`
-      );
-    }
-
-    // What the gate dropped is already covered by getBalanceGateWarning. Saying
-    // it again as "still gives themselves away" described the reviewer before the
-    // gate ran, so a saved reviewer with nothing wrong in it was reported as
-    // having six broken questions in it.
     const warning = [
-      requestedCount && finalReviewer.questions.length < requestedCount
-        ? `Saved ${finalReviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short or unclear, or too few clean questions could be written from it.`
+      requestedCount && reviewer.questions.length < requestedCount
+        ? `Generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
         : null,
-      getBalanceGateWarning(gated.droppedCount, gated.shortBy, repairedCount),
-      getDifficultyMixWarning(finalReviewer),
-      getStyleMixWarning(finalReviewer)
+      getDifficultyMixWarning(rebalancedReviewer),
+      getStyleMixWarning(rebalancedReviewer),
+      getChoiceBalanceWarning(repairedCount, unresolvedCount)
     ].filter(Boolean).join(" ") || null;
 
     return sendJson(response, 200, {
-      reviewer: finalReviewer,
+      reviewer: rebalancedReviewer,
       requestedQuestionCount: requestedCount || "comprehensive",
-      generatedQuestionCount: finalReviewer.questions.length,
-      difficultyMix: getDifficultyMix(finalReviewer.questions),
+      generatedQuestionCount: rebalancedReviewer.questions.length,
+      difficultyMix: getDifficultyMix(rebalancedReviewer.questions),
       warning
     });
   } catch (error) {

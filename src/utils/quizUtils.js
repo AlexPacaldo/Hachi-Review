@@ -139,46 +139,6 @@ function getMedian(values) {
   return sorted[Math.floor((sorted.length - 1) / 2)];
 }
 
-// A plausible wrong answer is one a learner who half-remembers the lesson would
-// actually weigh. These are the words that turn a distractor into a claim nobody
-// would seriously make, so the question gets decided on sight instead of by
-// reading it. Real questions on the IT2511 paper manage this with sibling terms:
-// "Association", "Access Point", "BSSID" against "Bandwidth".
-const ABSURD_DISTRACTOR_PATTERN = /\b(guarantees?|guaranteed|absolutely|absolute|immune|risk[-\s]?free|impossible|never|always|forever|without any|solely|exclusively|ignores?|ignoring|replaces the need|no need to|unnecessary|pointless)\b/i;
-
-// When every distractor opens the same way and the correct answer does not, the
-// sentence frame alone gives it away. "It replaces the need...", "It allows
-// startups to operate...", "It ensures that founders never..." against "Identifying
-// real-world problems drives..." is decided on shape before the words are read.
-// The correct answer must be the odd one out, otherwise an item where all four
-// simply start with "It" says nothing.
-function findOddOneOutByFrame(texts, correctIndex) {
-  const firstWord = (text) => String(text || "").toLowerCase().replace(/[^a-z0-9].*$/, "").trim();
-  const distractorOpeners = texts.filter((_, index) => index !== correctIndex).map(firstWord);
-
-  if (distractorOpeners.some((word) => !word)) return null;
-  if (new Set(distractorOpeners).size !== 1) return null;
-
-  return firstWord(texts[correctIndex]) === distractorOpeners[0] ? null : distractorOpeners[0];
-}
-
-// Returns the distractor letters that no learner would seriously consider. Kept
-// separate from the length check because it is a different fault with a different
-// fix, and because it is the one that survives a perfectly balanced choice set.
-function findImplausibleDistractors(question, correctIndex) {
-  const texts = CHOICE_LETTERS.map((letter) => String(question?.choices?.[letter] || "").trim());
-  const correct = texts[correctIndex];
-  const stem = String(question?.question || "");
-
-  // The same word in the correct answer or in the stem means it is the subject
-  // matter rather than a tell, so a question about never giving up is exempt.
-  if (ABSURD_DISTRACTOR_PATTERN.test(correct) || ABSURD_DISTRACTOR_PATTERN.test(stem)) return [];
-
-  return CHOICE_LETTERS.filter(
-    (_, index) => index !== correctIndex && ABSURD_DISTRACTOR_PATTERN.test(texts[index])
-  );
-}
-
 // Returns null when the question is fine, or an object describing exactly what
 // gives it away so a repair prompt can be told the specific problem.
 export function getChoiceBalanceIssue(question) {
@@ -202,40 +162,20 @@ export function getChoiceBalanceIssue(question) {
   if (!correctWords || !medianDistractorWords) return null;
 
   const reasons = [];
-  // Which of the five faults fired, as stable identifiers rather than prose. The
-  // warning the learner reads is built from these, and it used to name only the
-  // length fault after the other three were added, so it described a fault the
-  // check had not found.
-  const kinds = new Set();
   const wordGap = correctWords - medianDistractorWords;
   const plural = (count) => `${count} ${count === 1 ? "word" : "words"}`;
 
   if (wordGap >= BALANCE_MIN_WORD_GAP && correctWords / medianDistractorWords >= BALANCE_LENGTH_RATIO) {
     reasons.push(`the correct answer is ${plural(correctWords)} while the other choices sit around ${plural(medianDistractorWords)}`);
-    kinds.add("length");
   }
 
   if (wordGap <= -BALANCE_MAX_WORD_GAP && correctWords / medianDistractorWords <= BALANCE_MIN_SHORT_RATIO) {
     reasons.push(`the correct answer is ${plural(correctWords)} while the other choices sit around ${plural(medianDistractorWords)}, so it stands out as the short one`);
-    kinds.add("length");
   }
 
   const maxDistractorClauses = Math.max(...clauseCounts.filter((_, index) => index !== correctIndex));
   if (clauseCounts[correctIndex] >= 2 && maxDistractorClauses < 2) {
     reasons.push(`the correct answer is the only choice that packs in more than one idea (${clauseCounts[correctIndex]} clauses against ${maxDistractorClauses})`);
-    kinds.add("multiIdea");
-  }
-
-  const implausible = findImplausibleDistractors(question, correctIndex);
-  if (implausible.length) {
-    reasons.push(`the wrong choices ${implausible.join(", ")} make claims no learner would seriously consider, so they can be ruled out without reading them`);
-    kinds.add("unweighable");
-  }
-
-  const oddFrame = findOddOneOutByFrame(texts, correctIndex);
-  if (oddFrame) {
-    reasons.push(`all three wrong choices open with "${oddFrame}" and the correct answer does not, so its shape alone gives it away`);
-    kinds.add("oddFrame");
   }
 
   if (!reasons.length) return null;
@@ -249,8 +189,7 @@ export function getChoiceBalanceIssue(question) {
     explanation: String(question?.explanation || "").trim(),
     correctWords,
     medianDistractorWords,
-    reasons,
-    kinds: [...kinds]
+    reasons
   };
 }
 
