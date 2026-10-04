@@ -8,6 +8,10 @@ import { cacheCloudReviewer } from "../utils/storageUtils.js";
 // but the questions are only fetched when a reviewer is actually opened. The
 // fetch is cached on the way through, so a second visit, and any later visit
 // while offline, finds the reviewer already complete.
+//
+// The list is not required, though. It is a cache, and on a cold load of a
+// reviewer url there is nothing in it yet, so the id in the url is what the
+// fetch is made from.
 export function useReviewer(reviewerId, refreshKey = 0) {
   const { user } = useAuth();
   const cached = useMemo(() => getReviewerById(reviewerId), [reviewerId, refreshKey]);
@@ -20,19 +24,29 @@ export function useReviewer(reviewerId, refreshKey = 0) {
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
 
   const summary = isReviewerSummary(cached) ? cached : null;
-  const summaryId = summary?.reviewerId;
   const summaryOwner = summary?.ownerId;
   const userId = user?.id;
 
   useEffect(() => {
-    // Signed out, or already held in full, so there is nothing to fetch.
-    if (!summaryId || !userId) return undefined;
+    // Signed out, so the only thing this device could have is what it already
+    // has, and there is no account to fetch from.
+    if (!userId || !reviewerId) return undefined;
+
+    // A local copy is already complete, so there is nothing to ask for. Anything
+    // else has to be fetched: a summary has no questions yet, and no cached entry
+    // at all is the case this used to get wrong. The list that normally fills the
+    // cache on the way to a reviewer has not run yet on a cold load, so the memo
+    // above is empty, and reading the id straight out of the url is the only way
+    // to find the row. Without this a reload of /reviewer/:id reported that the
+    // reviewer does not exist and never tried again, because the early return
+    // below left nothing to retry with.
+    if (cached && !isReviewerSummary(cached)) return undefined;
 
     let active = true;
     setIsLoading(true);
     setLoadError(null);
 
-    getCloudReviewerById(summaryId, summaryOwner)
+    getCloudReviewerById(reviewerId, summaryOwner)
       .then(({ data, error }) => {
         if (!active) return;
 
@@ -50,7 +64,7 @@ export function useReviewer(reviewerId, refreshKey = 0) {
         // left the page blank until it was reloaded. Going back through the
         // registry also keeps the merged local-plus-cloud case deciding its
         // validity the same way it does on every later visit.
-        setLoaded(getReviewerById(summaryId) || describeReviewer(data, "cloud", "cloud"));
+        setLoaded(getReviewerById(reviewerId) || describeReviewer(data, "cloud", "cloud"));
         setIsLoading(false);
       })
       .catch(() => {
@@ -62,17 +76,23 @@ export function useReviewer(reviewerId, refreshKey = 0) {
     return () => {
       active = false;
     };
-  }, [summaryId, summaryOwner, userId, attempt]);
+  }, [reviewerId, summaryOwner, userId, attempt]);
 
   // A reviewer id can change between renders when the route changes, so a fetch
   // that finished for a different reviewer is not carried over.
   const reviewer = loaded?.reviewerId === reviewerId ? loaded : cached;
 
+  // Nothing to show and no settled verdict yet. Derived rather than read off the
+  // fetch flag so the very first render of a cold load already reports it: the
+  // request has not started at that point, and an unspinnered empty state would
+  // flash "does not exist" before it did.
+  const isResolving = isLoading || (!reviewer && !loadError && Boolean(userId) && Boolean(reviewerId));
+
   return {
     reviewer: reviewer || null,
     hasQuestions: Array.isArray(reviewer?.questions),
     isSummary: Boolean(summary),
-    isLoading: isLoading && Boolean(reviewer),
+    isResolving,
     loadError,
     reload
   };

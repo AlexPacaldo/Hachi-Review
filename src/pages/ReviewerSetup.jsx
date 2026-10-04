@@ -72,7 +72,7 @@ export default function ReviewerSetup() {
   const { configured, user } = useAuth();
   const [refreshKey, setRefreshKey] = useState(0);
   const [menuMessage, setMenuMessage] = useState(null);
-  const { reviewer, hasQuestions, isLoading, loadError, reload } = useReviewer(reviewerId, refreshKey);
+  const { reviewer, hasQuestions, isResolving, loadError, reload } = useReviewer(reviewerId, refreshKey);
   const savedProgress = reviewer ? loadQuizProgress(reviewer.reviewerId) : null;
   const latestAttempt = reviewer ? getLatestAttempt(reviewer.reviewerId) : null;
   const [showStartOver, setShowStartOver] = useState(false);
@@ -118,22 +118,29 @@ export default function ReviewerSetup() {
     includeScenarioQuestions: true
   });
 
-  if (!reviewer) {
-    return (
-      <div className="page narrow reviewer-setup-page">
-        <EmptyState title="Unable to load this reviewer." message={reviewer?.validation.errors[0] || "The reviewer does not exist."} action={<Link className="button primary" to="/home">Back to Reviewers</Link>} />
-      </div>
-    );
-  }
-
   // The list only holds a summary, so the questions are fetched here on open.
-  if (isLoading) {
+  // isResolving covers the cold load too, where there is nothing to show at all,
+  // and it has to be checked before the empty state below: otherwise a reload
+  // reports a reviewer that does not exist while the request for it is in flight.
+  if (isResolving) {
     return (
       <div className="page narrow reviewer-setup-page">
         <EmptyState
           title="Loading this reviewer"
           message="Fetching the questions for this reviewer."
           action={<Loader2 className="spinner" size={20} aria-hidden="true" />}
+        />
+      </div>
+    );
+  }
+
+  if (!reviewer) {
+    return (
+      <div className="page narrow reviewer-setup-page">
+        <EmptyState
+          title="Unable to load this reviewer."
+          message={loadError || "The reviewer does not exist."}
+          action={<div className="button-row"><button className="button primary" type="button" onClick={reload}>Try again</button><Link className="button subtle" to="/home">Back to Reviewers</Link></div>}
         />
       </div>
     );
