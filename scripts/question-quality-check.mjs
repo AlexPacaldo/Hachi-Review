@@ -405,6 +405,69 @@ section("the warning names the faults that were actually found");
   check("a kindless issue is still counted", /1 item/.test(getChoiceBalanceWarning(0, [{ id: 9, reasons: [] }])), true);
 }
 
+// Prose rules never reached zero across repeated real generations, so the
+// shipping decision is what got made certain instead. The surplus exists to be
+// spent here and nothing that fails the check is allowed to reach a learner.
+section("the balance gate never ships a question that fails the check");
+{
+  const { applyBalanceGate, getBalanceGateWarning } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const clean = (id) => ({
+    id,
+    question: "This is a component of a wireless network.",
+    choices: { A: "Access Point", B: "Association", C: "BSSID", D: "Beacon frame" },
+    correctAnswer: "A",
+    explanation: "An access point bridges wired and wireless networks."
+  });
+
+  const giveaway = (id) => ({
+    id,
+    question: "Why is problem identification essential?",
+    choices: {
+      A: "It grounds the venture in a real customer problem",
+      B: "It removes the need for customer segmentation entirely",
+      C: "It allows startups to operate without any financial capital requirements whatsoever",
+      D: "It ensures that founders never have to pivot their initial product ideas at all"
+    },
+    correctAnswer: "A",
+    explanation: "Problem identification grounds a venture."
+  });
+
+  const ten = [...Array(5)].map((_, i) => clean(i + 1));
+  const withGaps = [...ten];
+  withGaps[2] = giveaway(3);
+
+  const gapped = applyBalanceGate({ questions: withGaps }, 5);
+  check("the giveaway is dropped", gapped.droppedCount, 1);
+  check("nothing failing survives", gapped.reviewer.questions.filter((q) => getChoiceBalanceIssue(q)).length, 0);
+  check("ids stay sequential", gapped.reviewer.questions.map((q) => q.id), [1, 2, 3, 4]);
+  check("questionCount matches what is kept", gapped.reviewer.questionCount, 4);
+
+  const cleanRun = applyBalanceGate({ questions: ten }, 5);
+  check("a clean reviewer is untouched", cleanRun.droppedCount, 0);
+  check("and keeps everything", cleanRun.reviewer.questions.length, 5);
+
+  // The surplus is what stops the gate costing the learner questions.
+  const surplus = [...ten, giveaway(6), giveaway(7), giveaway(8)];
+  const covered = applyBalanceGate({ questions: surplus }, 5);
+  check("surplus replaces the dropouts", covered.reviewer.questions.length, 5);
+  check("and no giveaway survives", covered.reviewer.questions.filter((q) => getChoiceBalanceIssue(q)).length, 0);
+  check("nothing is short", covered.shortBy, 0);
+
+  // Only when the surplus runs out does the count fall short, and that has to be
+  // reported rather than silently shipped.
+  const exhausted = applyBalanceGate({ questions: [giveaway(1), giveaway(2)] }, 5);
+  check("reports the shortfall", exhausted.shortBy, 5);
+  check("shortfall is named in the warning", /leaves 5 fewer than requested/.test(getBalanceGateWarning(exhausted.droppedCount, exhausted.shortBy)), true);
+  check("surplus case says replacements were used", /replacements were used/.test(getBalanceGateWarning(covered.droppedCount, covered.shortBy)), true);
+  check("no warning when nothing dropped", getBalanceGateWarning(0, 0), null);
+
+  const comprehensive = applyBalanceGate({ questions: withGaps }, 0);
+  check("comprehensive keeps everything that passes", comprehensive.reviewer.questions.length, 4);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

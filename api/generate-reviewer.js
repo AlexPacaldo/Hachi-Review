@@ -1,6 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
 import { CHOICE_LETTERS, findChoiceBalanceIssues, getChoiceBalanceIssue, getQuestionStyle } from "../src/utils/quizUtils.js";
-
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 const AI_PROVIDERS = [
@@ -797,6 +796,60 @@ function getQuestionPlanInstruction(count) {
 - The plan below is authoritative. Apply the difficulty and style listed for each question position instead of guessing, and keep the levels spread across the whole reviewer rather than clustered.`;
 }
 
+// The last gate before a reviewer is saved. Every earlier stage is an attempt to
+// stop the model writing give-away choices, and across repeated real generations
+// the prose rules never once reached zero: the best run flagged nothing and the
+// worst flagged almost half, because plausibility is a semantic judgement and the
+// model writing the question already knows the answer. What can be made certain is
+// the shipping decision, not the model's output. So the surplus asked for above
+// exists to be spent here, and anything still failing the check after the repair
+// pass is dropped rather than shipped with a warning attached.
+//
+// This guarantees no detectable give-away reaches a learner. It does not
+// guarantee a good question: wrong-kind distractors, such as a macroeconomic
+// report offered as an answer to what a persona provides, pass the check because
+// nothing in the wording gives them away. Catching those needs judgement the
+// check does not have.
+const MAX_BALANCE_SURPLUS = 20;
+const BALANCE_SURPLUS_RATIO = 0.3;
+
+function getBalanceSurplus(count) {
+  if (!count) return 0;
+
+  return Math.min(MAX_BALANCE_SURPLUS, Math.max(2, Math.ceil(count * BALANCE_SURPLUS_RATIO)));
+}
+
+// Keeps the questions that pass, in the order they were written, up to the limit,
+// and renumbers so the ids stay sequential for the quiz and the repair pass.
+function applyBalanceGate(reviewer, limit) {
+  const questions = reviewer?.questions || [];
+  const passing = questions.filter((question) => !getChoiceBalanceIssue(question));
+  const kept = (limit ? passing.slice(0, limit) : passing).map((question, index) => ({ ...question, id: index + 1 }));
+
+  if (kept.length === questions.length) {
+    return { reviewer, droppedCount: 0, shortBy: 0 };
+  }
+
+  return {
+    reviewer: { ...reviewer, questionCount: kept.length, questions: kept },
+    droppedCount: questions.length - kept.length,
+    shortBy: limit ? Math.max(0, limit - kept.length) : 0
+  };
+}
+
+// "Left out" rather than "gave itself away", because from the learner's side a
+// missing question is a smaller problem than a broken one, and saying so keeps
+// the tone honest.
+function getBalanceGateWarning(droppedCount, shortBy) {
+  if (!droppedCount) return null;
+
+  const dropped = `${droppedCount} give-away ${droppedCount === 1 ? "question was" : "questions were"} left out rather than saved`;
+
+  return shortBy
+    ? `${dropped}, which leaves ${shortBy} fewer than requested. Generating again usually finds replacements.`
+    : `${dropped}, and replacements were used to make up the count.`;
+}
+
 function buildPrompt({ sourceText, title, subject, instructions, questionCount, difficulty, questionType, fileName }) {
   const questionCountInstruction = getQuestionCountInstruction(questionCount);
   const difficultyInstruction = getDifficultyInstruction(difficulty);
@@ -1573,7 +1626,7 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
 
 // Exported so the mix and repair logic can be tested without a live request. The
 // handler below is still the only thing Vercel calls.
-export { applyChoiceRepairs, buildChoiceRepairPrompt, getChoiceBalanceWarning, getStyleMixWarning, SCENARIO_MIX };
+export { applyBalanceGate, applyChoiceRepairs, buildChoiceRepairPrompt, getBalanceGateWarning, getBalanceSurplus, getChoiceBalanceWarning, getStyleMixWarning, SCENARIO_MIX };
 
 export default async function handler(request, response) {
   const requestId = getRequestId();
@@ -1725,18 +1778,24 @@ const reviewer = {
         budget
       });
 
+      // Same last gate as a fresh generation, so adding questions to an existing
+      // reviewer cannot reintroduce the give-aways the gate already removed.
+      const gated = applyBalanceGate(rebalancedReviewer, requestedCount);
+      const finalReviewer = gated.reviewer;
+
       return sendJson(response, 200, {
-        reviewer: rebalancedReviewer,
+        reviewer: finalReviewer,
         requestedQuestionCount: requestedCount,
-        generatedQuestionCount: rebalancedReviewer.questions.length,
-        addedQuestionCount: Math.max(0, rebalancedReviewer.questions.length - baseReviewer.questions.length),
-        difficultyMix: getDifficultyMix(rebalancedReviewer.questions),
+        generatedQuestionCount: finalReviewer.questions.length,
+        addedQuestionCount: Math.max(0, finalReviewer.questions.length - baseReviewer.questions.length),
+        difficultyMix: getDifficultyMix(finalReviewer.questions),
         warning: [
-          reviewer.questions.length < requestedCount
-            ? `Added ${Math.max(0, reviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - reviewer.questions.length} requested new questions.`
+          finalReviewer.questions.length < requestedCount
+            ? `Added ${Math.max(0, finalReviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - baseReviewer.questions.length} requested new questions.`
             : null,
-          getDifficultyMixWarning(rebalancedReviewer),
-          getStyleMixWarning(rebalancedReviewer),
+          getBalanceGateWarning(gated.droppedCount, gated.shortBy),
+          getDifficultyMixWarning(finalReviewer),
+          getStyleMixWarning(finalReviewer),
           getChoiceBalanceWarning(repairedCount, unresolvedIssues)
         ].filter(Boolean).join(" ") || null
       });
@@ -1753,12 +1812,20 @@ const reviewer = {
     }
   }
 
+  // Asked for up front so the balance gate below has replacements to spend.
+  // Costs output tokens in one larger response rather than an extra round trip,
+  // so it does not eat into the upstream call budget. Capped at the same 150 the
+  // mix plan is built for, because a plan of 150 positions alongside a request
+  // for 170 questions is a contradiction the model would have to resolve itself.
+  const targetCount = getNumericTarget(parsedQuestionCount);
+  const requestedWithSurplus = targetCount ? Math.min(150, targetCount + getBalanceSurplus(targetCount)) : parsedQuestionCount;
+
   const prompt = buildPrompt({
     sourceText: safeSourceText,
     title: String(title).trim(),
     subject: String(subject).trim(),
     instructions: String(instructions).trim(),
-    questionCount: parsedQuestionCount,
+    questionCount: String(requestedWithSurplus),
     difficulty: safeDifficulty,
     questionType: safeQuestionType,
     fileName: file?.name ? String(file.name).trim() : ""
@@ -1853,20 +1920,32 @@ const reviewer = {
       budget
     });
 
+    // Last gate. Anything the repair pass could not fix is dropped rather than
+    // saved, and the surplus asked for up front is what keeps the count intact.
+    const gated = applyBalanceGate(rebalancedReviewer, targetCount || 0);
+    const finalReviewer = gated.reviewer;
+
+    if (gated.droppedCount) {
+      console.warn(
+        `[${requestId}] Balance gate left out ${gated.droppedCount} give-away questions${gated.shortBy ? `, ${gated.shortBy} short of the target` : ""}.`
+      );
+    }
+
     const warning = [
-      requestedCount && reviewer.questions.length < requestedCount
-        ? `Generated ${reviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short, unclear, or the model may have stopped early.`
+      requestedCount && finalReviewer.questions.length < requestedCount
+        ? `Saved ${finalReviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short or unclear, or too few clean questions could be written from it.`
         : null,
-      getDifficultyMixWarning(rebalancedReviewer),
-      getStyleMixWarning(rebalancedReviewer),
+      getBalanceGateWarning(gated.droppedCount, gated.shortBy),
+      getDifficultyMixWarning(finalReviewer),
+      getStyleMixWarning(finalReviewer),
       getChoiceBalanceWarning(repairedCount, unresolvedIssues)
     ].filter(Boolean).join(" ") || null;
 
     return sendJson(response, 200, {
-      reviewer: rebalancedReviewer,
+      reviewer: finalReviewer,
       requestedQuestionCount: requestedCount || "comprehensive",
-      generatedQuestionCount: rebalancedReviewer.questions.length,
-      difficultyMix: getDifficultyMix(rebalancedReviewer.questions),
+      generatedQuestionCount: finalReviewer.questions.length,
+      difficultyMix: getDifficultyMix(finalReviewer.questions),
       warning
     });
   } catch (error) {
