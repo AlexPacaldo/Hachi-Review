@@ -839,15 +839,19 @@ function applyBalanceGate(reviewer, limit) {
 
 // "Left out" rather than "gave itself away", because from the learner's side a
 // missing question is a smaller problem than a broken one, and saying so keeps
-// the tone honest.
-function getBalanceGateWarning(droppedCount, shortBy) {
+// the tone honest. The repaired count is folded in so the work done before the
+// gate is not lost from the account: those questions were fixed and then kept.
+function getBalanceGateWarning(droppedCount, shortBy, repairedCount = 0) {
   if (!droppedCount) return null;
 
-  const dropped = `${droppedCount} give-away ${droppedCount === 1 ? "question was" : "questions were"} left out rather than saved`;
+  const repaired = repairedCount
+    ? `${repairedCount} give-away ${repairedCount === 1 ? "question was" : "questions were"} rewritten and kept, `
+    : "";
+  const dropped = `${droppedCount} ${droppedCount === 1 ? "was" : "were"} still too obvious to save and ${droppedCount === 1 ? "was" : "were"} left out`;
 
   return shortBy
-    ? `${dropped}, which leaves ${shortBy} fewer than requested. Generating again usually finds replacements.`
-    : `${dropped}, and replacements were used to make up the count.`;
+    ? `${repaired}${dropped}, which leaves ${shortBy} fewer than requested. Generating again usually finds replacements.`
+    : `${repaired}${dropped}, and replacements were used to make up the count.`;
 }
 
 function buildPrompt({ sourceText, title, subject, instructions, questionCount, difficulty, questionType, fileName }) {
@@ -1294,51 +1298,6 @@ async function rebalanceReviewerChoices({ reviewer, sourceText, requestId, budge
   };
 }
 
-// What each fault reads like to a learner. The count alone is not actionable, and
-// naming the wrong fault is worse than useless: this message used to promise the
-// correct answer was too long, which stopped being true the moment the check
-// learned to spot unweighable wrong choices and an odd sentence frame.
-const BALANCE_KIND_LABELS = {
-  length: "a correct answer noticeably longer or shorter than the others",
-  multiIdea: "a correct answer that is the only choice carrying more than one idea",
-  unweighable: "wrong choices that no learner would seriously consider",
-  oddFrame: "all three wrong choices opening the same way while the correct answer does not"
-};
-
-// A give-away choice that survived the repair pass is still a flaw in the
-// reviewer, so say how many rather than shipping it silently. Regenerating is
-// poor advice here: it spends the call allowance again and rolls the dice on the
-// same material, so name the item instead of telling the learner to try their luck.
-function getChoiceBalanceWarning(repairedCount, issues) {
-  if (!issues?.length) return null;
-
-  const counts = {};
-  issues.forEach((issue) => {
-    // An issue with no kinds would be a bug in the check, so treat it as the
-    // oldest fault rather than silently dropping the item from the summary.
-    const kinds = issue.kinds?.length ? issue.kinds : ["length"];
-    kinds.forEach((kind) => {
-      counts[kind] = (counts[kind] || 0) + 1;
-    });
-  });
-
-  const parts = Object.entries(counts)
-    .filter(([kind]) => BALANCE_KIND_LABELS[kind])
-    .sort((a, b) => b[1] - a[1])
-    .map(([kind, count]) => `${count} ${count === 1 ? "has" : "have"} ${BALANCE_KIND_LABELS[kind]}`);
-
-  // Joined by hand because three faults joined with ", and " twice reads as
-  // "A, and B, and C".
-  const summary = parts.length < 2 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
-
-  const total = issues.length;
-  const repaired = repairedCount
-    ? `${repairedCount} give-away ${repairedCount === 1 ? "question was" : "questions were"} rewritten, `
-    : "";
-
-  return `${repaired}but ${total} ${total === 1 ? "item still gives itself away" : "items still give themselves away"}: ${summary}. ${total === 1 ? "That item is" : "Those items are"} still worth revising.`;
-}
-
 async function requestReviewerFromGemini({ apiKey, model, parts, timeoutMs, schema }) {
   const geminiResponse = await fetchWithTimeout(`${GEMINI_ENDPOINT}/${model}:generateContent`, {
     method: "POST",
@@ -1626,7 +1585,7 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
 
 // Exported so the mix and repair logic can be tested without a live request. The
 // handler below is still the only thing Vercel calls.
-export { applyBalanceGate, applyChoiceRepairs, buildChoiceRepairPrompt, getBalanceGateWarning, getBalanceSurplus, getChoiceBalanceWarning, getStyleMixWarning, SCENARIO_MIX };
+export { applyBalanceGate, applyChoiceRepairs, buildChoiceRepairPrompt, getBalanceGateWarning, getBalanceSurplus, getStyleMixWarning, SCENARIO_MIX };
 
 export default async function handler(request, response) {
   const requestId = getRequestId();
@@ -1793,10 +1752,9 @@ const reviewer = {
           finalReviewer.questions.length < requestedCount
             ? `Added ${Math.max(0, finalReviewer.questions.length - baseReviewer.questions.length)} of ${requestedCount - baseReviewer.questions.length} requested new questions.`
             : null,
-          getBalanceGateWarning(gated.droppedCount, gated.shortBy),
+          getBalanceGateWarning(gated.droppedCount, gated.shortBy, repairedCount),
           getDifficultyMixWarning(finalReviewer),
-          getStyleMixWarning(finalReviewer),
-          getChoiceBalanceWarning(repairedCount, unresolvedIssues)
+          getStyleMixWarning(finalReviewer)
         ].filter(Boolean).join(" ") || null
       });
     } catch (error) {
@@ -1931,14 +1889,17 @@ const reviewer = {
       );
     }
 
+    // What the gate dropped is already covered by getBalanceGateWarning. Saying
+    // it again as "still gives themselves away" described the reviewer before the
+    // gate ran, so a saved reviewer with nothing wrong in it was reported as
+    // having six broken questions in it.
     const warning = [
       requestedCount && finalReviewer.questions.length < requestedCount
         ? `Saved ${finalReviewer.questions.length} of ${requestedCount} requested questions after ${completionAttempts + 1} attempt${completionAttempts === 0 ? "" : "s"}. The source may be too short or unclear, or too few clean questions could be written from it.`
         : null,
-      getBalanceGateWarning(gated.droppedCount, gated.shortBy),
+      getBalanceGateWarning(gated.droppedCount, gated.shortBy, repairedCount),
       getDifficultyMixWarning(finalReviewer),
-      getStyleMixWarning(finalReviewer),
-      getChoiceBalanceWarning(repairedCount, unresolvedIssues)
+      getStyleMixWarning(finalReviewer)
     ].filter(Boolean).join(" ") || null;
 
     return sendJson(response, 200, {
