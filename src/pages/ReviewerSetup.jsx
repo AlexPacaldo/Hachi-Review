@@ -417,8 +417,25 @@ export default function ReviewerSetup() {
         {giveAwayCount > 0 ? (
           <fieldset>
             <legend>Answer Balance</legend>
+            {/* Names the fault rather than one symptom of it. This check reports the
+                answer echoing the stem, the distractors sharing a tone, the answer
+                claiming something absolute, and two options that are the same option
+                twice, so "by its length or detail" was true of at most one rule out of
+                seven. "Rewritten automatically" was also more than the generator does:
+                the repair pass keeps the original whenever a rewrite does not measure
+                clean, which is why it reports a count instead of promising a fix. And
+                regenerating replaces every question in the reviewer, when Edit
+                Questions already filters down to exactly these. */}
             <p className="muted">
-              {giveAwayCount} of {totalQuestions} {giveAwayCount === 1 ? "question has" : "questions have"} an answer that stands out by its length or detail, so it can be guessed without knowing the material. New reviewers get these rewritten automatically. To fix this one, regenerate it from the Generator.
+              <span>
+                {giveAwayCount} of {totalQuestions}{" "}
+                {giveAwayCount === 1 ? "question can" : "questions can"} be answered from the shape of the
+                options alone, without knowing the material.
+              </span>
+              <span>
+                New reviewers send these for a rewrite, and a rewrite is only kept when it fixes the problem.
+                To fix one here, open Edit Questions from the reviewer's menu.
+              </span>
             </p>
           </fieldset>
         ) : null}
