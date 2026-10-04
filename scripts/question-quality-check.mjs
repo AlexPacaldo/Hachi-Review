@@ -333,6 +333,54 @@ section("give-away wrong choices are caught even when the lengths match");
   check("Q48 is not detectable by this check", getChoiceBalanceIssue(q48), null);
 }
 
+// The warning had started promising the correct answer was too long, which stopped
+// being true once the check learned to spot unweighable wrong choices. A message
+// that names a fault the check did not find is worse than no message.
+section("the warning names the faults that were actually found");
+{
+  const { getChoiceBalanceWarning } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const issue = (id, ...kinds) => ({ id, kinds, reasons: [] });
+  const longAnswer = { id: 1, kinds: ["length"], reasons: [] };
+  const unweighable = { id: 2, kinds: ["unweighable"], reasons: [] };
+  const oddFrame = { id: 3, kinds: ["oddFrame"], reasons: [] };
+
+  check("no issues means no warning", getChoiceBalanceWarning(3, []), null);
+
+  const lengthOnly = getChoiceBalanceWarning(0, [longAnswer]);
+  check("names the length fault", /longer or shorter/.test(lengthOnly), true);
+  check("singular reads correctly", /1 item still gives itself away/.test(lengthOnly), true);
+  check("does not claim an unweighable distractor", /no learner would seriously consider/.test(lengthOnly), false);
+
+  const both = getChoiceBalanceWarning(12, [longAnswer, unweighable, oddFrame]);
+  check("reports the repaired count", /^12 give-away questions were rewritten,/.test(both), true);
+  check("counts every surviving item", /3 items still give themselves away/.test(both), true);
+  check("names the unweighable fault", /1 has wrong choices that no learner would seriously consider/.test(both), true);
+  check("names the odd frame fault", /1 has all three wrong choices opening the same way/.test(both), true);
+  check("no longer claims only length", /longer or shorter/.test(both), true);
+  check("no doubled conjunction", /, and .*, and /.test(both), false);
+
+  const uneven = getChoiceBalanceWarning(0, [longAnswer, longAnswer, unweighable]);
+  check("orders by how many items", /^but 3 items[^:]*: 2 have a correct answer noticeably longer or shorter/.test(uneven), true);
+
+  const allUnweighable = getChoiceBalanceWarning(0, [unweighable, unweighable]);
+  check("plural agreement on the fault", /2 have wrong choices/.test(allUnweighable), true);
+
+  // Two faults join with a bare "and"; three join as "A, B and C". Joining with
+  // ", and " throughout produced "A, and B, and C".
+  const two = getChoiceBalanceWarning(0, [longAnswer, unweighable]);
+  check("two faults join with one and", (two.match(/\band\b/g) || []).length, 1);
+  check("two faults have no comma before and", /, and /.test(two), false);
+  check("three faults join without a doubled comma", (both.match(/\band\b/g) || []).length, 1);
+  check("three faults keep the list comma", /than the others, 1 has wrong choices/.test(both), true);
+
+  // An issue with no kinds would be a bug in the check, and must not silently
+  // drop the item out of the summary.
+  check("a kindless issue is still counted", /1 item/.test(getChoiceBalanceWarning(0, [{ id: 9, reasons: [] }])), true);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

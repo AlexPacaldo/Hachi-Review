@@ -202,30 +202,40 @@ export function getChoiceBalanceIssue(question) {
   if (!correctWords || !medianDistractorWords) return null;
 
   const reasons = [];
+  // Which of the five faults fired, as stable identifiers rather than prose. The
+  // warning the learner reads is built from these, and it used to name only the
+  // length fault after the other three were added, so it described a fault the
+  // check had not found.
+  const kinds = new Set();
   const wordGap = correctWords - medianDistractorWords;
   const plural = (count) => `${count} ${count === 1 ? "word" : "words"}`;
 
   if (wordGap >= BALANCE_MIN_WORD_GAP && correctWords / medianDistractorWords >= BALANCE_LENGTH_RATIO) {
     reasons.push(`the correct answer is ${plural(correctWords)} while the other choices sit around ${plural(medianDistractorWords)}`);
+    kinds.add("length");
   }
 
   if (wordGap <= -BALANCE_MAX_WORD_GAP && correctWords / medianDistractorWords <= BALANCE_MIN_SHORT_RATIO) {
     reasons.push(`the correct answer is ${plural(correctWords)} while the other choices sit around ${plural(medianDistractorWords)}, so it stands out as the short one`);
+    kinds.add("length");
   }
 
   const maxDistractorClauses = Math.max(...clauseCounts.filter((_, index) => index !== correctIndex));
   if (clauseCounts[correctIndex] >= 2 && maxDistractorClauses < 2) {
     reasons.push(`the correct answer is the only choice that packs in more than one idea (${clauseCounts[correctIndex]} clauses against ${maxDistractorClauses})`);
+    kinds.add("multiIdea");
   }
 
   const implausible = findImplausibleDistractors(question, correctIndex);
   if (implausible.length) {
     reasons.push(`the wrong choices ${implausible.join(", ")} make claims no learner would seriously consider, so they can be ruled out without reading them`);
+    kinds.add("unweighable");
   }
 
   const oddFrame = findOddOneOutByFrame(texts, correctIndex);
   if (oddFrame) {
     reasons.push(`all three wrong choices open with "${oddFrame}" and the correct answer does not, so its shape alone gives it away`);
+    kinds.add("oddFrame");
   }
 
   if (!reasons.length) return null;
@@ -239,7 +249,8 @@ export function getChoiceBalanceIssue(question) {
     explanation: String(question?.explanation || "").trim(),
     correctWords,
     medianDistractorWords,
-    reasons
+    reasons,
+    kinds: [...kinds]
   };
 }
 
