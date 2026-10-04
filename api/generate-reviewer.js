@@ -415,6 +415,34 @@ const choiceRepairSchema = {
 // Truncating is the one option that breaks the question, and the main generation
 // prompt has always said so explicitly. This one did not, and the items it failed
 // on were the majority of what survived.
+// The fault that survived round one decides what round two has to say. Escalating
+// towards "move the distractors up in length" is the right nudge for a lopsided
+// answer and useless for a wrong choice nobody would weigh, which is why a retry
+// round was fixing so little: it kept giving the same advice about a different
+// fault. Costs nothing extra, it only aims the call that is already being made.
+const BALANCE_KIND_FOCUS = {
+  length:
+    "These items give themselves away through length. Bring the three wrong choices up to the correct answer's length and cut nothing that carries meaning out of the correct answer.",
+  multiIdea:
+    "These items give themselves away because the correct answer is the only choice carrying more than one idea. Split it so each choice states a single idea, and keep the correct concept intact while doing it.",
+  unweighable:
+    "These items give themselves away because the wrong choices are claims nobody would seriously weigh. Replace those choices outright with plausible siblings the material actually names. Do not reword them: a wrong choice cannot be rescued by rewording, only replaced. A good replacement is a real concept from the same family as the correct answer, of the same length, and something a learner who half-remembers the lesson would put on a shortlist and then rule out for a reason.",
+  oddFrame:
+    "These items give themselves away because all three wrong choices open the same way and the correct answer does not. Rewrite so that all four open the same way as each other, or so that the correct answer is not the odd one out in its opening words."
+};
+
+function getDominantBalanceKind(issues) {
+  const counts = {};
+  (issues || []).forEach((issue) => {
+    const kinds = issue.kinds?.length ? issue.kinds : ["length"];
+    kinds.forEach((kind) => {
+      counts[kind] = (counts[kind] || 0) + 1;
+    });
+  });
+
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || "length";
+}
+
 function buildChoiceRepairPrompt(issues, sourceText, { retry = false } = {}) {
   const workOrder = issues.map((issue) => [
     `id ${issue.id}: ${issue.question}`,
@@ -428,7 +456,10 @@ function buildChoiceRepairPrompt(issues, sourceText, { retry = false } = {}) {
   ]).join("\n\n");
 
   return `${retry
-    ? `A previous attempt to rebalance the questions below did not fix them. The same instruction has now been tried twice, so a different tactic is needed: this time move the distractors all the way to the correct answer, and where a correct answer is a multi-word term that cannot be shortened, rewrite every distractor to the same shape as that term rather than trimming the term itself.`
+    ? `A previous attempt to fix the questions below did not work, so try a different tactic this time.
+
+WHAT TO DO DIFFERENTLY THIS TIME:
+${BALANCE_KIND_FOCUS[getDominantBalanceKind(issues)]}`
     : `The following multiple-choice questions were written so that the answer gives itself away by its shape. Rewrite just those questions.`}
 
 ${workOrder}

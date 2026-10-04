@@ -259,7 +259,7 @@ section("the retry round asks for a different tactic, not the same answer again"
 
   check("the first round is not the retry", first === second, false);
   check("the retry says the first attempt failed", /previous attempt/i.test(second), true);
-  check("the retry names a different tactic", /different tactic/i.test(second), true);
+  check("the retry asks for a different tactic", /different tactic/i.test(second), true);
 
   for (const [label, prompt] of [["first", first], ["retry", second]]) {
     check(`${label}: move the distractors`, /Bring the three wrong choices UP/i.test(prompt), true);
@@ -267,6 +267,30 @@ section("the retry round asks for a different tactic, not the same answer again"
     check(`${label}: counts words`, /Count the words/i.test(prompt), true);
     check(`${label}: carries the work order`, prompt.includes("id 7:"), true);
   }
+
+  // The retry used to escalate towards moving distractors up in length, which is
+  // the wrong advice when the fault is that a wrong choice is absurd rather than
+  // short. It has to aim at the fault that actually survived.
+  const withKinds = (kinds) => [{ ...issue, kinds }];
+
+  const unweighableRetry = buildChoiceRepairPrompt(withKinds(["unweighable", "unweighable", "length"]), "material", { retry: true });
+  check("unweighable retry says replace, not reword", /Replace those choices outright/.test(unweighableRetry), true);
+  check("unweighable retry says rewording cannot fix it", /cannot be rescued by rewording, only replaced/.test(unweighableRetry), true);
+  const focusAfter = (prompt) => prompt.slice(prompt.indexOf("WHAT TO DO DIFFERENTLY THIS TIME:") + "WHAT TO DO DIFFERENTLY THIS TIME:".length);
+  check("unweighable retry leads with the surviving fault", /claims nobody would seriously weigh/.test(focusAfter(unweighableRetry).slice(0, 200)), true);
+  check("unweighable retry does not lead with length", /Bring the three wrong choices up to the correct answer's length/.test(focusAfter(unweighableRetry).slice(0, 200)), false);
+
+  const frameRetry = buildChoiceRepairPrompt(withKinds(["oddFrame"]), "material", { retry: true });
+  check("odd frame retry targets the frame", /all four open the same way/.test(frameRetry), true);
+
+  const ideaRetry = buildChoiceRepairPrompt(withKinds(["multiIdea"]), "material", { retry: true });
+  check("multi idea retry targets the clause", /only choice carrying more than one idea/.test(ideaRetry), true);
+
+  const lengthRetry = buildChoiceRepairPrompt(withKinds(["length"]), "material", { retry: true });
+  check("length retry still targets length", /Bring the three wrong choices up to the correct answer's length/.test(lengthRetry), true);
+
+  const noKindsRetry = buildChoiceRepairPrompt(withKinds([]), "material", { retry: true });
+  check("a kindless issue falls back to length", /Bring the three wrong choices up to the correct answer's length/.test(noKindsRetry), true);
 }
 
 // Balanced lengths were never the whole story. These three came back with the
