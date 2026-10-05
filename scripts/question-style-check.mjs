@@ -1044,6 +1044,83 @@ section("a person's initials come from their first and last real name");
   check("a profile object works as well as a string", getProfileInitials({ display_name: "Alex Pacaldo" }), "AP");
 }
 
+section("suggestions only come from relationships the reader already has");
+{
+  const { collectSuggestionCandidates, toSuggestions } = await import(
+    pathToFileURL(new URL("../src/services/social.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const ME = "me";
+  const GROUPS = [{ id: "g1", name: "BSCS 4-101" }, { id: "g2", name: "IT Club" }];
+  const MEMBERS = [
+    { group_id: "g1", user_id: "me" },
+    { group_id: "g1", user_id: "classmate" },
+    { group_id: "g2", user_id: "classmate" },
+    { group_id: "g2", user_id: "clubmate" }
+  ];
+  const SHARES = [
+    { owner_id: "me", recipient_id: "classmate", title: "Anatomy Prelim" },
+    { owner_id: "sharer", recipient_id: "me", title: "Calculus Quiz" }
+  ];
+  const PROFILES = [
+    { id: "classmate", display_name: "Lorak Tabio", avatar_url: "https://x/l.png" },
+    { id: "clubmate", display_name: "Sophia Gail Santos", avatar_url: null },
+    { id: "sharer", display_name: "Maria Santos Jr", avatar_url: null }
+  ];
+
+  const candidates = collectSuggestionCandidates({ userId: ME, groups: GROUPS, coMembers: MEMBERS, shares: SHARES });
+  const suggestions = toSuggestions(candidates, PROFILES, 6);
+
+  // The whole point of the feature. A suggestion panel that could name anybody with an
+  // account is the account directory, which is the leak the profiles policy exists to
+  // prevent, so there is no "list everyone" path to test and only these sources exist.
+  check("only permitted relationships produce a candidate", [...candidates.keys()], ["classmate", "clubmate", "sharer"]);
+  check("you are never suggested to yourself", candidates.has(ME), false);
+  check("a shared group is the reason given", candidates.get("classmate"), { reason: "group", detail: "BSCS 4-101" });
+  check("a group outranks a reviewer share for the same person", candidates.get("classmate").reason, "group");
+  check("a second shared group does not add a second reason", candidates.size, 3);
+  check("a reviewer share is the reason when there is no group", candidates.get("sharer"), { reason: "reviewer", detail: "Calculus Quiz" });
+  check("a share you sent is the same signal as one you received", [...candidates.keys()].includes("classmate"), true);
+
+  check("the suggestion order follows the candidates", suggestions.map((item) => item.id), ["classmate", "clubmate", "sharer"]);
+  check("the profile supplies the name and picture", suggestions[0].display_name, "Lorak Tabio");
+  check("a missing picture is carried through as null", suggestions[1].avatar_url, null);
+  check("the reason survives into the rendered card", suggestions[2].reason, "reviewer");
+
+  // Someone already in the caller's relationships must not be offered back.
+  const excluded = collectSuggestionCandidates({
+    userId: ME,
+    groups: GROUPS,
+    coMembers: MEMBERS,
+    shares: SHARES,
+    excludeIds: ["classmate"]
+  });
+  check("an excluded id is never suggested", excluded.has("classmate"), false);
+  check("excluding one leaves the others", [...excluded.keys()], ["clubmate", "sharer"]);
+
+  // The policy can still withhold a profile row, so a candidate without one has to
+  // disappear rather than render as a nameless card.
+  const partial = toSuggestions(candidates, [PROFILES[0]], 6);
+  check("a candidate the policy withheld is dropped", partial.map((item) => item.id), ["classmate"]);
+
+  // An unnamed group cannot explain anybody, so it explains nobody.
+  const unnamed = collectSuggestionCandidates({
+    userId: ME,
+    groups: [{ id: "g1", name: "   " }],
+    coMembers: MEMBERS,
+    shares: []
+  });
+  check("an unnamed group suggests nobody", unnamed.size, 0);
+
+  check("the cap is applied to rendered rows", toSuggestions(candidates, PROFILES, 2).length, 2);
+  check("a cap larger than the list is harmless", toSuggestions(candidates, PROFILES, 50).length, 3);
+  check("no groups and no shares suggests nobody", collectSuggestionCandidates({ userId: ME }).size, 0);
+  check("a share with no title still suggests the person", collectSuggestionCandidates({
+    userId: ME,
+    shares: [{ owner_id: "peer", recipient_id: ME, title: null }]
+  }).get("peer"), { reason: "reviewer", detail: "" });
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

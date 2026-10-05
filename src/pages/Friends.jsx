@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Search, Trash2, UserPlus, Users } from "lucide-react";
 import EmptyState from "../components/EmptyState.jsx";
@@ -9,6 +9,7 @@ import {
   acceptFriendRequest,
   ensureMyProfile,
   listFriendships,
+  listSuggestedPeople,
   removeFriendship,
   searchProfiles,
   sendFriendRequest
@@ -21,12 +22,23 @@ function getProfileName(profile) {
   return profile?.display_name || "Hachi user";
 }
 
+// Why this person is a suggestion, in one line. The reason is the whole value of the
+// section: a stranger with an Add button is noise, a classmate in your block is a
+// reason to press it.
+function getSuggestionReason(suggestion) {
+  if (suggestion.reason === "group") return `In ${suggestion.detail} with you`;
+  if (suggestion.detail) return `Shared "${suggestion.detail}" with you`;
+  return "Shared a reviewer with you";
+}
+
 export default function Friends() {
   const { configured, loading, user } = useAuth();
   const [query, setQuery] = useState("");
   const [friendQuery, setFriendQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [friendships, setFriendships] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [requestingId, setRequestingId] = useState("");
   const [message, setMessage] = useState(null);
   const [pendingRemove, setPendingRemove] = useState(null);
   const [loadingSocial, setLoadingSocial] = useState(false);
@@ -35,6 +47,19 @@ export default function Friends() {
   const acceptedFriends = friendships.filter((friendship) => friendship.status === "accepted");
   const incomingRequests = friendships.filter((friendship) => friendship.status === "pending" && friendship.addressee_id === user?.id);
   const outgoingRequests = friendships.filter((friendship) => friendship.status === "pending" && friendship.requester_id === user?.id);
+
+  // "You may know" means you do not know them yet, so anyone already accepted or
+  // already pending is filtered out at render time. That is also why sending a
+  // request makes a card disappear on its own, with no refetch: the friendship
+  // arriving is what removes it.
+  const connectedIds = useMemo(
+    () => new Set(friendships.map((friendship) => friendship.otherUserId).filter(Boolean)),
+    [friendships]
+  );
+  const visibleSuggestions = useMemo(
+    () => suggestions.filter((suggestion) => !connectedIds.has(suggestion.id)),
+    [suggestions, connectedIds]
+  );
 
   const normalizedFriendQuery = friendQuery.trim().toLowerCase();
   // Names only. Filtering your own friends by address used to read the address
@@ -83,7 +108,13 @@ export default function Friends() {
 
     await ensureMyProfile(user);
 
-    const friendsResult = await listFriendships(user.id);
+    // Suggestions are deliberately skipped on the quiet path. The 30 second tick
+    // exists to notice a friend request arriving, and it costs four extra round trips
+    // to rebuild a list whose worst outcome is being a minute out of date.
+    const [friendsResult, suggestedResult] = await Promise.all([
+      listFriendships(user.id),
+      quiet ? Promise.resolve(null) : listSuggestedPeople(user.id)
+    ]);
 
     if (friendsResult.error) {
       if (!quiet) {
@@ -91,6 +122,13 @@ export default function Friends() {
       }
     } else {
       setFriendships(friendsResult.data || []);
+    }
+
+    // A suggestion whose profile the policy will not show is not an error worth
+    // reporting. The section is optional, so a failure stays silent and leaves
+    // whatever is already on screen alone.
+    if (suggestedResult && !suggestedResult.error) {
+      setSuggestions(suggestedResult.data || []);
     }
 
     if (!quiet) setLoadingSocial(false);
@@ -122,6 +160,26 @@ export default function Friends() {
     setMessage({ type: "success", text: `Friend request sent to ${getProfileName(profile)}.` });
     setSearchResults([]);
     setQuery("");
+    refreshSocialData();
+  }
+
+  async function requestSuggestion(profile) {
+    if (!user || requestingId) return;
+
+    setRequestingId(profile.id);
+    const { error } = await sendFriendRequest(user.id, profile.id);
+    setRequestingId("");
+
+    if (error) {
+      setMessage({ type: "error", text: error.message || "Could not send friend request." });
+      return;
+    }
+
+    setMessage({ type: "success", text: `Friend request sent to ${getProfileName(profile)}.` });
+    // Dropped straight away rather than waiting for the list to come back, so the
+    // card cannot be pressed twice. The friendship refresh that follows will also
+    // filter it out, which is what stops it returning on the next tick.
+    setSuggestions((current) => current.filter((suggestion) => suggestion.id !== profile.id));
     refreshSocialData();
   }
 
@@ -316,6 +374,40 @@ export default function Friends() {
           <EmptyState title="No friends yet" message="Accept a request or search for a friend to start sharing." />
         )}
       </section>
+
+      {/* Hidden entirely when there is nobody to suggest. An always-present panel
+          with an empty state trains people to scroll past it, and for someone in no
+          groups it would never be anything but empty. */}
+      {visibleSuggestions.length ? (
+        <section className="library-panel">
+          <div className="library-panel-head">
+            <div>
+              <h2>People you may know</h2>
+              <p className="muted">Classmates you share a group or a reviewer with.</p>
+            </div>
+          </div>
+          <div className="suggestion-grid">
+            {visibleSuggestions.map((suggestion) => (
+              <article className="suggestion-card" key={suggestion.id}>
+                <UserAvatar profile={suggestion} size="lg" />
+                <div className="suggestion-copy">
+                  <strong>{getProfileName(suggestion)}</strong>
+                  <span className="muted">{getSuggestionReason(suggestion)}</span>
+                </div>
+                <button
+                  className="button subtle small"
+                  type="button"
+                  onClick={() => requestSuggestion(suggestion)}
+                  disabled={Boolean(requestingId)}
+                >
+                  <UserPlus size={14} aria-hidden="true" />
+                  {requestingId === suggestion.id ? "Sending..." : "Add"}
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <ConfirmModal
         open={Boolean(pendingRemove)}

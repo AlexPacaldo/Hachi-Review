@@ -2960,6 +2960,66 @@ legend {
   font-size: 0.95rem;
 }
 
+/* A suggestion is a person you have not met, offered with the reason. It is a card
+   rather than a .library-row on purpose: the rows above are your existing
+   relationships, and this is the one place on the page that is speculative.
+
+   Stacked rather than a row, because the reason is a sentence and the name can be
+   long. Side by side in a narrow column both got squeezed until the name ellipsed to
+   "Lorak Ta..." and the reason ran to four lines, which made the cards ragged. */
+.suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 12px;
+}
+
+.suggestion-card {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 20px 16px 16px;
+  text-align: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.suggestion-copy {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.suggestion-copy strong,
+.suggestion-copy span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+/* Two lines each, so a very long name or a long reviewer title cannot make one card
+   taller than the rest of the row. */
+.suggestion-copy strong {
+  -webkit-line-clamp: 2;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.suggestion-copy span {
+  -webkit-line-clamp: 2;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.suggestion-card .button {
+  justify-content: center;
+  width: 100%;
+}
+
 .optional-tag {
   margin-left: 8px;
   padding: 2px 8px;

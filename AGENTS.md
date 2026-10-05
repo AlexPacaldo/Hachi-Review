@@ -193,3 +193,35 @@ policy unapplied with nothing on screen to say so.
 Admin access is `app_metadata.admin = true` on the account. A row in
 `private.admin_emails` is the alternative, but an address is public the moment it is
 written down, so prefer the flag. Do not add an address to a committed SQL file.
+
+## Suggesting people
+
+The "People you may know" section on `/friends` is built from exactly two
+relationships, and that is a privacy constraint rather than a limitation of the idea:
+
+- someone in a group you are both in
+- someone who shared a reviewer with you, or that you shared with them
+
+The `profiles` select policy permits reading a row for exactly four relationships,
+and a fifth "anybody" path would be the leak the policy exists to prevent: the table
+once carried a duplicate email column behind a `using (true)` policy, which let any
+signed-in account enumerate the whole directory through the friend search. A
+suggestion panel is that same hole under a friendlier label, except it needs no
+typing at all. So it is assembled only from relationships the policy already allows,
+and a peer the policy withholds simply does not appear. Nothing here loosens a
+policy, which is why it needs no migration.
+
+Friends of friends is absent for the same reason: a friend of a friend satisfies none
+of the four predicates, so no row comes back. Adding them means widening the policy,
+so treat it as a schema decision rather than a UI one.
+
+`collectSuggestionCandidates` and `toSuggestions` in `src/services/social.js` are
+split out and exported so the rules can be tested without a database, the same reason
+`buildExamImportPrompt` and friends are exported from the endpoint. Two behaviours are
+load-bearing and asserted in `scripts/question-style-check.mjs`: a shared group
+outranks a reviewer share as the stated reason, and a candidate whose profile the
+policy withheld is dropped rather than rendered as a nameless card.
+
+The section is hidden when there is nobody to suggest. An always-present empty panel
+teaches people to scroll past it, and for someone in no groups it could never be
+anything but empty.

@@ -3,6 +3,9 @@ import { supabase } from "../lib/supabaseClient.js";
 const PROFILES_TABLE = "profiles";
 const FRIENDSHIPS_TABLE = "friendships";
 const SHARES_TABLE = "reviewer_shares";
+const GROUP_MEMBERS_TABLE = "group_members";
+const GROUPS_TABLE = "study_groups";
+const SUGGESTION_LIMIT = 6;
 
 function getDisplayName(user) {
   return user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "Hachi User";
@@ -128,6 +131,107 @@ export async function listFriendships(userId) {
   });
 
   return { data, error: null };
+}
+
+// Who to suggest, and why.
+//
+// This deliberately cannot mean "everybody who has an account". The profiles select
+// policy is closed to exactly four relationships, and that closure is the point: the
+// table used to carry a duplicate email column behind a `using (true)` policy, which
+// let any signed-in account enumerate the whole directory by typing prefixes into the
+// friend search. A suggestion panel is that same hole under a friendlier label, only
+// it needs no typing at all. So this is built strictly from relationships the policy
+// already permits, and a peer the policy hides simply does not appear. Nothing here
+// loosens a policy, which is why it needs no migration.
+//
+// The two relationships that are both permitted and worth surfacing:
+//   - someone in a group you are both in
+//   - someone who shared a reviewer with you, or that you shared with them
+//
+// Friends of friends is absent on purpose. A friend of a friend satisfies none of the
+// four predicates, so the policy returns no row for them. Surfacing them would mean
+// widening the policy, which is the opposite of what this is for.
+
+// First half: turn the rows already fetched into an ordered list of candidates and
+// the reason each one is worth suggesting. Insertion order is the preference order,
+// and a shared group outranks a reviewer share, so the first reason recorded for a
+// person is the one that gets shown.
+export function collectSuggestionCandidates({ userId, myGroupIds = [], groups = [], coMembers = [], shares = [], excludeIds = [] }) {
+  const excluded = new Set([userId, ...(excludeIds || []).filter(Boolean)]);
+  const candidates = new Map();
+
+  // A group whose name the policy will not describe cannot be offered as a reason, so
+  // it is skipped rather than summarised as nothing.
+  (groups || [])
+    .filter((group) => group && String(group.name || "").trim())
+    .forEach((group) => {
+      (coMembers || [])
+        .filter((row) => row.group_id === group.id && !excluded.has(row.user_id))
+        .forEach((row) => {
+          if (candidates.has(row.user_id)) return;
+          candidates.set(row.user_id, { reason: "group", detail: group.name });
+        });
+    });
+
+  (shares || []).forEach((share) => {
+    const peerId = share.owner_id === userId ? share.recipient_id : share.owner_id;
+    if (!peerId || excluded.has(peerId) || candidates.has(peerId)) return;
+    candidates.set(peerId, { reason: "reviewer", detail: String(share.title || "").trim() });
+  });
+
+  return candidates;
+}
+
+// Second half: pair the candidates with the profiles that came back. A candidate the
+// policy did not return is dropped rather than rendered as a blank card, and the cap
+// is applied here so over-fetching upstream still fills the list.
+export function toSuggestions(candidates, profiles, limit = SUGGESTION_LIMIT) {
+  const profilesById = mapById(profiles);
+
+  return [...candidates.keys()]
+    .map((id) => {
+      const profile = profilesById.get(id);
+      if (!profile) return null;
+      const { reason, detail } = candidates.get(id);
+      return { id: profile.id, display_name: profile.display_name, avatar_url: profile.avatar_url, reason, detail };
+    })
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+export async function listSuggestedPeople(userId, { excludeIds = [], limit = SUGGESTION_LIMIT } = {}) {
+  if (!supabase || !userId) return { data: [], error: null };
+
+  const [{ data: myMemberships }, { data: shares }] = await Promise.all([
+    supabase.from(GROUP_MEMBERS_TABLE).select("group_id").eq("user_id", userId),
+    supabase
+      .from(SHARES_TABLE)
+      .select("owner_id, recipient_id, title")
+      .or(`owner_id.eq.${userId},recipient_id.eq.${userId}`)
+  ]);
+
+  const myGroupIds = [...new Set((myMemberships || []).map((row) => row.group_id))];
+  const [{ data: coMembers }, { data: groups }] = myGroupIds.length
+    ? await Promise.all([
+        supabase.from(GROUP_MEMBERS_TABLE).select("group_id, user_id").in("group_id", myGroupIds),
+        supabase.from(GROUPS_TABLE).select("id, name").in("id", myGroupIds)
+      ])
+    : [{ data: [] }, { data: [] }];
+
+  const candidates = collectSuggestionCandidates({ userId, groups, coMembers, shares, excludeIds });
+  if (!candidates.size) return { data: [], error: null };
+
+  // Overfetched on purpose, because the policy can still hide a profile row and four
+  // suggestions is a better outcome than none. The real cap is applied in
+  // toSuggestions once the readable rows are known.
+  const { data: profiles, error } = await supabase
+    .from(PROFILES_TABLE)
+    .select("id, display_name, avatar_url")
+    .in("id", [...candidates.keys()].slice(0, limit * 2));
+
+  if (error) return { data: [], error };
+
+  return { data: toSuggestions(candidates, profiles, limit), error: null };
 }
 
 export async function sendFriendRequest(requesterId, addresseeId) {
