@@ -2,11 +2,14 @@ import { useState } from "react";
 import { UserRound } from "lucide-react";
 import { getProfileAvatarUrl, getProfileInitials } from "../utils/userProfile.js";
 
-const ICON_SIZES = { sm: 14, md: 17, lg: 22 };
+const ICON_SIZES = { sm: 14, md: 17, lg: 22, cover: 30 };
 
-// A profile picture for another person, in a row where the job is telling people
-// apart. Takes the profile row itself, or a name and a url for the two callers that
-// have already resolved them.
+// A profile picture for another person. Takes the profile row itself, or a name and
+// a url for the two callers that have already resolved them.
+//
+// size="cover" drops the circle and fills its container instead, for a card that
+// leads with the picture. The fallback still has to work there, so a person with no
+// picture gets a large monogram rather than a 30px circle floating in a wide gap.
 //
 // The failed url is remembered rather than a boolean, so a row that swaps in a
 // different person is not left showing the previous person's initials. This matters

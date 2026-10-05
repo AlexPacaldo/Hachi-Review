@@ -386,28 +386,33 @@ export default function Friends() {
       {visibleSuggestions.length ? (
         <section className="library-panel">
           <div className="library-panel-head">
-            <div>
-              <h2>People you may know</h2>
-              <p className="muted">Classmates you share a group or a reviewer with.</p>
+            <div className="suggestion-head">
+              <span className="suggestion-head-icon" aria-hidden="true">
+                <Users size={18} />
+              </span>
+              <div>
+                <h2>People you may know</h2>
+                <p className="muted">Classmates you share a group, a mutual friend, or a reviewer with.</p>
+              </div>
             </div>
           </div>
           <div className="suggestion-grid">
             {visibleSuggestions.map((suggestion) => (
               <article className="suggestion-card" key={suggestion.id}>
-                <UserAvatar profile={suggestion} size="lg" />
-                <div className="suggestion-copy">
+                <UserAvatar profile={suggestion} size="cover" />
+                <div className="suggestion-body">
                   <strong>{getProfileName(suggestion)}</strong>
                   <span className="muted">{getSuggestionReason(suggestion)}</span>
+                  <button
+                    className="button primary"
+                    type="button"
+                    onClick={() => requestSuggestion(suggestion)}
+                    disabled={Boolean(requestingId)}
+                  >
+                    <UserPlus size={15} aria-hidden="true" />
+                    {requestingId === suggestion.id ? "Sending..." : "Add Friend"}
+                  </button>
                 </div>
-                <button
-                  className="button subtle small"
-                  type="button"
-                  onClick={() => requestSuggestion(suggestion)}
-                  disabled={Boolean(requestingId)}
-                >
-                  <UserPlus size={14} aria-hidden="true" />
-                  {requestingId === suggestion.id ? "Sending..." : "Add"}
-                </button>
               </article>
             ))}
           </div>

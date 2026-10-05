@@ -2960,64 +2960,101 @@ legend {
   font-size: 0.95rem;
 }
 
-/* A suggestion is a person you have not met, offered with the reason. It is a card
-   rather than a .library-row on purpose: the rows above are your existing
-   relationships, and this is the one place on the page that is speculative.
+/* Fills its container rather than sitting in a circle, for a card that leads with the
+   picture. The circle's border and radius would draw a seam across the top of the
+   card, so both go, and the card's own overflow and radius do that job instead. */
+.user-avatar-cover {
+  width: 100%;
+  height: 168px;
+  border: 0;
+  border-radius: 0;
+}
 
-   Stacked rather than a row, because the reason is a sentence and the name can be
-   long. Side by side in a narrow column both got squeezed until the name ellipsed to
-   "Lorak Ta..." and the reason ran to four lines, which made the cards ragged. */
+/* A monogram large enough to read as a placeholder rather than as a stray dot in a
+   wide gap. */
+.user-avatar-cover .user-avatar-initials {
+  font-size: 2.4rem;
+}
+
+/* A suggestion leads with the person's picture, the way a contact card does, because
+   a face is what tells you whether you know them. The reason sits under the name
+   rather than beside it for the same reason: there is room for it once the picture
+   has the top of the card.
+
+   It is a card rather than a .library-row on purpose. The rows above are your
+   existing relationships, and this is the one place on the page that is speculative. */
+.suggestion-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.suggestion-head-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  border-radius: var(--radius-pill);
+}
+
 .suggestion-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .suggestion-card {
   display: grid;
-  justify-items: center;
-  gap: 10px;
-  padding: 20px 16px 16px;
-  text-align: center;
-  background: var(--surface-2);
+  /* No gap: the picture and the body are one card, and a seam between them would show
+     the page background through it. */
+  gap: 0;
+  overflow: hidden;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
 
-.suggestion-copy {
+.suggestion-body {
   display: grid;
-  justify-items: center;
-  gap: 4px;
-  min-width: 0;
-  max-width: 100%;
+  /* The 1fr row takes whatever height the tallest card in the row has, so the button
+     lands on the same line across every card instead of following the card's own
+     text, which varies between one and two lines. */
+  grid-template-rows: auto auto 1fr;
+  gap: 2px;
+  padding: 12px 14px 14px;
 }
 
-.suggestion-copy strong,
-.suggestion-copy span {
+.suggestion-body strong,
+.suggestion-body span {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  max-width: 100%;
 }
 
-/* Two lines each, so a very long name or a long reviewer title cannot make one card
-   taller than the rest of the row. */
-.suggestion-copy strong {
+/* Two lines each, so a very long name or reviewer title cannot make one card taller
+   than the rest of the row. */
+.suggestion-body strong {
   -webkit-line-clamp: 2;
   font-weight: 800;
   line-height: 1.25;
 }
 
-.suggestion-copy span {
+.suggestion-body span {
   -webkit-line-clamp: 2;
   font-size: 0.82rem;
   font-weight: 700;
   line-height: 1.35;
 }
 
-.suggestion-card .button {
+.suggestion-body .button {
   justify-content: center;
+  align-self: end;
   width: 100%;
+  margin-top: 10px;
 }
 
 .optional-tag {
