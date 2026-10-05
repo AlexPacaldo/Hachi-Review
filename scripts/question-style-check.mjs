@@ -772,6 +772,162 @@ section("the repair work order names the faults it was given");
   check("what survived is reported with a repair count", getChoiceBalanceWarning(2, 3), "We fixed 2 of them, but 3 questions still have an answer you could guess just by looking at the choices, without knowing the material. You can make a new set or edit them under Edit Questions.");
 }
 
+section("attachments are pooled, trimmed, and capped");
+{
+  const { normalizeAttachments } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  // A paper that runs to three pages arrives as three photos. Pooling rather than
+  // preferring one field means a caller cannot lose an attachment by sending both.
+  check("both fields are pooled, not one preferred",
+    normalizeAttachments({
+      file: { name: "a.png", mimeType: "image/png", data: "AAA" },
+      files: [{ name: "b.pdf", mimeType: "application/pdf", data: "BBB" }]
+    }).map((attachment) => attachment.name),
+    ["b.pdf", "a.png"]);
+
+  check("the singular field alone still works",
+    normalizeAttachments({ file: { name: "legacy.pdf", mimeType: "application/pdf", data: "L" } }).length, 1);
+
+  check("an attachment with no data is dropped",
+    normalizeAttachments({ files: [{ name: "empty.png", mimeType: "image/png" }, { name: "ok.png", mimeType: "image/png", data: "A" }] }).length, 1);
+
+  check("a stray field name is trimmed away",
+    normalizeAttachments({ files: [{ name: "  spaced.png  ", mimeType: "image/png", data: "A" }] })[0].name, "spaced.png");
+
+  check("seven attachments are capped at six",
+    normalizeAttachments({
+      files: Array.from({ length: 7 }, (_, index) => ({ name: `${index}.png`, mimeType: "image/png", data: `D${index}` }))
+    }).length, 6);
+
+  check("nothing attached yields nothing", normalizeAttachments({}), []);
+  check("an empty array yields nothing", normalizeAttachments({ files: [] }), []);
+}
+
+section("the exam import prompt says the two answer sources apart");
+{
+  const { buildExamImportPrompt } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const base = { sourceText: "", title: "", subject: "", instructions: "" };
+  const solve = buildExamImportPrompt({ ...base, answerSource: "solve" });
+  const extract = buildExamImportPrompt({ ...base, answerSource: "extract" });
+
+  // Transcription is the whole job. Every one of these protects the learner's
+  // correspondence with the printed page, and none of them is negotiable.
+  check("both forbid shuffling the choices", solve.includes("Never shuffle the choices") && extract.includes("Never shuffle the choices"), true);
+  check("both forbid inventing an item", solve.includes("never create an item the paper does not contain") && extract.includes("never create an item the paper does not contain"), true);
+  check("both forbid paraphrasing a stem", solve.includes("Do not rewrite, tidy, reword") && extract.includes("Do not rewrite, tidy, reword"), true);
+  check("both ask for the printed number", solve.includes("sourceNumber") && extract.includes("sourceNumber"), true);
+  check("both forbid page furniture becoming an item", solve.includes("page furniture") && extract.includes("page furniture"), true);
+
+  // The two sources differ by consequence, not by wording, so each has to forbid the
+  // other's behaviour explicitly.
+  check("solve says to work the answers out", solve.includes("WORK THEM OUT"), true);
+  check("solve does not include the key-only section", solve.includes("USE THE PAPER'S OWN KEY"), false);
+  check("solve credits an answer read off the paper", solve.includes('answerSource to "paper" when you read the answer off the paper'), true);
+  check("extract says to use the printed key", extract.includes("USE THE PAPER'S OWN KEY"), true);
+  check("extract does not include the solve section", extract.includes("WORK THEM OUT"), false);
+  check("extract refuses to use outside knowledge", extract.includes("do not use outside knowledge"), true);
+  check("extract leaves an unanswered item empty rather than filled in", extract.includes('leave its correctAnswer and answerText as empty strings'), true);
+  check("extract refuses to shift the key after a skipped item", extract.includes("Do not shift the whole key by one"), true);
+
+  check("an unrecognised answer source falls back to solving", buildExamImportPrompt({ ...base, answerSource: "nonsense" }).includes("WORK THEM OUT"), true);
+  check("the uploaded files are named", buildExamImportPrompt({ ...base, answerSource: "solve", attachmentNames: "page1.png, page2.png" }).includes("page1.png, page2.png"), true);
+  check("no attachments still reads as a paper", buildExamImportPrompt({ ...base, answerSource: "solve" }).includes("[The paper was uploaded as a file"), true);
+  check("pasted text is passed through", buildExamImportPrompt({ ...base, answerSource: "solve", sourceText: "1. Which is NOT a threat?" }).includes("1. Which is NOT a threat?"), true);
+}
+
+section("an imported item keeps the paper's numbering and where its answer came from");
+{
+  const { normalizeImportedExamReviewer, splitImportedExamQuestions, getExamAnswerKeyStats } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const raw = {
+    title: "IT2511 - Information Technology 2",
+    subject: "Information Technology",
+    questionType: "multiple_choice",
+    coverage: ["Wireless Security"],
+    questions: [
+      { sourceNumber: 1, topic: "Wireless Security", question: "Which standard secures a wireless network?", choices: { A: "WEP", B: "WPA3", C: "WPA", D: "WEP2" }, correctAnswer: "B", answerText: "WPA3", explanation: "WPA3 is the current standard.", answerSource: "solved" },
+      { sourceNumber: 2, topic: "Wireless Security", question: "Which tool captures handshake traffic?", choices: { A: "Aircrack-ng", B: "Wireshark", C: "Nmap", D: "Metasploit" }, correctAnswer: "A", answerText: "Aircrack-ng", explanation: "It captures and cracks handshakes.", answerSource: "paper" },
+      { sourceNumber: 3, topic: "Wireless Security", question: "Which attack replays a captured handshake?", choices: { A: "Krone", B: "Deauth", C: "Smurf", D: "Sybil" }, correctAnswer: "", answerText: "", explanation: "The bottom of the page is cut off.", answerSource: "unresolved" }
+    ]
+  };
+
+  const imported = normalizeImportedExamReviewer(raw, { answerSource: "solve" });
+
+  check("the paper's numbering is kept", imported.questions.map((question) => question.sourceNumber), [1, 2, 3]);
+  check("provenance survives normalisation", imported.questions.map((question) => question.answerSource), ["solved", "paper", "unresolved"]);
+  check("the question type comes from the paper", imported.questionType, "multiple_choice");
+  check("choices are reported per question", imported.choicesPerQuestion, 4);
+  check("questionCount matches", imported.questionCount, 3);
+  check("ids are sequential from one", imported.questions.map((question) => question.id), [1, 2, 3]);
+
+  // The whole point of the unresolved marker. An empty field is deliberately left
+  // empty rather than coerced to "A", which is what the generation path would do.
+  const unresolved = imported.questions[2];
+  check("an unresolved item keeps an empty correctAnswer", unresolved.correctAnswer, "");
+  check("an unresolved item keeps an empty answerText", unresolved.answerText, "");
+  check("an unresolved item keeps its choices for review", unresolved.choices.A, "Krone");
+
+  const { ready, unresolved: dropped } = splitImportedExamQuestions(imported.questions);
+  check("only the unresolved item is split out", dropped.map((question) => question.sourceNumber), [3]);
+  check("the answerable items are kept in order", ready.map((question) => question.sourceNumber), [1, 2]);
+  check("provenance is counted for what was kept", getExamAnswerKeyStats(ready), { fromPaper: 1, solved: 1, total: 2 });
+}
+
+section("an imported item is never given a provenance it did not claim");
+{
+  const { normalizeImportedAnswerSource, normalizeExamAnswerSource } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  check("solve is the fallback request", normalizeExamAnswerSource(undefined), "solve");
+  check("an unknown request falls back to solve", normalizeExamAnswerSource("generate_answers"), "solve");
+  check("extract is kept", normalizeExamAnswerSource("extract"), "extract");
+
+  // Scoped to the request, not just to the vocabulary. Under extract the only claim
+  // worth believing is that the paper printed the answer, so anything else is an item
+  // the mode cannot honestly fill in.
+  check("an omitted source under extract is unresolved, not paper",
+    normalizeImportedAnswerSource(undefined, "extract"), "unresolved");
+  check("a solved claim under extract is unresolved", normalizeImportedAnswerSource("solved", "extract"), "unresolved");
+  check("an unknown claim under extract is unresolved", normalizeImportedAnswerSource("inferred", "extract"), "unresolved");
+  check("a paper claim under extract is kept", normalizeImportedAnswerSource("paper", "extract"), "paper");
+
+  check("an omitted source under solve is solved", normalizeImportedAnswerSource(undefined, "solve"), "solved");
+  check("an unknown source under solve is solved", normalizeImportedAnswerSource("inferred", "solve"), "solved");
+  check("a stated source under solve is kept as stated", normalizeImportedAnswerSource("paper", "solve"), "paper");
+  check("a solved claim under solve is kept", normalizeImportedAnswerSource("solved", "solve"), "solved");
+  check("an unresolved claim stays unresolved under solve", normalizeImportedAnswerSource("unresolved", "solve"), "unresolved");
+  check("an unresolved claim stays unresolved under extract", normalizeImportedAnswerSource("unresolved", "extract"), "unresolved");
+  check("a stated source is case and space insensitive", normalizeImportedAnswerSource("  PAPER ", "solve"), "paper");
+}
+
+section("a true/false paper keeps its own choices");
+{
+  const { normalizeImportedExamReviewer } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const imported = normalizeImportedExamReviewer({
+    questionType: "true_false",
+    questions: [
+      { sourceNumber: 1, question: "The sky appears blue.", choices: { A: "True", B: "False" }, correctAnswer: "A", answerText: "True", explanation: "Shorter wavelengths scatter more.", answerSource: "paper" }
+    ]
+  });
+
+  check("the paper's type is adopted", imported.questionType, "true_false");
+  check("choices per question follows the type", imported.choicesPerQuestion, 2);
+  check("A and B are filled in", [imported.questions[0].choices.A, imported.questions[0].choices.B], ["True", "False"]);
+  check("C and D stay empty", [imported.questions[0].choices.C, imported.questions[0].choices.D], ["", ""]);
+  check("the answer text matches the marked choice", imported.questions[0].answerText, "True");
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

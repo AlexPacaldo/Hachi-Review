@@ -1,13 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileJson, FileText, ListChecks, Loader2, Plus, RotateCcw, Save, Sparkles, Upload, Wifi, WifiOff } from "lucide-react";
+import { FileText, Loader2, Plus, RotateCcw, Save, Sparkles, Wifi, WifiOff } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { validateReviewer } from "../data/reviewerRegistry.js";
-import { upsertCloudReviewer } from "../services/cloudReviewers.js";
-import { clearGeneratorDraft, getCloudReviewerCache, getGeneratorDraft, saveCloudReviewerCache, saveGeneratorDraft, saveLocalReviewer } from "../utils/storageUtils.js";
-import { getQuestionStyle, inferQuestionStyle } from "../utils/quizUtils.js";
-import { holdBusyWork } from "../utils/busyWork.js";
-import { logClientError } from "../utils/errorLogger.js";
+import { clearGeneratorDraft, getGeneratorDraft, saveGeneratorDraft } from "../utils/storageUtils.js";
+import { inferQuestionStyle } from "../utils/quizUtils.js";
+import ExamPaperMode from "./generator/ExamPaperMode.jsx";
+import StudyMaterialMode from "./generator/StudyMaterialMode.jsx";
+import {
+  DEFAULT_EXAM_INSTRUCTIONS,
+  DEFAULT_INSTRUCTIONS,
+  QUESTION_STYLES,
+  QUESTION_TYPE_OPTIONS,
+  slugify
+} from "./generator/generatorShared.js";
+import { persistReviewer } from "./generator/generatorApi.js";
 
 const emptyQuestion = {
   type: "multiple_choice",
@@ -24,45 +31,25 @@ const emptyQuestion = {
   explanation: ""
 };
 
-const TEXT_FILE_EXTENSIONS = [".txt", ".md", ".csv", ".json"];
-const MAX_UPLOAD_SIZE = 12 * 1024 * 1024;
-const MAX_AI_FILE_UPLOAD_SIZE = 3 * 1024 * 1024;
-const MIN_PDF_TEXT_LENGTH = 100;
-const MAX_AI_SOURCE_TEXT_LENGTH = 45000;
-const AI_RATE_LIMIT_KEY = "reviewer_ai_request_window";
-const AI_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-const AI_RATE_LIMIT_MAX_REQUESTS = 8;
-const QUESTION_TYPE_OPTIONS = [
-  { value: "multiple_choice", label: "Multiple Choice" },
-  { value: "identification", label: "Identification" },
-  { value: "true_false", label: "True / False" },
-  { value: "flashcard", label: "Flashcards" }
+// Two separate modes rather than one form with extra switches. Writing questions
+// from a module and transcribing an exam paper want opposite things from the same
+// fields, and a combined form ends up conditional on almost every line of it.
+const GENERATOR_MODES = [
+  {
+    value: "material",
+    label: "Study Material",
+    heading: "Generate Reviewer",
+    description: "Upload notes, a PDF, or a photo of a page. The AI writes new questions from it.",
+    icon: Sparkles
+  },
+  {
+    value: "exam",
+    label: "Exam Paper",
+    heading: "Import Exam Paper",
+    description: "Upload an existing exam paper. The AI copies it as printed and attaches an answer key.",
+    icon: FileText
+  }
 ];
-const QUESTION_COUNT_OPTIONS = [
-  { value: "20", label: "20" },
-  { value: "50", label: "50" },
-  { value: "75", label: "75" },
-  { value: "100", label: "100" },
-  { value: "comprehensive", label: "Comprehensive" }
-];
-const MORE_QUESTION_COUNT_OPTIONS = [
-  { value: "10", label: "+10" },
-  { value: "20", label: "+20" },
-  { value: "50", label: "+50" }
-];
-const QUESTION_STYLES = ["scenario", "direct"];
-
-function isPdfFile(file) {
-  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-}
-
-function slugify(value) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
 
 function buildReviewer({ title, subject, instructions }, questions) {
   const safeTitle = title.trim();
@@ -85,21 +72,11 @@ function buildReviewer({ title, subject, instructions }, questions) {
     if (type === "true_false") {
       const correctAnswer = question.correctAnswer === "B" ? "B" : "A";
       const choices = { A: question.A.trim() || "True", B: question.B.trim() || "False", C: "", D: "" };
-      return {
-        ...base,
-        choices,
-        correctAnswer,
-        answerText: choices[correctAnswer]
-      };
+      return { ...base, choices, correctAnswer, answerText: choices[correctAnswer] };
     }
 
     if (type === "identification" || type === "flashcard") {
-      return {
-        ...base,
-        choices: {},
-        correctAnswer: "TEXT",
-        answerText: question.answer.trim()
-      };
+      return { ...base, choices: {}, correctAnswer: "TEXT", answerText: question.answer.trim() };
     }
 
     const choices = {
@@ -109,12 +86,7 @@ function buildReviewer({ title, subject, instructions }, questions) {
       D: question.D.trim()
     };
 
-    return {
-      ...base,
-      choices,
-      correctAnswer: question.correctAnswer,
-      answerText: choices[question.correctAnswer] || ""
-    };
+    return { ...base, choices, correctAnswer: question.correctAnswer, answerText: choices[question.correctAnswer] || "" };
   });
 
   return {
@@ -125,197 +97,63 @@ function buildReviewer({ title, subject, instructions }, questions) {
     questionCount: reviewerQuestions.length,
     questionType: "multiple_choice",
     choicesPerQuestion: 4,
-    instructions: instructions.trim() || "Select the best answer for each question.",
+    instructions: instructions.trim() || DEFAULT_INSTRUCTIONS,
     questions: reviewerQuestions
   };
 }
 
-function normalizeReviewerJson(reviewer, options = {}) {
-  const questions = Array.isArray(reviewer?.questions) ? reviewer.questions : [];
-  const reviewerQuestionType = QUESTION_TYPE_OPTIONS.some((option) => option.value === reviewer?.questionType)
-    ? reviewer.questionType
-    : options.questionType || "multiple_choice";
-  const normalizedQuestions = questions.map((question, index) => {
-    const type = QUESTION_TYPE_OPTIONS.some((option) => option.value === question.type)
-      ? question.type
-      : reviewerQuestionType;
-    const isTyped = type === "identification" || type === "flashcard";
-    const validAnswers = type === "true_false" ? ["A", "B"] : isTyped ? ["TEXT"] : ["A", "B", "C", "D"];
-    const rawCorrectAnswer = String(question.correctAnswer || (isTyped ? "TEXT" : "A")).toUpperCase();
-    const correctAnswer = validAnswers.includes(rawCorrectAnswer) ? rawCorrectAnswer : validAnswers[0];
-    const choices = question.choices || {};
-    const normalizedChoices = type === "true_false"
-      ? {
-          A: choices.A || "True",
-          B: choices.B || "False",
-          C: "",
-          D: ""
-        }
-      : {
-          A: choices.A || "",
-          B: choices.B || "",
-          C: choices.C || "",
-          D: choices.D || ""
-        };
-
-    return {
-      id: question.id || index + 1,
-      type,
-      difficulty: ["easy", "medium", "hard"].includes(question.difficulty) ? question.difficulty : "medium",
-      style: getQuestionStyle(question),
-      topic: question.topic || "Generated Reviewer",
-      question: question.question || "",
-      choices: normalizedChoices,
-      correctAnswer,
-      answerText: question.answerText || normalizedChoices[correctAnswer] || "",
-      explanation: question.explanation || ""
-    };
-  });
-  const title = reviewer?.title || "Generated Reviewer";
-  const subject = reviewer?.subject || "Generated";
-  const coverage = Array.isArray(reviewer?.coverage) && reviewer.coverage.length
-    ? reviewer.coverage
-    : [...new Set(normalizedQuestions.map((question) => question.topic).filter(Boolean))];
-
-  return {
-    ...reviewer,
-    reviewerId: options.preserveReviewerId && reviewer?.reviewerId
-      ? reviewer.reviewerId
-      : `${slugify(reviewer?.reviewerId || title || subject || "generated-reviewer")}-${Date.now()}`,
-    title,
-    subject,
-    coverage,
-    questionCount: normalizedQuestions.length,
-    questionType: reviewerQuestionType,
-    choicesPerQuestion: reviewerQuestionType === "multiple_choice" ? 4 : reviewerQuestionType === "true_false" ? 2 : 0,
-    instructions: reviewer?.instructions || "Select the best answer for each question.",
-    questions: normalizedQuestions
-  };
-}
-
-function getFriendlyGenerationError(error) {
-  const message = error?.message || "";
-  const lowerMessage = message.toLowerCase();
-
-  if (
-    lowerMessage.includes("expected pattern") ||
-    lowerMessage.includes("function_payload_too_large") ||
-    lowerMessage.includes("payload too large") ||
-    lowerMessage.includes("413") ||
-    lowerMessage.includes("cannot read the uploaded file") ||
-    lowerMessage.includes("cannot read the file")
-  ) {
-    return "That file is too large to send to the AI after browser encoding, or the AI cannot read the file format. Paste the study material as text (e.g., .txt, .doc) or extract text from the PDF and try again.";
-  }
-
-  return message || "Could not generate a reviewer.";
-}
-
-// This is a courtesy limiter, not the real one. The server keeps the count that
-// matters, in a table, keyed on the account. This one exists so the person is told
-// the number without a round trip.
-function checkAiRateLimit(userId = "") {
-  const now = Date.now();
-  const key = `${AI_RATE_LIMIT_KEY}:${userId}`;
-
-  try {
-    const current = JSON.parse(localStorage.getItem(key) || "null");
-
-    if (!current || now - current.windowStart >= AI_RATE_LIMIT_WINDOW_MS) {
-      localStorage.setItem(key, JSON.stringify({ windowStart: now, count: 1 }));
-      return null;
-    }
-
-    if (current.count >= AI_RATE_LIMIT_MAX_REQUESTS) {
-      const retryMinutes = Math.max(1, Math.ceil((AI_RATE_LIMIT_WINDOW_MS - (now - current.windowStart)) / 60000));
-      return `AI generation is limited to ${AI_RATE_LIMIT_MAX_REQUESTS} requests every 10 minutes. Try again in about ${retryMinutes} minute${retryMinutes === 1 ? "" : "s"}.`;
-    }
-
-    localStorage.setItem(key, JSON.stringify({ ...current, count: current.count + 1 }));
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function isUnreadableFileError(message) {
-  return /paste the study material as text|cannot read the uploaded file|cannot read the file|could not be sent to this provider|too large to send to the ai/i.test(message || "");
-}
-
-async function extractPdfText(file) {
-  if (!Promise.withResolvers) {
-    Promise.withResolvers = function withResolvers() {
-      let resolve;
-      let reject;
-      const promise = new Promise((nextResolve, nextReject) => {
-        resolve = nextResolve;
-        reject = nextReject;
-      });
-
-      return { promise, resolve, reject };
-    };
-  }
-
-  const [pdfjsLib, pdfWorker] = await Promise.all([
-    import("pdfjs-dist/legacy/build/pdf.mjs"),
-    import("pdfjs-dist/legacy/build/pdf.worker.mjs?url")
-  ]);
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
-
-  const data = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
-  const pageTexts = [];
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const textContent = await page.getTextContent();
-    const text = textContent.items
-      .map((item) => item.str || "")
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    if (text) pageTexts.push(`Page ${pageNumber}: ${text}`);
-    if (pageTexts.join("\n\n").length >= MAX_AI_SOURCE_TEXT_LENGTH) break;
-  }
-
-  return pageTexts.join("\n\n").slice(0, MAX_AI_SOURCE_TEXT_LENGTH);
-}
-
 export default function Generator() {
   const navigate = useNavigate();
-  const { configured, session, user } = useAuth();
+  const { configured, user } = useAuth();
   const savedDraft = getGeneratorDraft();
   const skipNextAutosave = useRef(false);
+  const hasMounted = useRef(false);
+
+  // Drafts written before the modes were split were flat, and everything in them was
+  // the study material form. Reading the flat shape as the material slice keeps an
+  // in-progress draft instead of silently dropping it on upgrade.
+  const materialDraft = savedDraft?.material || savedDraft || {};
+  const examDraft = savedDraft?.exam || {};
+  const manualDraft = savedDraft?.manual || {};
+
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
-  const [details, setDetails] = useState(savedDraft?.details || {
-    title: "",
-    subject: "",
-    instructions: "Select the best answer for each question."
+  const [mode, setMode] = useState(() => (savedDraft?.mode === "exam" ? "exam" : "material"));
+
+  const [materialDetails, setMaterialDetails] = useState({
+    title: materialDraft.details?.title || "",
+    subject: materialDraft.details?.subject || "",
+    instructions: materialDraft.details?.instructions || DEFAULT_INSTRUCTIONS
+  });
+  const [materialSlice, setMaterialSlice] = useState({
+    sourceText: materialDraft.sourceText || "",
+    targetQuestionCount: materialDraft.targetQuestionCount || "50",
+    difficulty: materialDraft.difficulty || "mixed",
+    questionType: materialDraft.questionType || "multiple_choice",
+    moreQuestionCount: materialDraft.moreQuestionCount || "20",
+    jsonText: materialDraft.jsonText || ""
+  });
+  const [examDetails, setExamDetails] = useState({
+    title: examDraft.details?.title || "",
+    subject: examDraft.details?.subject || ""
+  });
+  const [examSlice, setExamSlice] = useState({
+    notes: examDraft.notes || "",
+    answerSource: examDraft.answerSource || "solve",
+    instructions: examDraft.instructions || DEFAULT_EXAM_INSTRUCTIONS,
+    jsonText: examDraft.jsonText || ""
   });
   const [questionDraft, setQuestionDraft] = useState(
-    savedDraft?.questionDraft ? { ...emptyQuestion, ...savedDraft.questionDraft } : emptyQuestion
+    manualDraft.questionDraft ? { ...emptyQuestion, ...manualDraft.questionDraft } : emptyQuestion
   );
-  const [questions, setQuestions] = useState(savedDraft?.questions || []);
-  const [sourceText, setSourceText] = useState(savedDraft?.sourceText || "");
-  const [targetQuestionCount, setTargetQuestionCount] = useState(savedDraft?.targetQuestionCount || "50");
-  const [difficulty, setDifficulty] = useState(savedDraft?.difficulty || "mixed");
-  const [questionType, setQuestionType] = useState(savedDraft?.questionType || "multiple_choice");
-  const [moreQuestionCount, setMoreQuestionCount] = useState(savedDraft?.moreQuestionCount || "20");
-  const [saveOfflineCopy, setSaveOfflineCopy] = useState(savedDraft?.saveOfflineCopy || false);
-  const [studyFile, setStudyFile] = useState(null);
-  const [jsonText, setJsonText] = useState(savedDraft?.jsonText || "");
+  const [manualQuestions, setManualQuestions] = useState(manualDraft.questions || []);
+  const [saveOfflineCopy, setSaveOfflineCopy] = useState(materialDraft.saveOfflineCopy || false);
+
   const [errors, setErrors] = useState([]);
-  const [jsonCheck, setJsonCheck] = useState(null);
-  const [savedReviewer, setSavedReviewer] = useState(null);
-  const [generationStats, setGenerationStats] = useState(null);
-  const [generationMessage, setGenerationMessage] = useState("");
-  const [generationSteps, setGenerationSteps] = useState([]);
-const [isGenerating, setIsGenerating] = useState(false);
-const [isAddingQuestions, setIsAddingQuestions] = useState(false);
-const [isSavingReviewer, setIsSavingReviewer] = useState(false);
-const [generationElapsed, setGenerationElapsed] = useState(0);
+  const [isSavingReviewer, setIsSavingReviewer] = useState(false);
   const [draftMessage, setDraftMessage] = useState(savedDraft?.savedAt ? `Draft restored from ${new Date(savedDraft.savedAt).toLocaleString()}.` : "");
+
+  const activeMode = GENERATOR_MODES.find((entry) => entry.value === mode) || GENERATOR_MODES[0];
+  const ActiveModeIcon = activeMode.icon;
 
   useEffect(() => {
     const updateOnlineStatus = () => setIsOnline(navigator.onLine);
@@ -328,49 +166,57 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     };
   }, []);
 
+  // Written here rather than in each mode so there is exactly one writer for the
+  // draft key. Attached files are deliberately absent: they are not saved, because a
+  // base64 photo in localStorage would spend the storage quota the offline reviewers
+  // depend on.
   useEffect(() => {
-    if (!isGenerating && !isAddingQuestions) {
-      setGenerationElapsed(0);
-      return undefined;
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return;
     }
 
-    const timer = window.setInterval(() => setGenerationElapsed((value) => value + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [isGenerating, isAddingQuestions]);
-
-  // A running generation holds the update reload. Everything else on this page
-  // is autosaved into the draft, so it survives a reload, but the request in
-  // flight does not: it would be cancelled part-way and the provider quota it
-  // spent would be gone with nothing to show for it.
-  useEffect(() => {
-    if (!isGenerating && !isAddingQuestions) return undefined;
-    return holdBusyWork("generation");
-  }, [isGenerating, isAddingQuestions]);
-
-  useEffect(() => {
     if (skipNextAutosave.current) {
       skipNextAutosave.current = false;
       return;
     }
 
     saveGeneratorDraft({
-      details,
-      questionDraft,
-      questions,
-      sourceText,
-      targetQuestionCount,
-      difficulty,
-      questionType,
-      moreQuestionCount,
-      saveOfflineCopy,
-      jsonText
+      mode,
+      material: { details: materialDetails, ...materialSlice, saveOfflineCopy },
+      exam: { details: examDetails, ...examSlice },
+      manual: { questionDraft, questions: manualQuestions }
     });
     setDraftMessage("Draft saved on this device.");
-  }, [details, questionDraft, questions, sourceText, targetQuestionCount, difficulty, questionType, moreQuestionCount, saveOfflineCopy, jsonText]);
+  }, [mode, materialDetails, materialSlice, saveOfflineCopy, examDetails, examSlice, questionDraft, manualQuestions]);
 
-  function updateDetails(key, value) {
-    setDetails((current) => ({ ...current, [key]: value }));
-  }
+  const updateMaterialDetails = useCallback((key, value) => {
+    setMaterialDetails((current) => ({ ...current, [key]: value }));
+  }, []);
+
+  const updateExamDetails = useCallback((key, value) => {
+    setExamDetails((current) => ({ ...current, [key]: value }));
+  }, []);
+
+  // Stable identity, so a mode's own autosave effect does not re-fire every time the
+  // shell re-renders and hands it a fresh callback.
+  const patchMaterialSlice = useCallback((changes) => {
+    setMaterialSlice((current) => ({ ...current, ...changes }));
+  }, []);
+
+  const patchExamSlice = useCallback((changes) => {
+    setExamSlice((current) => ({ ...current, ...changes }));
+  }, []);
+
+  const forgetDraft = useCallback(() => {
+    clearGeneratorDraft();
+    skipNextAutosave.current = true;
+  }, []);
+
+  const navigateToReviewer = useCallback((reviewerId, { edit = false } = {}) => {
+    if (!reviewerId) return;
+    navigate(`/reviewer/${reviewerId}${edit ? "?edit=1" : ""}`);
+  }, [navigate]);
 
   function updateQuestion(key, value) {
     if (key !== "type") {
@@ -408,164 +254,6 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     });
   }
 
-  function updateJsonText(value) {
-    setJsonText(value);
-    setJsonCheck(null);
-  }
-
-  function setProgressStep(step) {
-    setGenerationSteps((current) => current.includes(step) ? current : [...current, step]);
-  }
-
-  function getAiRequestHeaders() {
-    return {
-      "Content-Type": "application/json",
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
-    };
-  }
-
-  // Generation needs an account. The provider keys are on free tiers, so letting
-  // anonymous callers in risks the daily quota rather than a bill, and a per-address
-  // cap cannot stop that because an address is not an identity. Checked here so the
-  // person gets told why instead of reading a 401 out of the network tab.
-  function requireSignIn() {
-    if (!configured) {
-      return "AI generation needs Supabase configured on this deployment. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
-    }
-
-    if (!session?.access_token) {
-      return "Sign in to generate a reviewer with AI. Saving and taking a quiz still work without an account.";
-    }
-
-    return null;
-  }
-
-  // Returns the body to send, or a ready-made error when the request cannot be made.
-  async function buildAiRequestBody(payload) {
-    const signInError = requireSignIn();
-    if (signInError) return { error: signInError };
-
-    return { body: payload };
-  }
-
-  function getCurrentReviewerFromJson({ preserveReviewerId = false } = {}) {
-    if (!jsonText) return null;
-    return normalizeReviewerJson(JSON.parse(jsonText), { preserveReviewerId, questionType });
-  }
-
-  function isTextFile(file) {
-    const fileName = file.name.toLowerCase();
-    return file.type.startsWith("text/") || TEXT_FILE_EXTENSIONS.some((extension) => fileName.endsWith(extension));
-  }
-
-  function readFileAsDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("Could not read that file."));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  function readFileAsText(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("Could not read that file."));
-      reader.readAsText(file);
-    });
-  }
-
-  async function handleStudyFile(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file) return;
-
-    if (file.size > MAX_UPLOAD_SIZE) {
-      setErrors(["That file is too large. Use a file under 12 MB or paste the important text."]);
-      return;
-    }
-
-    setErrors([]);
-    setGenerationSteps([]);
-    setGenerationMessage(isPdfFile(file) && file.size > MAX_AI_FILE_UPLOAD_SIZE ? "Reading PDF text..." : "");
-
-    try {
-      if (isTextFile(file)) {
-        const text = await readFileAsText(file);
-        setSourceText(text);
-        setStudyFile({
-          name: file.name,
-          mimeType: file.type || "text/plain",
-          size: file.size,
-          data: null
-        });
-        setGenerationMessage("Text file loaded.");
-        return;
-      }
-
-      if (isPdfFile(file)) {
-        if (file.size > MAX_AI_FILE_UPLOAD_SIZE) {
-          setProgressStep("Extracting PDF text");
-
-          // Too large to upload: fall back to its text layer up front, since the
-          // server cannot receive the file either way.
-          let extractedText = "";
-          try {
-            extractedText = await extractPdfText(file);
-          } catch {
-            extractedText = "";
-          }
-
-          if (extractedText.length >= MIN_PDF_TEXT_LENGTH) {
-            setSourceText(extractedText);
-            setStudyFile({
-              name: `${file.name} (text extracted)`,
-              mimeType: "text/plain",
-              size: file.size,
-              data: null
-            });
-            setGenerationMessage(`Extracted text from ${file.name}. It is too large to upload, so the text version will be used.`);
-            setProgressStep("PDF text ready");
-            return;
-          }
-
-          setStudyFile(null);
-          setErrors(["That PDF has no readable text and is too large to upload. It may be scanned images. Compress/split it, OCR it, or paste the important notes into Extra Notes."]);
-          setGenerationMessage("");
-          return;
-        }
-      }
-
-      if (file.size > MAX_AI_FILE_UPLOAD_SIZE) {
-        setStudyFile(null);
-        setErrors(["That file is too large for AI upload. Use a smaller file or paste the important notes into Extra Notes."]);
-        setGenerationMessage("");
-        return;
-      }
-
-      const dataUrl = await readFileAsDataUrl(file);
-      const [, base64Data = ""] = dataUrl.split(",");
-      setStudyFile({
-        name: file.name,
-        mimeType: file.type || "application/pdf",
-        size: file.size,
-        data: base64Data,
-        file
-      });
-      setGenerationMessage("File ready for the AI.");
-    } catch (error) {
-      setStudyFile(null);
-      setErrors([error?.message || "Could not read that file."]);
-    }
-  }
-
-  function removeStudyFile() {
-    setStudyFile(null);
-    setGenerationMessage("");
-  }
-
   function validateQuestionDraft() {
     const type = questionDraft.type || "multiple_choice";
     const isTyped = type === "identification" || type === "flashcard";
@@ -574,62 +262,32 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     if (type === "multiple_choice") required.push("A", "B", "C", "D");
     if (isTyped) required.push("answer");
 
-    const missingFields = required.filter((field) => !questionDraft[field].trim());
-    if (missingFields.length) {
-      return ["Complete the question fields before adding it."];
-    }
-    return [];
+    return required.some((field) => !questionDraft[field].trim())
+      ? ["Complete the question fields before adding it."]
+      : [];
   }
 
   function addQuestion() {
     const draftErrors = validateQuestionDraft();
+
     if (draftErrors.length) {
       setErrors(draftErrors);
       return;
     }
 
-    setQuestions((current) => [...current, questionDraft]);
+    setManualQuestions((current) => [...current, questionDraft]);
     setQuestionDraft(emptyQuestion);
     setErrors([]);
   }
 
-  async function persistReviewer(reviewer, { saveOffline = false } = {}) {
-    if (configured && user) {
-      const { error } = await upsertCloudReviewer(user.id, reviewer);
-
-      if (error) {
-        throw new Error(`Cloud save failed: ${error.message || "Unknown error"}`);
-      }
-
-      const cachedReviewers = getCloudReviewerCache().filter((item) => item.reviewerId !== reviewer.reviewerId);
-      saveCloudReviewerCache([reviewer, ...cachedReviewers]);
-
-      if (saveOffline) {
-        saveLocalReviewer(reviewer);
-        return "cloud-and-offline";
-      }
-
-      return "cloud";
-    }
-
-    saveLocalReviewer(reviewer);
-    return "offline";
-  }
-
-  function getSaveMessage(saveMode) {
-    if (saveMode === "cloud-and-offline") return "Reviewer saved to cloud and this device.";
-    if (saveMode === "cloud") return "Reviewer saved to cloud.";
-    return "Reviewer saved offline on this device.";
-  }
-
   async function saveDraftReviewer() {
-    const reviewer = buildReviewer(details, questions);
+    const reviewer = buildReviewer(materialDetails, manualQuestions);
     const validation = validateReviewer(reviewer);
     const nextErrors = [];
 
-    if (!details.title.trim()) nextErrors.push("Add a reviewer title.");
-    if (!details.subject.trim()) nextErrors.push("Add a subject.");
-    if (!questions.length) nextErrors.push("Add at least one question.");
+    if (!materialDetails.title.trim()) nextErrors.push("Add a reviewer title.");
+    if (!materialDetails.subject.trim()) nextErrors.push("Add a subject.");
+    if (!manualQuestions.length) nextErrors.push("Add at least one question.");
     if (!validation.isValid) nextErrors.push(...validation.errors);
 
     if (nextErrors.length) {
@@ -640,9 +298,9 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     setIsSavingReviewer(true);
 
     try {
-      await persistReviewer(reviewer, { saveOffline: saveOfflineCopy });
-      clearGeneratorDraft();
-      navigate(`/reviewer/${reviewer.reviewerId}`);
+      await persistReviewer({ configured, user, reviewer, saveOffline: saveOfflineCopy });
+      forgetDraft();
+      navigateToReviewer(reviewer.reviewerId);
     } catch (error) {
       setErrors([error?.message || "Could not save reviewer."]);
     } finally {
@@ -650,358 +308,26 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
     }
   }
 
-  async function saveReviewerJson(rawJson) {
-    try {
-      const parsedReviewer = JSON.parse(rawJson);
-      const reviewer = normalizeReviewerJson(parsedReviewer);
-      const validation = validateReviewer(reviewer);
-
-      if (!validation.isValid) {
-        setErrors(validation.errors);
-        return;
-      }
-
-      setIsSavingReviewer(true);
-      const saveMode = await persistReviewer(reviewer, { saveOffline: saveOfflineCopy });
-      clearGeneratorDraft();
-      setSavedReviewer({ reviewerId: reviewer.reviewerId, saveMode });
-      setGenerationMessage(getSaveMessage(saveMode));
-    } catch (error) {
-      setErrors([error?.message || "Paste valid reviewer JSON before saving."]);
-    } finally {
-      setIsSavingReviewer(false);
-    }
-  }
-
-  function checkReviewerJson(rawJson) {
-    try {
-      const parsedReviewer = JSON.parse(rawJson);
-      const reviewer = normalizeReviewerJson(parsedReviewer);
-      const validation = validateReviewer(reviewer);
-
-      if (!validation.isValid) {
-        setJsonCheck(null);
-        setErrors(validation.errors);
-        return;
-      }
-
-      setErrors([]);
-      setJsonCheck({
-        title: reviewer.title,
-        subject: reviewer.subject,
-        questions: reviewer.questions.length,
-        coverage: reviewer.coverage.length
-      });
-    } catch {
-      setJsonCheck(null);
-      setErrors(["Paste valid reviewer JSON before checking."]);
-    }
-  }
-
-  async function generateReviewerWithAi({ regenerate = false, triedTextFallback = false, sourceTextOverride, fileOverride } = {}) {
-    const activeSourceText = (sourceTextOverride ?? sourceText).trim().slice(0, MAX_AI_SOURCE_TEXT_LENGTH);
-    const activeStudyFile = fileOverride === undefined ? studyFile : fileOverride;
-    const hasUploadedFile = Boolean(activeStudyFile?.data);
-
-    if (!isOnline) {
-      setErrors(["Connect to the internet before using AI generation."]);
-      return;
-    }
-
-    if (!hasUploadedFile && activeSourceText.length < 100) {
-      setErrors(["Upload a study file or paste more study material before generating a reviewer."]);
-      return;
-    }
-
-    // Before the local rate limiter, so a signed-out visitor is told to sign in
-    // rather than spending a request they could never complete.
-    const signInError = requireSignIn();
-    if (signInError) {
-      setErrors([signInError]);
-      return;
-    }
-
-    const rateLimitError = checkAiRateLimit(user?.id);
-    if (rateLimitError) {
-      setErrors([rateLimitError]);
-      return;
-    }
-
-    setIsGenerating(true);
-    setErrors([]);
-    setJsonCheck(null);
-    setSavedReviewer(null);
-    setGenerationStats(null);
-    setGenerationSteps(["Preparing study material"]);
-    setGenerationMessage(regenerate ? "Regenerating reviewer..." : "Generating reviewer...");
-
-    try {
-      setProgressStep("Sending material to the AI");
-      const request = await buildAiRequestBody({
-        sourceText: activeSourceText,
-        file: hasUploadedFile
-          ? {
-              name: activeStudyFile.name,
-              mimeType: activeStudyFile.mimeType,
-              data: activeStudyFile.data
-            }
-          : null,
-        title: details.title,
-        subject: details.subject,
-        instructions: details.instructions,
-        questionCount: targetQuestionCount,
-        difficulty,
-        questionType
-      });
-
-      if (request.error) {
-        throw new Error(request.error);
-      }
-
-      const response = await fetch("/api/generate-reviewer", {
-        method: "POST",
-        headers: getAiRequestHeaders(),
-        body: JSON.stringify(request.body)
-      });
-      setProgressStep("Reading AI response");
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.requestId ? `${data?.error || "The AI could not generate a reviewer."} Request ID: ${data.requestId}` : data?.error || "The AI could not generate a reviewer.");
-      }
-
-      const reviewer = normalizeReviewerJson(data.reviewer, { questionType });
-      const validation = validateReviewer(reviewer);
-
-      if (!validation.isValid) {
-        throw new Error(validation.errors[0] || "The AI generated an invalid reviewer.");
-      }
-
-      setProgressStep("Saving reviewer");
-      const saveMode = await persistReviewer(reviewer, { saveOffline: saveOfflineCopy });
-      const nextJsonText = JSON.stringify(reviewer, null, 2);
-      updateJsonText(nextJsonText);
-      checkReviewerJson(nextJsonText);
-      skipNextAutosave.current = true;
-      clearGeneratorDraft();
-      setSavedReviewer({ reviewerId: reviewer.reviewerId, saveMode });
-      setGenerationStats({
-        requested: data.requestedQuestionCount || targetQuestionCount,
-        generated: data.generatedQuestionCount || reviewer.questions.length,
-        difficultyMix: data.difficultyMix || null,
-        warning: data.warning || ""
-      });
-      setGenerationMessage(data.warning
-        ? `${data.warning} ${getSaveMessage(saveMode)}`
-        : `Reviewer generated with ${reviewer.questions.length} questions. ${getSaveMessage(saveMode)}`);
-      setProgressStep("Done");
-    } catch (error) {
-      logClientError("generate-reviewer", error, {
-        targetQuestionCount,
-        difficulty,
-        questionType,
-        hasUploadedFile,
-        sourceLength: activeSourceText.length
-      });
-      setGenerationMessage("");
-
-      if (!triedTextFallback && isUnreadableFileError(error?.message) && activeStudyFile?.file) {
-        try {
-          const extractedText = await extractPdfText(activeStudyFile.file);
-
-          if (extractedText.length >= MIN_PDF_TEXT_LENGTH) {
-            setSourceText(extractedText);
-            setStudyFile({
-              name: `${activeStudyFile.name} (text extracted)`,
-              mimeType: "text/plain",
-              size: activeStudyFile.size,
-              data: null
-            });
-            setGenerationMessage("The AI could not read the uploaded file, so its text was extracted into Extra Notes. Retrying...");
-            return generateReviewerWithAi({
-              regenerate,
-              triedTextFallback: true,
-              sourceTextOverride: extractedText,
-              fileOverride: null
-            });
-          }
-        } catch {
-          // Fall through to the normal error below.
-        }
-      }
-
-      setErrors([getFriendlyGenerationError(error)]);
-    } finally {
-      setIsGenerating(false);
-    }
-  }
-
-  async function makeMoreQuestions({ triedTextFallback = false, sourceTextOverride, fileOverride } = {}) {
-    const activeSourceText = (sourceTextOverride ?? sourceText).trim().slice(0, MAX_AI_SOURCE_TEXT_LENGTH);
-    const activeStudyFile = fileOverride === undefined ? studyFile : fileOverride;
-    const hasUploadedFile = Boolean(activeStudyFile?.data);
-
-    if (!isOnline) {
-      setErrors(["Connect to the internet before asking for more questions."]);
-      return;
-    }
-
-    let currentReviewer;
-    try {
-      currentReviewer = getCurrentReviewerFromJson({ preserveReviewerId: true });
-    } catch {
-      setErrors(["Generate a valid reviewer before making more questions."]);
-      return;
-    }
-
-    if (!currentReviewer?.questions?.length) {
-      setErrors(["Generate a reviewer before making more questions."]);
-      return;
-    }
-
-    if (currentReviewer.questions.length >= 150) {
-      setErrors(["This reviewer already has 150 questions, which is the current maximum."]);
-      return;
-    }
-
-    const signInError = requireSignIn();
-    if (signInError) {
-      setErrors([signInError]);
-      return;
-    }
-
-    const rateLimitError = checkAiRateLimit(user?.id);
-    if (rateLimitError) {
-      setErrors([rateLimitError]);
-      return;
-    }
-
-    setIsAddingQuestions(true);
-    setErrors([]);
-    setGenerationSteps(["Preparing existing reviewer", "Sending request for more questions"]);
-    setGenerationMessage(`Making ${moreQuestionCount} more questions...`);
-
-    try {
-      const request = await buildAiRequestBody({
-        mode: "extend",
-        sourceText: activeSourceText,
-        file: hasUploadedFile
-          ? {
-              name: activeStudyFile.name,
-              mimeType: activeStudyFile.mimeType,
-              data: activeStudyFile.data
-            }
-          : null,
-        title: currentReviewer.title || details.title,
-        subject: currentReviewer.subject || details.subject,
-        instructions: currentReviewer.instructions || details.instructions,
-        difficulty,
-        questionType: currentReviewer.questionType || questionType,
-        additionalCount: moreQuestionCount,
-        existingReviewer: currentReviewer
-      });
-
-      if (request.error) {
-        throw new Error(request.error);
-      }
-
-      const response = await fetch("/api/generate-reviewer", {
-        method: "POST",
-        headers: getAiRequestHeaders(),
-        body: JSON.stringify(request.body)
-      });
-      setProgressStep("Checking new questions");
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.requestId ? `${data?.error || "The AI could not make more questions."} Request ID: ${data.requestId}` : data?.error || "The AI could not make more questions.");
-      }
-
-      const reviewer = normalizeReviewerJson(data.reviewer, { preserveReviewerId: true, questionType: currentReviewer.questionType || questionType });
-      const validation = validateReviewer(reviewer);
-
-      if (!validation.isValid) {
-        throw new Error(validation.errors[0] || "The AI generated invalid additional questions.");
-      }
-
-      setProgressStep("Saving expanded reviewer");
-      const saveMode = await persistReviewer(reviewer, { saveOffline: saveOfflineCopy });
-      const nextJsonText = JSON.stringify(reviewer, null, 2);
-      updateJsonText(nextJsonText);
-      checkReviewerJson(nextJsonText);
-      setSavedReviewer({ reviewerId: reviewer.reviewerId, saveMode });
-      setGenerationStats({
-        requested: data.requestedQuestionCount || reviewer.questions.length,
-        generated: data.generatedQuestionCount || reviewer.questions.length,
-        difficultyMix: data.difficultyMix || null,
-        warning: data.warning || ""
-      });
-      setGenerationMessage(data.warning
-        ? `${data.warning} ${getSaveMessage(saveMode)}`
-        : `Added ${data.addedQuestionCount || moreQuestionCount} questions. ${getSaveMessage(saveMode)}`);
-      setProgressStep("Done");
-    } catch (error) {
-      logClientError("extend-reviewer", error, {
-        moreQuestionCount,
-        difficulty,
-        questionType: currentReviewer?.questionType || questionType,
-        sourceLength: activeSourceText.length
-      });
-      setGenerationMessage("");
-
-      if (!triedTextFallback && isUnreadableFileError(error?.message) && activeStudyFile?.file) {
-        try {
-          const extractedText = await extractPdfText(activeStudyFile.file);
-
-          if (extractedText.length >= MIN_PDF_TEXT_LENGTH) {
-            setSourceText(extractedText);
-            setStudyFile({
-              name: `${activeStudyFile.name} (text extracted)`,
-              mimeType: "text/plain",
-              size: activeStudyFile.size,
-              data: null
-            });
-            setGenerationMessage("The AI could not read the uploaded file, so its text was extracted into Extra Notes. Retrying...");
-            return makeMoreQuestions({
-              triedTextFallback: true,
-              sourceTextOverride: extractedText,
-              fileOverride: null
-            });
-          }
-        } catch {
-          // Fall through to the normal error below.
-        }
-      }
-
-      setErrors([getFriendlyGenerationError(error)]);
-    } finally {
-      setIsAddingQuestions(false);
-    }
-  }
-
   function clearDraft() {
     clearGeneratorDraft();
     skipNextAutosave.current = true;
-    setDetails({
-      title: "",
-      subject: "",
-      instructions: "Select the best answer for each question."
+    hasMounted.current = true;
+    setMode("material");
+    setMaterialDetails({ title: "", subject: "", instructions: DEFAULT_INSTRUCTIONS });
+    setMaterialSlice({
+      sourceText: "",
+      targetQuestionCount: "50",
+      difficulty: "mixed",
+      questionType: "multiple_choice",
+      moreQuestionCount: "20",
+      jsonText: ""
     });
+    setExamDetails({ title: "", subject: "" });
+    setExamSlice({ notes: "", answerSource: "solve", instructions: DEFAULT_EXAM_INSTRUCTIONS, jsonText: "" });
     setQuestionDraft(emptyQuestion);
-    setQuestions([]);
-    setSourceText("");
-    setTargetQuestionCount("50");
-    setDifficulty("mixed");
-    setQuestionType("multiple_choice");
-    setMoreQuestionCount("20");
+    setManualQuestions([]);
     setSaveOfflineCopy(false);
-    setStudyFile(null);
-    setJsonText("");
     setErrors([]);
-    setJsonCheck(null);
-    setSavedReviewer(null);
-    setGenerationStats(null);
-    setGenerationSteps([]);
     setDraftMessage("Draft cleared.");
   }
 
@@ -1011,7 +337,7 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
         <div>
           <p className="eyebrow">AI Generator</p>
           <h1>Generate a reviewer</h1>
-          <p className="muted">Upload study material, generate a reviewer with Gemini, then save it for offline study.</p>
+          <p className="muted">Upload study material or an existing exam paper, then save the result for offline study.</p>
           {draftMessage ? <p className="draft-save-note">{draftMessage}</p> : null}
         </div>
         <div className="generator-heading-actions">
@@ -1028,222 +354,118 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
 
       <section className="generator-layout">
         <div className="generator-panel">
-          <div className="generator-panel-head">
-            <Sparkles size={22} aria-hidden="true" />
-            <div>
-              <h2>Generate Reviewer</h2>
-              <p className="muted">Upload a PDF or text file. You can also paste notes if that is faster.</p>
-            </div>
-          </div>
+          <div className="generator-mode-tabs" role="tablist" aria-label="Generator mode">
+            {GENERATOR_MODES.map((entry) => {
+              const Icon = entry.icon;
+              const isActive = mode === entry.value;
 
-          <div className="production-note" role="note">
-            <strong>AI limits</strong>
-            <span>PDF upload under 3 MB direct, up to 12 MB for browser text extraction, 45,000 characters of notes, 150 questions max, and 8 AI requests every 10 minutes per signed-in account. Guests are limited by connection.</span>
-          </div>
-
-          <div className="ai-prompt-panel">
-            <div className="generator-form-grid">
-              <label>
-                <span>Reviewer Title</span>
-                <input value={details.title} onChange={(event) => updateDetails("title", event.target.value)} placeholder="Example: Biology Prelim Reviewer" />
-              </label>
-              <label>
-                <span>Subject</span>
-                <input value={details.subject} onChange={(event) => updateDetails("subject", event.target.value)} placeholder="Example: Biology" />
-              </label>
-            </div>
-
-            <fieldset className="generator-option-group">
-              <legend>Number of Questions</legend>
-              <div className="segmented">
-                {QUESTION_COUNT_OPTIONS.map((option) => (
-                  <button
-                    className={targetQuestionCount === option.value ? "active" : ""}
-                    type="button"
-                    key={option.value}
-                    onClick={() => setTargetQuestionCount(option.value)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            <label className="upload-zone ai-upload-zone">
-              <input type="file" accept=".pdf,.txt,.md,.csv,.json,text/plain,application/pdf" onChange={handleStudyFile} />
-              <Upload size={30} aria-hidden="true" />
-              <strong>{studyFile ? studyFile.name : "Upload study material"}</strong>
-              <span>{studyFile ? `${(studyFile.size / 1024 / 1024).toFixed(2)} MB ready` : "PDF under 3 MB, or TXT, MD, CSV, JSON. Text files will also fill the notes box below."}</span>
-            </label>
-
-            {studyFile ? (
-              <div className="button-row">
-                <button className="button subtle" type="button" onClick={removeStudyFile}>
-                  Remove File
-                </button>
-              </div>
-            ) : null}
-
-            <label className="prompt-box">
-              <span>Extra Notes</span>
-              <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} placeholder="Optional: paste notes here, or use this instead of uploading a file." />
-            </label>
-            {configured && user ? (
-              <label className="generator-checkbox">
-                <input
-                  type="checkbox"
-                  checked={saveOfflineCopy}
-                  onChange={(event) => setSaveOfflineCopy(event.target.checked)}
-                />
-                <span>Also save an offline copy on this device</span>
-              </label>
-            ) : null}
-            {configured && !user ? (
-              <p className="generation-hint">{requireSignIn()}</p>
-            ) : null}
-            <div className="button-row">
-              <button className="button primary" type="button" onClick={generateReviewerWithAi} disabled={isGenerating || isAddingQuestions || !isOnline}>
-                {isGenerating ? <Loader2 className="spinner" size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
-                {isGenerating ? "Generating..." : "Generate with AI"}
-              </button>
-              {generationMessage ? <span className="template-message">{generationMessage}</span> : null}
-            </div>
-
-            {generationSteps.length ? (
-              <ol className="generation-progress" aria-label="Generation progress">
-                {generationSteps.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-            ) : null}
-            {isGenerating || isAddingQuestions ? (
-              <p className="generation-hint">
-                Working for {generationElapsed}s{generationElapsed >= 30 ? " — AI generation can take a minute or two, especially for larger counts." : " — hang tight."}
-              </p>
-            ) : null}
-          </div>
-
-          {jsonText ? (
-            <div className="json-import-panel">
-              <div className="generator-panel-head compact">
-                <FileJson size={20} aria-hidden="true" />
-                <div>
-                  <h2>Generated Reviewer</h2>
-                  <p className="muted">This reviewer passed the app's JSON structure check.</p>
-                </div>
-              </div>
-              {jsonCheck ? (
-                <div className="json-check-card" role="status">
-                  <strong>{jsonCheck.title}</strong>
-                  <span>{jsonCheck.subject}</span>
-                  <span>{jsonCheck.questions} questions across {jsonCheck.coverage} coverage areas</span>
-                  {generationStats ? (
-                    <span>
-                      Requested {generationStats.requested}; generated {generationStats.generated}
-                    </span>
-                  ) : null}
-                  {generationStats?.difficultyMix ? (
-                    <span>
-                      {generationStats.difficultyMix.easy} easy / {generationStats.difficultyMix.medium} medium / {generationStats.difficultyMix.hard} hard &middot; {generationStats.difficultyMix.scenario} exam-style / {generationStats.difficultyMix.direct} direct
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="more-question-tools">
-                <fieldset className="generator-option-group">
-                  <legend>Make More Questions</legend>
-                  <div className="segmented compact">
-                    {MORE_QUESTION_COUNT_OPTIONS.map((option) => (
-                      <button
-                        className={moreQuestionCount === option.value ? "active" : ""}
-                        type="button"
-                        key={option.value}
-                        onClick={() => setMoreQuestionCount(option.value)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
+              return (
                 <button
-                  className="button subtle"
+                  key={entry.value}
                   type="button"
-                  onClick={makeMoreQuestions}
-                  disabled={isGenerating || isAddingQuestions || !isOnline}
+                  role="tab"
+                  id={`generator-tab-${entry.value}`}
+                  aria-selected={isActive}
+                  aria-controls={`generator-panel-${entry.value}`}
+                  className={`generator-mode-tab${isActive ? " active" : ""}`}
+                  onClick={() => setMode(entry.value)}
                 >
-                  {isAddingQuestions ? <Loader2 className="spinner" size={17} aria-hidden="true" /> : <Plus size={17} aria-hidden="true" />}
-                  {isAddingQuestions ? "Adding..." : "Add Questions"}
+                  <Icon size={17} aria-hidden="true" />
+                  {entry.label}
                 </button>
-              </div>
-              <div className="button-row">
-                <button
-                  className="button subtle"
-                  type="button"
-                  onClick={() => generateReviewerWithAi({ regenerate: true })}
-                  disabled={isGenerating || isAddingQuestions || !isOnline}
-                >
-                  {isGenerating ? <Loader2 className="spinner" size={17} aria-hidden="true" /> : <RotateCcw size={17} aria-hidden="true" />}
-                  Regenerate
-                </button>
-                {savedReviewer ? (
-                  <button className="button subtle" type="button" onClick={() => navigate(`/reviewer/${savedReviewer.reviewerId}?edit=1`)}>
-                    <ListChecks size={17} aria-hidden="true" />
-                    Edit Questions
-                  </button>
-                ) : null}
-                {savedReviewer ? (
-                  <button className="button primary" type="button" onClick={() => navigate(`/reviewer/${savedReviewer.reviewerId}`)}>
-                    Open Reviewer
-                  </button>
-                ) : (
-                  <button className="button primary" type="button" onClick={() => saveReviewerJson(jsonText)} disabled={isSavingReviewer}>
-                    {isSavingReviewer ? <Loader2 className="spinner" size={17} aria-hidden="true" /> : <Save size={17} aria-hidden="true" />}
-                    {isSavingReviewer ? "Saving..." : configured && user ? "Save to Cloud" : "Save Offline"}
-                  </button>
-                )}
+              );
+            })}
+          </div>
+
+          <div
+            className="generator-mode-body"
+            role="tabpanel"
+            id={`generator-panel-${activeMode.value}`}
+            aria-labelledby={`generator-tab-${activeMode.value}`}
+          >
+            <div className="generator-panel-head">
+              <ActiveModeIcon size={22} aria-hidden="true" />
+              <div>
+                <h2>{activeMode.heading}</h2>
+                <p className="muted">{activeMode.description}</p>
               </div>
             </div>
-          ) : null}
+
+            <div className="production-note" role="note">
+              <strong>AI limits</strong>
+              <span>Up to 6 attachments totalling 3 MB per request, up to 12 MB each for PDF text extraction, 45,000 characters of notes, 150 questions max, and 8 AI requests every 10 minutes per signed-in account. Guests are limited by connection.</span>
+            </div>
+
+            {/* Both modes stay mounted and the inactive one is hidden rather than
+                unmounted. Rendering conditionally would throw away the half-finished
+                form on the other tab, including a reviewer already generated there,
+                and switching tabs has to be free. */}
+            <div className="generator-mode-slot" hidden={mode !== "exam"}>
+              <ExamPaperMode
+                details={examDetails}
+                updateDetails={updateExamDetails}
+                draft={examSlice}
+                onDraftChange={patchExamSlice}
+                saveOfflineCopy={saveOfflineCopy}
+                onSaveOfflineChange={setSaveOfflineCopy}
+                isOnline={isOnline}
+                onReviewerPersisted={forgetDraft}
+                onNavigate={navigateToReviewer}
+              />
+            </div>
+
+            <div className="generator-mode-slot" hidden={mode !== "material"}>
+              <StudyMaterialMode
+                details={materialDetails}
+                updateDetails={updateMaterialDetails}
+                draft={materialSlice}
+                onDraftChange={patchMaterialSlice}
+                saveOfflineCopy={saveOfflineCopy}
+                onSaveOfflineChange={setSaveOfflineCopy}
+                isOnline={isOnline}
+                onReviewerPersisted={forgetDraft}
+                onNavigate={navigateToReviewer}
+              />
+            </div>
+          </div>
 
           {errors.length ? (
             <div className="generator-errors" role="alert">
-              {errors.map((error) => (
-                <p key={error}>{error}</p>
-              ))}
+              {errors.map((error) => <p key={error}>{error}</p>)}
             </div>
           ) : null}
 
           <details className="advanced-panel">
             <summary>Manual Builder</summary>
-<div className="generator-panel-head compact">
-                <FileText size={20} aria-hidden="true" />
-                <div>
-                  <h2>Manual Builder</h2>
-                  <p className="muted">Fallback for creating or testing a reviewer without AI. Reviewer options like question count, difficulty, and question types are chosen in the reviewer view.</p>
-                </div>
+            <div className="generator-panel-head compact">
+              <FileText size={20} aria-hidden="true" />
+              <div>
+                <h2>Manual Builder</h2>
+                <p className="muted">Fallback for creating or testing a reviewer without AI. Reviewer options like question count, difficulty, and question types are chosen in the reviewer view.</p>
               </div>
+            </div>
 
             <div className="generator-form-grid">
               <label>
                 <span>Reviewer Title</span>
-                <input value={details.title} onChange={(event) => updateDetails("title", event.target.value)} placeholder="Example: Biology Prelim Reviewer" />
+                <input value={materialDetails.title} onChange={(event) => updateMaterialDetails("title", event.target.value)} placeholder="Example: Biology Prelim Reviewer" />
               </label>
               <label>
                 <span>Subject</span>
-                <input value={details.subject} onChange={(event) => updateDetails("subject", event.target.value)} placeholder="Example: Biology" />
+                <input value={materialDetails.subject} onChange={(event) => updateMaterialDetails("subject", event.target.value)} placeholder="Example: Biology" />
               </label>
             </div>
 
             <label className="prompt-box">
               <span>Instructions</span>
-              <textarea value={details.instructions} onChange={(event) => updateDetails("instructions", event.target.value)} />
+              <textarea value={materialDetails.instructions} onChange={(event) => updateMaterialDetails("instructions", event.target.value)} />
             </label>
 
             <div className="question-builder">
               <div className="generator-panel-head compact">
                 <Sparkles size={20} aria-hidden="true" />
                 <div>
-                  <h2>Question {questions.length + 1}</h2>
+                  <h2>Question {manualQuestions.length + 1}</h2>
                   <p className="muted">Pick a type and fill in its fields.</p>
                 </div>
               </div>

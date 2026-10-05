@@ -2802,6 +2802,357 @@ legend {
   border-left: 3px solid currentColor;
 }
 
+/* ---------------------------------------------------------------------------
+   Generator modes, attachments, and the exam import form.
+
+   Written against the radius and surface tokens rather than the hardcoded 8px and
+   var(--shadow) the older generator rules above still use, so these follow the theme
+   in both modes without a separate dark-theme block. Separation is by border and
+   background contrast; the only shadows on this page belong to overlays, which is
+   why there are none here at all.
+   --------------------------------------------------------------------------- */
+
+.generator-mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.generator-mode-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 18px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.generator-mode-tab:hover {
+  color: var(--text);
+}
+
+.generator-mode-tab.active {
+  color: var(--accent);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+}
+
+.generator-mode-tab.active svg {
+  color: var(--accent);
+}
+
+.generator-mode-body {
+  display: grid;
+  gap: 16px;
+}
+
+/* The inactive mode is hidden rather than unmounted, so its form survives a tab
+   switch. `hidden` is restated because a display value on the class would otherwise
+   win over the user-agent rule that hides it. */
+.generator-mode-slot[hidden] {
+  display: none;
+}
+
+.generator-mode-slot {
+  display: grid;
+  gap: 16px;
+}
+
+.source-field {
+  display: grid;
+  gap: 10px;
+}
+
+.source-field-label {
+  font-weight: 900;
+}
+
+.source-field .upload-zone {
+  min-height: 132px;
+  border-radius: var(--radius-lg);
+}
+
+.source-field-notice {
+  margin: 0;
+  color: var(--success);
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.source-field-hint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.optional-tag {
+  margin-left: 8px;
+  padding: 2px 8px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.attachment-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+/* Flex rather than a grid, so one attached file grows into the space instead of
+   sitting in a narrow track beside four empty ones. A six-page paper should fill
+   the panel; a single photo should not look abandoned. */
+.attachment-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachment-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "thumb name"
+    "thumb meta";
+  align-items: center;
+  flex: 1 1 200px;
+  /* Past this the filename stops being the point and the row starts to look empty. */
+  max-width: 340px;
+  gap: 2px 10px;
+  padding: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.attachment-thumb,
+.attachment-icon {
+  grid-area: thumb;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+}
+
+.attachment-thumb {
+  object-fit: cover;
+}
+
+.attachment-icon {
+  color: var(--accent);
+}
+
+.attachment-name {
+  grid-area: name;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-meta {
+  grid-area: meta;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.attachment-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.attachment-remove:hover {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
+
+.link-button {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.link-button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.generator-panel-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.generator-panel-foot .generation-hint {
+  margin: 0;
+}
+
+.exam-mode-hint {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.answer-source-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+/* A radio presented as a card, because the two options differ by consequence rather
+   than by a word: one can be right or wrong, the other is either faithful or absent.
+   A single-line toggle would hide that. The native input stays in the DOM and stays
+   focusable so keyboard and screen reader behaviour is the platform's, not a rebuild
+   of it. */
+.answer-source-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.answer-source-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+}
+
+.answer-source-card.active {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
+}
+
+.answer-source-card input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.answer-source-card:focus-within {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.answer-source-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.answer-source-card.active .answer-source-label {
+  color: var(--accent);
+}
+
+.answer-source-description {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.answer-source-options + .generator-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.answer-source-options + .generator-note svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generator-mode-tab,
+  .attachment-remove,
+  .answer-source-card {
+    transition: none;
+  }
+}
+
 .quiz-topbar {
   display: flex;
   align-items: center;

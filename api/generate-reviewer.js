@@ -51,7 +51,20 @@ const AI_PROVIDERS = [
   }
 ];
 const MAX_SOURCE_LENGTH = 45000;
-const MAX_FILE_BASE64_LENGTH = 4200000;
+// The total, across every attachment on one request, not per file. This is a base64
+// character count, which is what the body actually carries. It has to stay in step
+// with the browser's MAX_AI_ATTACHMENT_BYTES: base64 expands bytes by 4/3, so a
+// browser that let through 3 MiB lands here at about 4.19 M characters. The figure
+// below leaves headroom for that and for the JSON around it, while staying well
+// inside MAX_REQUEST_BODY_LENGTH.
+const MAX_FILE_BASE64_LENGTH = 4300000;
+// Six covers a full exam paper without letting one request carry a folder. A paper
+// that runs to three pages is usually three photos, so this is not generous filler.
+const MAX_ATTACHMENTS = 6;
+// The app's own ceiling. A paper longer than this is truncated rather than refused,
+// because the first 150 items are still a usable drill and the learner can import
+// the rest from the next section.
+const MAX_IMPORTED_QUESTIONS = 150;
 // Three top-up rounds. This was briefly lowered to one to cap AI spend, which cost
 // real output: the model regularly returns short of the requested count on long
 // material, and the top-ups are what close the gap. Restore it.
@@ -97,6 +110,49 @@ function createUpstreamBudget(maxCalls = UPSTREAM_CALL_BUDGET) {
     }
   };
 }
+// An attachment is a file the model has to look at directly, as opposed to text
+// the browser already pulled out of it. One file is the common case and `file` is
+// still accepted on its own. `files` exists because an exam paper that runs to
+// three pages arrives as three photos, and there is no way to staple them back
+// into one PDF client-side without a library worth its weight here.
+function normalizeAttachments({ file, files } = {}) {
+  // Both are pooled rather than one being preferred, so a caller that sends the
+  // singular field alongside the array cannot silently lose an attachment.
+  const candidates = [...(Array.isArray(files) ? files : []), ...(file ? [file] : [])];
+
+  return candidates
+    .filter((candidate) => candidate?.data && candidate?.mimeType)
+    .slice(0, MAX_ATTACHMENTS)
+    .map((candidate) => ({
+      name: String(candidate.name || "").trim(),
+      mimeType: String(candidate.mimeType || "").trim(),
+      data: String(candidate.data)
+    }));
+}
+
+function getAttachmentParts(attachments) {
+  return (attachments || []).map((attachment) => ({
+    inline_data: {
+      mime_type: attachment.mimeType,
+      data: attachment.data
+    }
+  }));
+}
+
+function getAttachmentsBase64Length(attachments) {
+  return (attachments || []).reduce((total, attachment) => total + attachment.data.length, 0);
+}
+
+function getAttachedFileMimeTypes(parts) {
+  return (parts || [])
+    .filter((part) => part?.inline_data?.mime_type)
+    .map((part) => String(part.inline_data.mime_type));
+}
+
+function isImageMimeType(mimeType) {
+  return String(mimeType || "").startsWith("image/");
+}
+
 const DIFFICULTY_INSTRUCTIONS = {
   easy: "Favor direct recall, simple definitions, and straightforward concept checks.",
   mixed: "Use a balanced mix of recall, concept, scenario, and application questions.",
@@ -476,6 +532,157 @@ Study material for reference:
 ${(sourceText || "[The study material was not pasted as text.]").slice(0, 24000)}`;
 }
 
+// Same reviewer shape as generation, plus the two fields only an import can have:
+// sourceNumber is the number the paper printed beside the item, so a learner can
+// line the reviewer up with the page they are holding, and answerSource says where
+// the key came from. Built from reviewerSchema rather than retyped so the two
+// cannot drift apart when a shared field changes.
+const examImportSchema = {
+  type: "OBJECT",
+  properties: {
+    ...reviewerSchema.properties,
+    questions: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          ...reviewerSchema.properties.questions.items.properties,
+          sourceNumber: { type: "INTEGER" },
+          answerSource: { type: "STRING" }
+        },
+        required: [...reviewerSchema.properties.questions.items.required, "sourceNumber", "answerSource"]
+      }
+    }
+  }
+};
+
+// Where an imported item's answer came from. "paper" means it was read off the exam
+// itself, "solved" means the AI worked it out, and "unresolved" means it could not
+// be decided honestly.
+//
+// The third value is the point. A wrong answer is worse than a missing one: it
+// teaches the learner something false, and once it is in the quiz it is
+// indistinguishable from a real key entry. So an item the AI is not sure about is
+// reported back as unresolved and left out of the reviewer, never guessed at.
+const EXAM_ANSWER_SOURCE_PAPER = "paper";
+const EXAM_ANSWER_SOURCE_SOLVED = "solved";
+const EXAM_ANSWER_SOURCE_UNRESOLVED = "unresolved";
+
+// What the learner asked for, which is not the same question as what came back.
+// "solve" means work the answers out, using the paper's own key wherever the paper
+// shows one. "extract" means use only the key printed in the paper, and treat
+// anything else as unresolved.
+const EXAM_ANSWER_SOURCE_REQUESTS = {
+  solve: "solve",
+  extract: "extract"
+};
+
+function normalizeExamAnswerSource(value) {
+  return EXAM_ANSWER_SOURCE_REQUESTS[value] === "extract" ? "extract" : "solve";
+}
+
+// Scoped to the requested source, not just to the vocabulary. Under extract the only
+// claim worth believing is that the paper printed the answer, so a model that says it
+// worked one out has broken the instruction the mode was built on and the item is
+// treated as unanswered. Letting "solved" through here would put an answer the paper
+// never printed into a reviewer whose whole promise is that it did not.
+//
+// "unresolved" is honoured first and in both modes. It is the one claim the model
+// makes about itself rather than about the paper, and it is always honest, so
+// overwriting it with a fallback would replace a missing answer with a made-up one,
+// which is the failure this whole mechanism exists to prevent.
+function normalizeImportedAnswerSource(value, requestedAnswerSource) {
+  const source = String(value || "").trim().toLowerCase();
+  if (source === EXAM_ANSWER_SOURCE_UNRESOLVED) return EXAM_ANSWER_SOURCE_UNRESOLVED;
+  if (requestedAnswerSource === "extract") {
+    return source === EXAM_ANSWER_SOURCE_PAPER ? EXAM_ANSWER_SOURCE_PAPER : EXAM_ANSWER_SOURCE_UNRESOLVED;
+  }
+  if (source === EXAM_ANSWER_SOURCE_PAPER || source === EXAM_ANSWER_SOURCE_SOLVED) return source;
+  // A model that leaves answerSource out has made no claim, and under solve there is
+  // an honest reading of that: it answered the item itself.
+  return EXAM_ANSWER_SOURCE_SOLVED;
+}
+
+function buildExamImportPrompt({ sourceText, title, subject, instructions, answerSource, attachmentNames }) {
+  const wantsSolved = answerSource !== "extract";
+
+  return `TRANSCRIBE AN EXISTING EXAM PAPER INTO A REVIEWER
+
+You are not writing new questions. A real exam paper already exists and the learner
+wants to drill that exact paper, so your job is to copy it faithfully. Everything
+that makes this different from generation comes down to that: fidelity beats
+quality at every point where the two disagree.
+
+WHERE THE PAPER IS:
+- The uploaded ${attachmentNames ? `file(s) (${attachmentNames})` : "file"} is the paper. It is usually a PDF, or one or more photos of the printed pages, and the pages are supplied in order.
+- Pasted text, when present, is the same paper typed out or passed through OCR.
+- Read every page before you start. Do not stop at the first page because the first page is complete.
+
+TRANSCRIPTION RULES - THESE MATTER MORE THAN ANYTHING ELSE:
+- Reproduce every item you can genuinely read, in the order the paper prints them.
+- Keep the original question wording. Do not rewrite, tidy, reword, modernise, or "improve" a stem. A learner drilling this paper is drilling this paper, and a paraphrase quietly breaks their correspondence with the printed page.
+- Keep the original answer choices and their original A/B/C/D positions. Never shuffle the choices and never renumber them. A choice moved to a different letter invalidates the paper's own answer key.
+- Copy choice text exactly, including its abbreviations, symbols, formulas, and units.
+- Record the number the paper prints beside each item in sourceNumber, so the reviewer lines up with the page in front of the learner. Do not renumber items to be consecutive; sourceNumber is the paper's numbering, not yours.
+- Set your own question ids sequentially from 1, since the reviewer uses those to address the items.
+- Do not merge two items into one, do not split one item into two, and never create an item the paper does not contain.
+- If an item is cut off, covered, blurred, or otherwise unreadable, leave it out entirely. Never invent the missing text and never invent an item to fill the gap in the numbering.
+- Stop where the paper stops. Do not continue into a next section, a second paper, or an answer sheet the upload does not actually show.
+- Ignore page furniture: headers, footers, page numbers, seat numbers, and instructions about the exam itself are not items. Do not turn "INSTRUCTIONS: choose the letter of the correct answer" into a question.
+
+QUESTION TYPE:
+- A real paper is almost always one type throughout. Set reviewer.questionType to that single type, and set every question.type to the same value.
+- Four choices printed under each stem is "multiple_choice", with A, B, C, and D all non-empty.
+- A paper of statements to be judged is "true_false", with A: "True", B: "False", C: "", and D: "".
+- If a paper genuinely mixes types, keep the multiple-choice items. They are the ones a learner can actually drill, and dropping a minority type is better than shipping a reviewer whose choicesPerQuestion does not describe it.
+
+${wantsSolved ? `WHERE THE ANSWERS COME FROM - WORK THEM OUT:
+- Work out the correct answer for every item, from the item's own content and from standard knowledge of the subject the paper is about.
+- Where the paper itself shows the answer, use that answer and stop reasoning: a filled or darkened bubble, a tick or check beside a choice, a bolded, circled, or underlined choice, a highlighted choice, or an answer written in the margin.
+- Set that question's answerSource to "paper" when you read the answer off the paper, and to "solved" when you worked it out yourself. The learner is entitled to know which is which.
+- If you cannot settle an answer with real confidence, set answerSource to "unresolved" and put your best guess in correctAnswer rather than inventing a justification for it. Being marked unresolved costs the learner one item; being wrong silently costs them a wrong belief.
+- Never invent a second answer to look certain.` : `WHERE THE ANSWERS COME FROM - USE THE PAPER'S OWN KEY:
+- Use only an answer the paper actually shows. Do not work one out yourself and do not use outside knowledge, even when you are completely certain of the right answer. The learner asked for this paper's answers, not yours.
+- Look for an answer key section, a numbered answer list at the end, a marked or filled answer sheet, ticks and checks beside choices, bolded, circled, or underlined choices, and answers written in the margin.
+- Match each key entry to the item by its printed number. A key written as "1-B 2-A 3-D" is a numbered list and a bubble sheet is per page. Do not shift the whole key by one because an item was unreadable and left out.
+- An answer sheet is a separate artefact. If the upload shows questions on one page and a marked key on another, both are part of the paper and you may use the key. If the upload does not show a key, there is nothing to read, and every item is unresolved.
+- Set answerSource to "paper" for every item the key answers.
+- Set answerSource to "unresolved" for any item the paper does not answer, and leave its correctAnswer and answerText as empty strings. Do not pick a letter to fill the shape of the JSON. This is the one place where an empty field is the correct answer.`}
+
+EXPLANATIONS:
+- The paper may print a rationale or explanation for its items, often in a section at the end. Where it does, use it, in substance and in the paper's own terminology.
+- Where the paper prints none, write a short explanation of one to three sentences from the item's own content: what the concept being tested is, or why the key is correct.
+- Never introduce a fact the paper does not contain, and never add outside knowledge under the guise of explaining the answer.
+- For an unresolved item, write the short reason you could not settle it rather than a paragraph arguing for a guess.
+
+OUTPUT RULES:
+- Return valid JSON only. Do not wrap it in markdown.
+- Follow the schema exactly. Every field listed as required must be present on every item, including sourceNumber and answerSource.
+- title and subject come from the paper itself where it names them, such as a header reading "IT2511 - Information Technology 2 - First Term Preliminary Examination". Fall back to the values supplied below.
+- topic is the unit or section the item belongs to, taken from the paper's own headings. If the paper has no headings, use its subject.
+- coverage lists the major sections the paper covers.
+- questionCount must equal questions.length.
+- difficulty and style still have to be set. Judge difficulty from the item itself: "easy" for a stated fact or a term printed in the material, "medium" for choosing the right concept among close alternatives, "hard" for an item needing a distinction or an application. Use only "easy", "medium", or "hard", and style only "scenario" or "direct".
+- correctAnswer must be "A", "B", "C", or "D" for multiple-choice, "A" or "B" for true/false, and answerText must exactly equal choices[correctAnswer].
+
+FINAL CHECK BEFORE YOU RETURN:
+- Every item is in the paper, in the paper's order, with the paper's own wording and the paper's own A/B/C/D positions.
+- No item was invented, merged, split, or renumbered.
+- sourceNumber on every item matches the number printed on the paper.
+- answerText exactly equals choices[correctAnswer] on every item that has an answer.
+- Every item that could not be answered honestly is marked "unresolved" rather than guessed.
+- No explanation states a fact the paper does not state.
+
+Reviewer details:
+- Title: ${title || "Take the number printed on the paper"}
+- Subject: ${subject || "Take the course name printed on the paper"}
+- Instructions: ${instructions || "Answer every item, then check the explanations to see what you missed."}
+
+${attachmentNames ? `Uploaded: ${attachmentNames}` : ""}
+
+${sourceText ? `Paper text:\n${sourceText}` : "[The paper was uploaded as a file. Transcribe it from the attachment.]"}`;
+}
+
 function sendJson(response, statusCode, payload) {
   response.status(statusCode).json(payload);
 }
@@ -771,7 +978,7 @@ function getQuestionPlanInstruction(count) {
 - The plan below is authoritative. Apply the difficulty and style listed for each question position instead of guessing, and keep the levels spread across the whole reviewer rather than clustered.`;
 }
 
-function buildPrompt({ sourceText, title, subject, instructions, questionCount, difficulty, questionType, fileName }) {
+function buildPrompt({ sourceText, title, subject, instructions, questionCount, difficulty, questionType, attachmentNames }) {
   const questionCountInstruction = getQuestionCountInstruction(questionCount);
   const difficultyInstruction = getDifficultyInstruction(difficulty);
   const questionTypeConfig = getQuestionTypeConfig(questionType);
@@ -861,13 +1068,13 @@ Reviewer details:
 - Instructions: ${instructions || "Select the best answer for each question."}
 - Difficulty: ${difficulty || "mixed"}
 - Question type: ${questionType || "multiple_choice"}
-${fileName ? `- Uploaded file: ${fileName}` : ""}
+${attachmentNames ? `- Uploaded files: ${attachmentNames}` : ""}
 
 Study material:
 ${sourceText || "[Use the uploaded file as the study material.]"}`;
 }
 
-function buildCompletionPrompt({ sourceText, title, subject, instructions, difficulty, questionType, requestedCount, missingCount, existingQuestions, fileName }) {
+function buildCompletionPrompt({ sourceText, title, subject, instructions, difficulty, questionType, requestedCount, missingCount, existingQuestions, attachmentNames }) {
   const existingSummary = existingQuestions
     .map((question) => `${question.id}. ${question.topic}: ${question.question}`)
     .join("\n")
@@ -926,7 +1133,7 @@ Reviewer details:
 - Instructions: ${instructions || "Select the best answer for each question."}
 - Difficulty: ${difficulty || "mixed"}
 - Question type: ${questionType || "multiple_choice"}
-${fileName ? `- Uploaded file: ${fileName}` : ""}
+${attachmentNames ? `- Uploaded files: ${attachmentNames}` : ""}
 
 Existing questions to avoid:
 ${existingSummary || "[No existing questions listed.]"}
@@ -996,6 +1203,103 @@ function normalizeGeneratedReviewer(reviewer, fallback = {}) {
     instructions: reviewer?.instructions || fallback.instructions || "Select the best answer for each question.",
     questions: normalizedQuestions
   };
+}
+
+// Deliberately not normalizeGeneratedReviewer. An import has to carry two extra
+// fields through untouched (sourceNumber and answerSource), and it has to keep
+// correctAnswer empty on an unresolved item, which the generated path would have
+// quietly turned into "A" and invented an answerText to match. Reusing it would
+// mean writing an opt-out into a function whose whole job is that coercion.
+function normalizeImportedExamReviewer(reviewer, fallback = {}) {
+  const requestedAnswerSource = fallback.answerSource === "extract" ? "extract" : "solve";
+  const questions = Array.isArray(reviewer?.questions) ? reviewer.questions : [];
+  // An import takes the paper's own type rather than one the caller chose, because
+  // there is no generation run here whose options should win over what was printed.
+  const reviewerQuestionType = QUESTION_TYPE_INSTRUCTIONS[reviewer?.questionType]
+    ? reviewer.questionType
+    : QUESTION_TYPE_INSTRUCTIONS[questions[0]?.type]
+      ? questions[0].type
+      : fallback.questionType || "multiple_choice";
+  const questionTypeConfig = getQuestionTypeConfig(reviewerQuestionType);
+
+  const normalizedQuestions = questions.map((question, index) => {
+    const choices = question?.choices || {};
+    const type = QUESTION_TYPE_INSTRUCTIONS[question?.type] ? question.type : reviewerQuestionType;
+    const isTyped = type === "identification" || type === "flashcard";
+    const validAnswers = type === "true_false" ? ["A", "B"] : isTyped ? ["TEXT"] : ["A", "B", "C", "D"];
+    const answerSource = normalizeImportedAnswerSource(question?.answerSource, requestedAnswerSource);
+    const unresolved = answerSource === EXAM_ANSWER_SOURCE_UNRESOLVED;
+    const rawCorrectAnswer = unresolved ? "" : String(question?.correctAnswer || (isTyped ? "TEXT" : "A")).toUpperCase();
+    const correctAnswer = unresolved ? "" : (validAnswers.includes(rawCorrectAnswer) ? rawCorrectAnswer : validAnswers[0]);
+    const normalizedChoices = type === "true_false"
+      ? {
+          A: String(choices.A || "True").trim(),
+          B: String(choices.B || "False").trim(),
+          C: "",
+          D: ""
+        }
+      : {
+          A: String(choices.A || "").trim(),
+          B: String(choices.B || "").trim(),
+          C: String(choices.C || "").trim(),
+          D: String(choices.D || "").trim()
+        };
+    const sourceNumber = Number(question?.sourceNumber);
+
+    return {
+      id: index + 1,
+      sourceNumber: Number.isFinite(sourceNumber) && sourceNumber > 0 ? sourceNumber : index + 1,
+      answerSource,
+      type,
+      difficulty: DIFFICULTY_LEVELS.includes(question?.difficulty) ? String(question.difficulty).trim() : "medium",
+      style: getQuestionStyle(question),
+      topic: String(question?.topic || fallback.subject || "Exam Paper").trim(),
+      question: String(question?.question || "").trim(),
+      choices: normalizedChoices,
+      correctAnswer,
+      answerText: unresolved ? "" : String(question?.answerText || normalizedChoices[correctAnswer] || "").trim(),
+      explanation: String(question?.explanation || "").trim()
+    };
+  });
+
+  const coverage = Array.isArray(reviewer?.coverage) && reviewer.coverage.length
+    ? reviewer.coverage.map((topic) => String(topic).trim()).filter(Boolean)
+    : [...new Set(normalizedQuestions.map((question) => question.topic).filter(Boolean))];
+
+  return {
+    ...reviewer,
+    title: String(reviewer?.title || fallback.title || "").trim() || "Exam Paper",
+    subject: String(reviewer?.subject || fallback.subject || "").trim() || "Imported Exam",
+    coverage,
+    questionCount: normalizedQuestions.length,
+    questionType: reviewerQuestionType,
+    choicesPerQuestion: questionTypeConfig.choicesPerQuestion,
+    instructions: reviewer?.instructions || fallback.instructions || "Answer every item, then check the explanations to see what you missed.",
+    questions: normalizedQuestions
+  };
+}
+
+// A question with no honest answer cannot be saved: the app's reviewer shape
+// requires one, and a placeholder letter would be indistinguishable from a real key
+// entry the moment the quiz starts. They are split out rather than dropped in place
+// so the response can report exactly how many were lost and why.
+function splitImportedExamQuestions(questions) {
+  const ready = [];
+  const unresolved = [];
+
+  (questions || []).forEach((question) => {
+    if (question?.answerSource === EXAM_ANSWER_SOURCE_UNRESOLVED) unresolved.push(question);
+    else ready.push(question);
+  });
+
+  return { ready, unresolved };
+}
+
+function getExamAnswerKeyStats(questions) {
+  const fromPaper = questions.filter((question) => question?.answerSource === EXAM_ANSWER_SOURCE_PAPER).length;
+  const solved = questions.filter((question) => question?.answerSource === EXAM_ANSWER_SOURCE_SOLVED).length;
+
+  return { fromPaper, solved, total: questions.length };
 }
 
 function mergeReviewers(baseReviewer, additionalReviewer, requestedCount) {
@@ -1236,11 +1540,17 @@ function hasConfiguredProvider() {
   return AI_PROVIDERS.some((provider) => Boolean(process.env[provider.apiKeyEnv]));
 }
 
-function getConfiguredProviders({ hasFileData = false, hasReadableMaterial = true } = {}) {
+function getConfiguredProviders({ hasFileData = false, hasReadableMaterial = true, requiresVision = false } = {}) {
   // Vision-only models are slower and usually weaker at strict JSON, so they are
   // held back until a text provider has been tried. They are only reachable when
-  // the request actually depends on reading an attached file.
-  const needsVision = hasFileData && !hasReadableMaterial;
+  // the request actually depends on reading an attachment.
+  //
+  // An image counts as depending on the attachment even when notes were pasted
+  // alongside it. Without that, attaching a photo of a page next to some pasted
+  // notes quietly excluded every vision-only provider, so the chain answered from
+  // the notes alone and the photo was read by nobody. The person picked that file
+  // on purpose, so it has to reach a model that can see it.
+  const needsVision = requiresVision || (hasFileData && !hasReadableMaterial);
 
   return AI_PROVIDERS.filter((provider) => {
     if (!process.env[provider.apiKeyEnv]) return false;
@@ -1249,18 +1559,13 @@ function getConfiguredProviders({ hasFileData = false, hasReadableMaterial = tru
   });
 }
 
-function getAttachedFileMimeType(parts) {
-  for (const part of parts || []) {
-    if (part?.inline_data?.mime_type) return String(part.inline_data.mime_type);
-  }
-  return "";
-}
-
-function describeFileType(mimeType) {
-  if (mimeType.startsWith("image/")) return "image";
-  if (mimeType.includes("pdf")) return "PDF";
-  if (mimeType.startsWith("text/")) return "text file";
-  return "file";
+// The same paper arrives as one PDF from a download and as four photos from a
+// phone, so the wording has to survive both without naming a format it cannot see.
+function describeAttachedFiles(mimeTypes) {
+  if (!mimeTypes.length) return "file";
+  if (mimeTypes.every(isImageMimeType)) return mimeTypes.length > 1 ? "images" : "image";
+  if (mimeTypes.some((mimeType) => mimeType.includes("pdf"))) return mimeTypes.length > 1 ? "files" : "PDF";
+  return mimeTypes.length > 1 ? "files" : "file";
 }
 
 function extractJsonFromText(text) {
@@ -1367,8 +1672,9 @@ async function requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasRe
   }
 }
 
-async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId, hasFileData = false, schema, budget }) {
-  const providers = getConfiguredProviders({ hasFileData, hasReadableMaterial });
+async function requestReviewerWithFallback({ parts, hasReadableMaterial, requestId, hasFileData = false, hasImageAttachment = false, schema, budget }) {
+  const requiresVision = hasImageAttachment || (hasFileData && !hasReadableMaterial);
+  const providers = getConfiguredProviders({ hasFileData, hasReadableMaterial, requiresVision });
 
   if (!providers.length) {
     // Names nothing. The old message listed the environment variables that hold the
@@ -1381,7 +1687,7 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
   }
 
   const attempts = [];
-  const attachedFileMimeType = getAttachedFileMimeType(parts);
+  const attachmentKind = describeAttachedFiles(getAttachedFileMimeTypes(parts));
   const dependsOnFile = hasFileData && !hasReadableMaterial;
 
   for (const [index, provider] of providers.entries()) {
@@ -1417,10 +1723,11 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
       console.warn(`[${requestId}] ${provider.name} failed (${error?.statusCode || "unknown"}): ${error?.message || "Unknown error"}`);
 
       if (error?.isUnreadableFile) {
-        // Only give up once no remaining provider is able to read the attachment.
-        const rescuable = dependsOnFile
-          && attachedFileMimeType?.startsWith("image/")
-          && providers.slice(index + 1).some((next) => next.supportsVision);
+        // Only give up once no remaining provider is able to read the attachment. An
+        // image counts even when there is pasted text, because the alternative is
+        // answering from the notes while the file the person uploaded goes unread.
+        const rescuable = providers.slice(index + 1).some((next) => next.supportsVision)
+          && (dependsOnFile || hasImageAttachment);
 
         if (!rescuable) {
           const tooLarge = /expected pattern|function_payload_too_large|payload too large|request entity too large/i
@@ -1431,9 +1738,9 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
           // gets its own hint so the interface can suggest pasting text instead.
           const finalError = new Error(
             tooLarge
-              ? `That ${describeFileType(attachedFileMimeType)} is too large to send to the AI after browser encoding. Compress or split the PDF, or paste the study material as text to keep going.`
+              ? `That ${attachmentKind} is too large to send to the AI after browser encoding. Compress or split the file, or paste the study material as text to keep going.`
               : dependsOnFile
-                ? `The AI providers that can read this ${describeFileType(attachedFileMimeType)} are unavailable, and the file has no readable text to fall back on. Paste the study material as text to keep going.`
+                ? `The AI providers that can read this ${attachmentKind} are unavailable, and the file has no readable text to fall back on. Paste the study material as text to keep going.`
                 : GENERIC_AI_FAILURE_MESSAGE
           );
           finalError.statusCode = tooLarge ? 413 : 422;
@@ -1458,10 +1765,25 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
   throw error;
 }
 
-// Exported so the mix and choice warnings, and the repair prompt they are written
-// around, can be tested without a live request. The handler below is still the only
-// thing Vercel calls.
-export { buildChoiceRepairPrompt, getChoiceBalanceWarning, getStyleMixWarning, SCENARIO_MIX };
+// Exported so the mix and choice warnings, the repair prompt they are written
+// around, and the exam import's transcription and provenance rules can be tested
+// without a live request. The handler below is still the only thing Vercel calls.
+export {
+  buildChoiceRepairPrompt,
+  buildExamImportPrompt,
+  getChoiceBalanceWarning,
+  getStyleMixWarning,
+  normalizeAttachments,
+  normalizeExamAnswerSource,
+  normalizeImportedAnswerSource,
+  normalizeImportedExamReviewer,
+  splitImportedExamQuestions,
+  getExamAnswerKeyStats,
+  EXAM_ANSWER_SOURCE_PAPER,
+  EXAM_ANSWER_SOURCE_SOLVED,
+  EXAM_ANSWER_SOURCE_UNRESOLVED,
+  SCENARIO_MIX
+};
 
 export default async function handler(request, response) {
   const requestId = getRequestId();
@@ -1514,6 +1836,7 @@ export default async function handler(request, response) {
   const {
     sourceText = "",
     file = null,
+    files = null,
     title = "",
     subject = "",
     instructions = "Select the best answer for each question.",
@@ -1522,7 +1845,8 @@ export default async function handler(request, response) {
     questionType = "multiple_choice",
     mode = "generate",
     existingReviewer = null,
-    additionalCount = 20
+    additionalCount = 20,
+    answerSource = "solve"
   } = request.body || {};
 
   // One budget for the whole request: the initial pass, every top-up, the
@@ -1532,8 +1856,12 @@ export default async function handler(request, response) {
   const budget = createUpstreamBudget(Number(process.env.AI_UPSTREAM_CALL_BUDGET) || UPSTREAM_CALL_BUDGET);
 
   const trimmedSourceText = String(sourceText).trim();
-  const hasFileData = Boolean(file?.data && file?.mimeType);
-  const normalizedMode = mode === "extend" ? "extend" : "generate";
+  const attachments = normalizeAttachments({ file, files });
+  const hasFileData = attachments.length > 0;
+  const hasImageAttachment = attachments.some((attachment) => isImageMimeType(attachment.mimeType));
+  const attachmentNames = attachments.map((attachment) => attachment.name).filter(Boolean).join(", ");
+  const normalizedMode = mode === "extend" ? "extend" : mode === "exam_import" ? "exam_import" : "generate";
+  const safeAnswerSource = normalizeExamAnswerSource(answerSource);
   const safeDifficulty = DIFFICULTY_INSTRUCTIONS[difficulty] ? difficulty : "mixed";
   const safeQuestionType = QUESTION_TYPE_INSTRUCTIONS[questionType] ? questionType : "multiple_choice";
   const existingQuestions = Array.isArray(existingReviewer?.questions) ? existingReviewer.questions : [];
@@ -1542,8 +1870,10 @@ export default async function handler(request, response) {
     return sendJson(response, 400, { error: "Add more study material before generating a reviewer.", requestId });
   }
 
-  if (hasFileData && String(file.data).length > MAX_FILE_BASE64_LENGTH) {
-    return sendJson(response, 413, { error: "That file is too large to send to the AI after browser encoding. Compress or split the PDF, or paste the important notes.", requestId });
+  // Checked across the whole set, not per file. Four allowed photos would each pass
+  // on their own and then miss the body limit together.
+  if (getAttachmentsBase64Length(attachments) > MAX_FILE_BASE64_LENGTH) {
+    return sendJson(response, 413, { error: "Those files are too large to send to the AI after browser encoding. Use fewer or smaller files, or paste the important notes.", requestId });
   }
 
   const safeSourceText = trimmedSourceText.slice(0, MAX_SOURCE_LENGTH);
@@ -1551,6 +1881,104 @@ export default async function handler(request, response) {
   const parsedQuestionCount = questionCount === "comprehensive"
     ? "comprehensive"
     : Math.max(1, Math.min(150, Number(questionCount) || 50));
+
+  const attachmentParts = getAttachmentParts(attachments);
+  const hasReadableMaterial = trimmedSourceText.length > 0;
+
+  if (normalizedMode === "exam_import") {
+    if (!hasFileData && trimmedSourceText.length < 100) {
+      return sendJson(response, 400, { error: "Upload the exam paper, or paste its questions as text, before importing it.", requestId });
+    }
+
+    const prompt = buildExamImportPrompt({
+      sourceText: safeSourceText,
+      title: String(title).trim(),
+      subject: String(subject).trim(),
+      instructions: String(instructions).trim(),
+      answerSource: safeAnswerSource,
+      attachmentNames
+    });
+
+    try {
+      const { reviewer: rawImportedReviewer } = await requestReviewerWithFallback({
+        parts: [{ text: prompt }, ...attachmentParts],
+        hasReadableMaterial,
+        hasFileData,
+        hasImageAttachment,
+        requestId,
+        schema: examImportSchema,
+        budget
+      });
+      const imported = normalizeImportedExamReviewer(rawImportedReviewer, {
+        title: String(title).trim(),
+        subject: String(subject).trim(),
+        instructions: String(instructions).trim(),
+        questionType: safeQuestionType,
+        answerSource: safeAnswerSource
+      });
+      const { ready, unresolved } = splitImportedExamQuestions(imported.questions);
+      const kept = ready.slice(0, MAX_IMPORTED_QUESTIONS);
+
+      if (!kept.length) {
+        // A 422 with wording written here rather than a provider message, because
+        // this is the one failure the learner can act on: they picked the wrong
+        // answer source, or the upload is unreadable.
+        const nothingToImport = safeAnswerSource === "extract"
+          ? "No answer key could be read from that paper, so there was nothing to drill. Pick \"Use the paper's answer key\" only when the key is actually in the upload, or switch to \"Work out the answers\" and the AI will answer the items itself."
+          : "No readable questions could be found in that paper. Try a clearer scan, a PDF, or paste the items as text.";
+
+        return sendJson(response, 422, { error: nothingToImport, requestId });
+      }
+
+      // Re-id'd after the split, because ids address the questions array and an
+      // array with holes in it would break every editor and filter that indexes it.
+      const reviewer = {
+        ...imported,
+        answerKeySource: safeAnswerSource,
+        questionCount: kept.length,
+        questions: kept.map((question, index) => ({ ...question, id: index + 1 }))
+      };
+      const answerKeyStats = {
+        ...getExamAnswerKeyStats(kept),
+        unresolved: unresolved.length,
+        droppedForLength: ready.length - kept.length
+      };
+
+      const readCount = kept.length + unresolved.length;
+      const warning = [
+        unresolved.length
+          ? safeAnswerSource === "extract"
+            ? `${unresolved.length} of the ${readCount} items had no answer printed in the paper, so they were left out rather than guessed at. Switch to "Work out the answers" to include them.`
+            : `${unresolved.length} of the ${readCount} items could not be answered with confidence, so they were left out rather than guessed at.`
+          : null,
+        answerKeyStats.droppedForLength
+          ? `This paper runs to more than ${MAX_IMPORTED_QUESTIONS} items, so only the first ${MAX_IMPORTED_QUESTIONS} were imported.`
+          : null
+      ].filter(Boolean).join(" ") || null;
+
+      return sendJson(response, 200, {
+        reviewer,
+        requestedQuestionCount: "exam-paper",
+        generatedQuestionCount: reviewer.questions.length,
+        answerKeySource: safeAnswerSource,
+        answerKeyStats,
+        difficultyMix: getDifficultyMix(reviewer.questions),
+        warning
+      });
+    } catch (error) {
+      console.error(`[${requestId}] Exam paper import failed:`, {
+        statusCode: error?.statusCode || 500,
+        message: error?.message || "Unknown error",
+        answerSource: safeAnswerSource,
+        attachments: attachments.length,
+        providerAttempts: (error?.providerAttempts || []).map((attempt) => `${attempt.provider}: ${attempt.error?.message}`)
+      });
+      return sendJson(response, error?.statusCode || 500, {
+        error: toClientErrorMessage(error),
+        requestId
+      });
+    }
+  }
 
   if (normalizedMode === "extend") {
     if (!existingQuestions.length) {
@@ -1572,27 +2000,19 @@ export default async function handler(request, response) {
       instructions: baseReviewer.instructions,
       difficulty: safeDifficulty,
       questionType: extensionQuestionType,
-      requestedCount,
-      missingCount: requestedCount - baseReviewer.questions.length,
-      existingQuestions: baseReviewer.questions,
-      fileName: file?.name ? String(file.name).trim() : ""
-    });
-    const parts = [{ text: prompt }];
-
-    if (hasFileData) {
-      parts.push({
-        inline_data: {
-          mime_type: String(file.mimeType),
-          data: String(file.data)
-        }
-      });
-    }
+requestedCount,
+    missingCount,
+    existingQuestions: baseReviewer.questions,
+    attachmentNames
+  });
+    const parts = [{ text: prompt }, ...attachmentParts];
 
     try {
       const { reviewer: rawAdditionalReviewer } = await requestReviewerWithFallback({
         parts,
         hasReadableMaterial: true,
         hasFileData,
+        hasImageAttachment,
         requestId,
         budget
       });
@@ -1603,9 +2023,9 @@ export default async function handler(request, response) {
         questionType: extensionQuestionType
       });
 const reviewer = {
-        ...mergeReviewers(baseReviewer, additionalReviewer, requestedCount),
-        reviewerId: existingReviewer.reviewerId || baseReviewer.reviewerId
-      };
+      ...mergeReviewers(baseReviewer, additionalReviewer, requestedCount),
+      reviewerId: existingReviewer.reviewerId || baseReviewer.reviewerId
+    };
       const { reviewer: rebalancedReviewer, repairedCount, unresolvedCount } = await rebalanceReviewerChoices({
         reviewer,
         sourceText: safeSourceText,
@@ -1649,26 +2069,16 @@ const reviewer = {
     questionCount: parsedQuestionCount,
     difficulty: safeDifficulty,
     questionType: safeQuestionType,
-    fileName: file?.name ? String(file.name).trim() : ""
+    attachmentNames
   });
-  const parts = [{ text: prompt }];
-
-  if (hasFileData) {
-    parts.push({
-      inline_data: {
-        mime_type: String(file.mimeType),
-        data: String(file.data)
-      }
-    });
-  }
-
-  const hasReadableMaterial = trimmedSourceText.length > 0;
+  const parts = [{ text: prompt }, ...attachmentParts];
 
   try {
     const firstAttempt = await requestReviewerWithFallback({
       parts,
       hasReadableMaterial,
       hasFileData,
+      hasImageAttachment,
       requestId,
       budget
     });
@@ -1691,21 +2101,11 @@ const reviewer = {
         instructions: reviewer.instructions,
         difficulty: safeDifficulty,
         questionType: safeQuestionType,
-        requestedCount,
+requestedCount,
         missingCount,
         existingQuestions: reviewer.questions,
-        fileName: file?.name ? String(file.name).trim() : ""
+        attachmentNames
       });
-      const completionParts = [{ text: completionPrompt }];
-
-      if (hasFileData) {
-        completionParts.push({
-          inline_data: {
-            mime_type: String(file.mimeType),
-            data: String(file.data)
-          }
-        });
-      }
 
       // Topping up is a bonus. If the completion call fails, keep the reviewer we
       // already have rather than failing the whole request over a short result.
@@ -1713,9 +2113,10 @@ const reviewer = {
 
       try {
         completionAttempt = await requestReviewerWithFallback({
-          parts: completionParts,
+          parts: [{ text: completionPrompt }, ...attachmentParts],
           hasReadableMaterial,
           hasFileData,
+          hasImageAttachment,
           requestId,
           budget
         });

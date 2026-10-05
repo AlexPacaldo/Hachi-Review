@@ -110,6 +110,71 @@ requests per minute, which makes concurrency more damaging than total volume.
   Errors opt in to being shown with `isClientSafe`; everything else becomes
   `GENERIC_AI_FAILURE_MESSAGE`.
 
+## The two generator modes
+
+`/generator` has two modes and they are opposites. Study Material writes questions
+the source does not contain. Exam Paper transcribes a paper that already exists.
+They are separate components on purpose, not one form with switches, because every
+rule in one of them is wrong in the other.
+
+- `src/pages/Generator.jsx` is the shell: the mode tabs, the single writer for the
+  draft, and the manual builder. Both modes stay mounted and the inactive one is
+  hidden, so a tab switch cannot throw away a half-finished form.
+- `src/pages/generator/` holds the rest. `generatorShared.js` is everything both
+  modes read, `useSourceAttachments.js` is every rule about turning a dropped file
+  into something the endpoint will accept, and the two mode components own only
+  their own form.
+
+**Exam Paper import is a transcription job, not a generation job.** So it has none
+of the post-processing: no top-ups, because adding items would invent paper that
+does not exist, and no `rebalanceReviewerChoices`, because that pass rewrites
+choices and can move a correct answer to a different letter, which invalidates the
+very key the learner is checking themselves against. It also skips the difficulty
+and style mix warnings, since a real paper is uneven by nature and was never
+planned against those targets. Do not "fix" an imported reviewer by making it look
+more like a generated one.
+
+The one decision that mode asks for is `answerSource`, and the two are not
+interchangeable. `solve` works the answers out and credits an answer read off the
+paper when there is one. `extract` uses only what the upload shows and treats
+anything else as unanswered. An item the model marks `unresolved` is dropped from
+the reviewer and reported back as a count, because a guessed answer teaches
+something false and is indistinguishable from a real key entry once it is in the
+quiz. `normalizeImportedAnswerSource` enforces this, and it is scoped to the
+requested source on purpose: under `extract`, a model claiming it solved an item is
+treated as unanswered, and an explicit `unresolved` is honoured in both modes. Do
+not loosen it back to a plain vocabulary check.
+
+## Attachments
+
+A request carries `files`, an array. `file` is still accepted on its own and both
+are pooled, so a paper that runs to three pages can be three photos. The budget is
+the total across the array, not per file, and it is checked in the browser before
+encoding as well as on the server: `MAX_AI_ATTACHMENT_BYTES` is decoded bytes and
+`MAX_FILE_BASE64_LENGTH` is the base64 character count it corresponds to. Those two
+must not drift, or a request passes in the browser and is rejected after the person
+has already waited for the encoding.
+
+An image always routes to a vision-capable provider, even when notes were pasted
+alongside it. `requiresVision` in `getConfiguredProviders` is what makes that true,
+and the earlier bug it fixed is the reason not to key it off "no text was pasted
+too": with that key, attaching a photo next to some notes excluded every vision-only
+provider, so the chain answered from the notes and the photo was read by nobody.
+
+In the browser, an image over 2000px on its long edge is downscaled, and one that is
+already small enough is sent untouched. That second half matters as much as the
+first: a small JPEG re-encoded through a canvas comes out larger than it went in, so
+the round trip would spend upload budget and lose quality to arrive at the same
+picture. HEIC is listed in the picker on purpose and rejected with a message, since
+a file the picker silently hides looks like the app is broken.
+
+`scripts/exam-import-check.mjs` drives the endpoint for real with auth, the
+rate-limit RPC, and the model stubbed. The import's failures are silent ones, an
+invented item or a moved choice, so this needs to stay a test rather than a code
+review. It also round-trips the response through the browser's own normaliser and
+the app's own validator, which is the gap that would otherwise show up only as a
+failed save.
+
 ## Sharing
 
 Friends and groups are two independent audiences on one `visibility` column, with

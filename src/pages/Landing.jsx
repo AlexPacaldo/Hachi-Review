@@ -411,7 +411,7 @@ export default function Landing({ theme, onToggleTheme }) {
                         <div className="upload-zone">
                           <Upload size={24} aria-hidden="true" />
                           <strong>Upload study material</strong>
-                          <span>PDF under 3 MB, or TXT, MD, CSV, JSON.</span>
+                          <span>PDF, image, or TXT, MD, CSV, JSON.</span>
                         </div>
 
                         <div className="landing-demo-actions">
