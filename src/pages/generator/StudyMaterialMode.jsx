@@ -361,11 +361,11 @@ export default function StudyMaterialMode({
         <div className="generator-form-grid">
           <label>
             <span>Reviewer Title</span>
-            <input value={details.title} onChange={(event) => updateDetails("title", event.target.value)} placeholder="Example: Biology Prelim Reviewer" />
+            <input value={details.title} onChange={(event) => updateDetails("title", event.target.value)} placeholder="Optional: named from your material" />
           </label>
           <label>
             <span>Subject</span>
-            <input value={details.subject} onChange={(event) => updateDetails("subject", event.target.value)} placeholder="Example: Biology" />
+            <input value={details.subject} onChange={(event) => updateDetails("subject", event.target.value)} placeholder="Optional: named from your material" />
           </label>
         </div>
 

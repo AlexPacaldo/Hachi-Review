@@ -1049,7 +1049,11 @@ JSON RULES:
 - Return valid JSON only.
 - Do not wrap the answer in markdown.
 - Follow the exact schema requested by the API.
-- reviewerId must be lowercase, URL-friendly, and use hyphens.
+- reviewerId must be lowercase, URL-friendly, and use hyphens. Keep it to three or four words taken from the title, with no spaces, no dates, no file extension, and no full stops.
+- title and subject are named from the material, not invented and not generic, because the reviewer is named after the thing it was made from and the learner has to recognise it in a list of their own reviewers. Use the name the material gives itself: a file name, a module number, a chapter heading, the course code and title on a syllabus, or the first line of a notes file. Real examples: "WADWANI Module 1", "IT2511 - Information Technology 2", "Cell Biology - Chapter 4: Mitosis".
+- When the material names itself in more than one way, use the most specific. A module or chapter number beats a generic file name, and a course code with its title beats both.
+- If the material genuinely names nothing, use "Study Material" for the title and "Generated" for the subject. Never return "Generated Reviewer" as a title, and never leave either field empty.
+- Keep the material's own terminology. Do not substitute a synonym you think is more standard.
 - questionCount must exactly equal questions.length.
 - Question IDs must start at 1 and be sequential.
 - coverage must list major topics covered by the material.
@@ -1073,8 +1077,8 @@ ${negativeStemAudit}
 - EXPLANATION SUPPORT: no explanation introduces a fact that the study material does not contain.
 
 Reviewer details:
-- Title: ${title || "Generated Reviewer"}
-- Subject: ${subject || "Generated"}
+- Title: ${title || "The document's own name, as the material prints it"}
+- Subject: ${subject || "The subject or course the material belongs to, in the material's own words"}
 - Instructions: ${instructions || "Select the best answer for each question."}
 - Difficulty: ${difficulty || "mixed"}
 - Question type: ${questionType || "multiple_choice"}
@@ -1138,8 +1142,8 @@ ${completionNegativeStemAudit}
 - For every question, run the explanation audit. Hide the correct choice and read the explanation alone; if it teaches nothing beyond the answer's own wording, rewrite it.
 
 Reviewer details:
-- Title: ${title || "Generated Reviewer"}
-- Subject: ${subject || "Generated"}
+- Title: ${title || "The document's own name, as the material prints it"}
+- Subject: ${subject || "The subject or course the material belongs to, in the material's own words"}
 - Instructions: ${instructions || "Select the best answer for each question."}
 - Difficulty: ${difficulty || "mixed"}
 - Question type: ${questionType || "multiple_choice"}
@@ -1775,12 +1779,14 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
   throw error;
 }
 
-// Exported so the mix and choice warnings, the repair prompt they are written
-// around, and the exam import's transcription and provenance rules can be tested
-// without a live request. The handler below is still the only thing Vercel calls.
+// Exported so the mix and choice warnings, the prompts they are written around, and
+// the exam import's transcription and provenance rules can be tested without a live
+// request. The handler below is still the only thing Vercel calls.
 export {
   buildChoiceRepairPrompt,
+  buildCompletionPrompt,
   buildExamImportPrompt,
+  buildPrompt,
   getChoiceBalanceWarning,
   getStyleMixWarning,
   normalizeAttachments,

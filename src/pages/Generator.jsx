@@ -393,7 +393,7 @@ export default function Generator() {
 
             <div className="production-note" role="note">
               <strong>AI limits</strong>
-              <span>Up to 6 attachments totalling 3 MB per request, up to 12 MB each for PDF text extraction, 45,000 characters of notes, 150 questions max, and 8 AI requests every 10 minutes per signed-in account. Guests are limited by connection.</span>
+              <span>Up to 6 attachments totalling 3 MB per request, up to 12 MB each for PDF text extraction, 45,000 characters of notes, 150 questions max, and 8 AI requests every 10 minutes. Generating with AI needs a signed-in account, and that limit is counted per account. Saving a reviewer and taking a quiz work without one.</span>
             </div>
 
             {/* Both modes stay mounted and the inactive one is hidden rather than

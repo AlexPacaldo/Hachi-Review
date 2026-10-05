@@ -191,6 +191,67 @@ section("an off-plan mix is reported, an on-plan one is not");
   check("under the reporting floor", warned(reviewer(0, 8)), false);
 }
 
+section("a reviewer named from the material, not from a fallback string");
+{
+  const { buildPrompt, buildCompletionPrompt } = await import(
+    pathToFileURL(new URL("../api/generate-reviewer.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  // A blank Title field used to put the literal string "Generated Reviewer" into the
+  // prompt as the title, which the model then echoed, so a reviewer made from a module
+  // came back titled "Generated Reviewer" and had to be renamed by hand. The fallback
+  // has to read as an instruction to name it from the material, never as a value.
+  const blank = buildPrompt({
+    sourceText: "WADWANI Module 1 content",
+    title: "",
+    subject: "",
+    instructions: "",
+    questionCount: 20,
+    difficulty: "mixed",
+    questionType: "multiple_choice"
+  });
+
+  check("a blank title asks for the document's own name", /- Title: The document's own name, as the material prints it/.test(blank), true);
+  check("a blank subject asks for the subject the material words it", /- Subject: The subject or course the material belongs to/.test(blank), true);
+  check("no literal generic title is passed as a value", /- Title: Generated Reviewer/.test(blank), false);
+  check("no literal generic subject is passed as a value", /- Subject: Generated\s*$/m.test(blank), false);
+  check("it is told to name them from the material", blank.includes("title and subject are named from the material, not invented and not generic"), true);
+  check("it is told never to return a generic reviewer title", blank.includes('Never return "Generated Reviewer" as a title'), true);
+  check("it is told to keep the material's own terminology", blank.includes("Keep the material's own terminology"), true);
+  check("it is given real naming examples", blank.includes("WADWANI Module 1") && blank.includes("IT2511 - Information Technology 2"), true);
+  check("a derived id is told to stay short", blank.includes("three or four words taken from the title"), true);
+
+  const named = buildPrompt({
+    sourceText: "notes",
+    title: "My Biology Set",
+    subject: "Biology",
+    instructions: "",
+    questionCount: 20,
+    difficulty: "mixed",
+    questionType: "multiple_choice"
+  });
+
+  check("a typed title is still used as given", /- Title: My Biology Set/.test(named), true);
+  check("a typed subject is still used as given", /- Subject: Biology/.test(named), true);
+
+  // The top-up prompt carries the finished reviewer's own values, so it has to agree
+  // with the first prompt about what a blank one means.
+  const topUp = buildCompletionPrompt({
+    sourceText: "notes",
+    title: "",
+    subject: "",
+    instructions: "",
+    difficulty: "mixed",
+    questionType: "multiple_choice",
+    requestedCount: 50,
+    missingCount: 20,
+    existingQuestions: []
+  });
+
+  check("the top-up prompt asks for the document's own name too", /- Title: The document's own name, as the material prints it/.test(topUp), true);
+  check("the top-up prompt passes no literal generic title", /- Title: Generated Reviewer/.test(topUp), false);
+}
+
 // A hand-edited question is written straight to the row, and a reviewer whose
 // answerText disagrees with its correct choice, or whose choices do not match its
 // type, is a reviewer the setup page then refuses to open. Neither failure is
