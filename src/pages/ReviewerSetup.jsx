@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, BookOpen, Cloud, Eye, EyeOff, HardDrive, Layers, Loader2, Play, Users, Zap } from "lucide-react";
 import EmptyState from "../components/EmptyState.jsx";
@@ -119,6 +119,15 @@ export default function ReviewerSetup() {
     difficulty: "mixed",
     includeScenarioQuestions: true
   });
+
+  // The setup state is initialised on the first render, when the reviewer is
+  // usually still a question-less summary, so questionCount would be computed
+  // as 0 and never corrected once the questions arrive. Re-anchor it to the
+  // default whenever the reviewer (or its question total) changes.
+  useEffect(() => {
+    setSettings((current) => ({ ...current, questionCount: defaultQuestionCount }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewerId, totalQuestions]);
 
   // The list only holds a summary, so the questions are fetched here on open.
   // isResolving covers the cold load too, where there is nothing to show at all,
