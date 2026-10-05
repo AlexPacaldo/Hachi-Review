@@ -125,7 +125,10 @@ export default function SourceFileField({
       <label className="prompt-box">
         <span>
           {notesLabel}
-          {notesOptional ? <em className="optional-tag">optional</em> : null}
+          {/* The explicit space is load-bearing. JSX drops whitespace-only lines
+              between expressions, so without it the label and the tag join into
+              "Paper textoptional" for anything reading the text content. */}
+          {notesOptional ? <> <em className="optional-tag">optional</em></> : null}
         </span>
         <textarea
           value={notes}

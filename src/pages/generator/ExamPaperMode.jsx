@@ -286,11 +286,6 @@ export default function ExamPaperMode({
           clearAttachments={clearAttachments}
         />
 
-        <label className="prompt-box">
-          <span>Instructions</span>
-          <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} />
-        </label>
-
         <label className="generator-checkbox">
           <input type="checkbox" checked={saveOfflineCopy} onChange={(event) => onSaveOfflineChange(event.target.checked)} />
           <span>Also save an offline copy on this device</span>
@@ -350,6 +345,27 @@ export default function ExamPaperMode({
           makeMoreControl={null}
         />
       ) : null}
+
+      {/* Demoted, because the field it holds is not an input to the import. It is the
+          line the learner reads under the title on the reviewer's own page, and a
+          bare "Instructions" box sitting above the import button read as though it
+          were a prompt to the AI. The default is right for almost everyone, so it
+          does not belong in the path between choosing a paper and importing it. */}
+      <details className="advanced-panel">
+        <summary>Reviewer details</summary>
+        <label className="prompt-box">
+          <span>Instructions for the learner</span>
+          <textarea
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+            placeholder="Shown under the title when someone opens this reviewer."
+          />
+          <span className="source-field-hint">
+            This is read by the learner before they start the quiz. It is not an instruction to the AI, so changing it
+            only changes that line.
+          </span>
+        </label>
+      </details>
 
       <div className="generator-panel-foot">
         <span className="generation-hint">
