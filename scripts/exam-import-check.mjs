@@ -270,6 +270,10 @@ section("a paper with nothing to answer says so instead of failing blankly");
 
   check("an empty import is a 422", response.statusCode, 422);
   check("the message names the fix", /Work out the answers/.test(response.payload.error || ""), true);
+  // A paper marked up with drawn circles is the case that actually failed in use, and
+  // the message is the only thing the learner has to go on, so it has to name it.
+  check("the message names the marked-page case", /circles, ticks, or handwriting/.test(response.payload.error || ""), true);
+  check("the message says to upload photos instead of the PDF", /upload photos of the pages instead of the PDF/.test(response.payload.error || ""), true);
   check("the message names no provider", /gemini|openrouter|groq/i.test(response.payload.error || ""), false);
 
   modelReviewer = makePaperReviewer();

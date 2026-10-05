@@ -834,6 +834,23 @@ section("the exam import prompt says the two answer sources apart");
   check("extract leaves an unanswered item empty rather than filled in", extract.includes('leave its correctAnswer and answerText as empty strings'), true);
   check("extract refuses to shift the key after a skipped item", extract.includes("Do not shift the whole key by one"), true);
 
+  // A paper handed back with the answers ringed on it is one of the commonest real
+  // inputs there is, and this prompt once talked the model out of reading one. It
+  // predicted the give-up case, described its output, and called an empty answer the
+  // correct response, so a model that was only mildly unsure about a thin red curve
+  // took the exit. All three are locked out here.
+  check("extract does not predict giving up on the whole paper", extract.includes("every item is unresolved"), false);
+  check("extract does not call an empty answer the correct response", extract.includes("empty field is the correct answer"), false);
+  check("extract says a marked-up paper is a key", extract.includes("A marked-up paper IS a key"), true);
+  check("extract defaults to assuming the paper is marked", extract.includes("Assume the paper is marked unless an item plainly shows no mark"), true);
+  check("extract describes a ring drawn around a letter", extract.includes("ring, circle or oval drawn around, enclosing, or drawn next to the LETTER"), true);
+  check("extract warns the ring is thin and crosses the text", extract.includes("thin, uneven, and often crosses the letter or the text beside it"), true);
+  check("extract says to read which letter the ring encloses", extract.includes("Read which letter it encloses"), true);
+  check("extract says to transcribe the mark, not its own judgement", extract.includes("transcribe the mark, not your own judgement"), true);
+  check("extract says faintness is not grounds to skip an item", extract.includes("is NOT a reason to mark an item unresolved"), true);
+  check("extract scopes unresolved to a plainly absent mark", extract.includes('ONLY for an item that plainly carries no mark'), true);
+  check("extract still forbids filling in a letter", extract.includes("Never pick a letter to fill the shape of the JSON"), true);
+
   check("an unrecognised answer source falls back to solving", buildExamImportPrompt({ ...base, answerSource: "nonsense" }).includes("WORK THEM OUT"), true);
   check("the uploaded files are named", buildExamImportPrompt({ ...base, answerSource: "solve", attachmentNames: "page1.png, page2.png" }).includes("page1.png, page2.png"), true);
   check("no attachments still reads as a paper", buildExamImportPrompt({ ...base, answerSource: "solve" }).includes("[The paper was uploaded as a file"), true);

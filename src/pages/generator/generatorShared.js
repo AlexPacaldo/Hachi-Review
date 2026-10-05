@@ -392,6 +392,10 @@ export function getFriendlyGenerationError(error) {
   return message || "Could not generate a reviewer.";
 }
 
+// Whether a failed request is worth retrying from the PDF's text layer instead. The
+// exam import's "nothing could be read" reply is deliberately not matched: that is a
+// judgment about the paper's answer key, not an unreadable attachment, and retrying
+// it from extracted text would spend a request to reach the same answer.
 export function isUnreadableFileError(message) {
-  return /paste the study material as text|cannot read the uploaded file|cannot read the file|could not be sent to this provider|too large to send to the ai|no answer key could be read/i.test(message || "");
+  return /paste the study material as text|cannot read the uploaded file|cannot read the file|could not be sent to this provider|too large to send to the ai/i.test(message || "");
 }

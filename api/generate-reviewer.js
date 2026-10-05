@@ -643,11 +643,21 @@ ${wantsSolved ? `WHERE THE ANSWERS COME FROM - WORK THEM OUT:
 - If you cannot settle an answer with real confidence, set answerSource to "unresolved" and put your best guess in correctAnswer rather than inventing a justification for it. Being marked unresolved costs the learner one item; being wrong silently costs them a wrong belief.
 - Never invent a second answer to look certain.` : `WHERE THE ANSWERS COME FROM - USE THE PAPER'S OWN KEY:
 - Use only an answer the paper actually shows. Do not work one out yourself and do not use outside knowledge, even when you are completely certain of the right answer. The learner asked for this paper's answers, not yours.
-- Look for an answer key section, a numbered answer list at the end, a marked or filled answer sheet, ticks and checks beside choices, bolded, circled, or underlined choices, and answers written in the margin.
+- A marked-up paper IS a key. Assume the paper is marked unless an item plainly shows no mark at all. A paper that has been printed, annotated and handed back is one of the most common inputs there is, and the learner is holding the same sheet in front of them, so they can check anything you transcribe.
+- Marks a teacher makes on a returned paper, in any of these forms and any colour:
+  - A ring, circle or oval drawn around, enclosing, or drawn next to the LETTER of a choice. It is a hand-drawn curve, so it is thin, uneven, and often crosses the letter or the text beside it. Read which letter it encloses. This is the most common way an answer is marked and it is easy to miss if you are looking for bold or underline instead.
+  - A tick, cross, slash, or dot beside a choice.
+  - A darkened, filled or shaded bubble on an answer sheet.
+  - A bolded, underlined, highlighted or coloured choice.
+  - A letter, tick or short answer written in the margin beside the item.
+  - A separate key at the top or bottom, such as "1-B 2-A 3-D" or a grid of letters under the item number.
+- When a ring encloses a letter, that letter is the answer, whatever else is on the line. Do not prefer the longest choice, the most technical one, or the one you think is right: transcribe the mark, not your own judgement of the question.
 - Match each key entry to the item by its printed number. A key written as "1-B 2-A 3-D" is a numbered list and a bubble sheet is per page. Do not shift the whole key by one because an item was unreadable and left out.
-- An answer sheet is a separate artefact. If the upload shows questions on one page and a marked key on another, both are part of the paper and you may use the key. If the upload does not show a key, there is nothing to read, and every item is unresolved.
-- Set answerSource to "paper" for every item the key answers.
-- Set answerSource to "unresolved" for any item the paper does not answer, and leave its correctAnswer and answerText as empty strings. Do not pick a letter to fill the shape of the JSON. This is the one place where an empty field is the correct answer.`}
+- An answer sheet is a separate artefact. If the upload shows questions on one page and a marked key on another, both are part of the paper and you may use the key.
+- Set answerSource to "paper" for every item where you can see a mark or a key entry.
+- Set answerSource to "unresolved" ONLY for an item that plainly carries no mark and no key entry, and leave its correctAnswer and answerText as empty strings.
+- Faintness, a thin line, a smudged scan, or your own uncertainty is NOT a reason to mark an item unresolved. If you can see that a choice has been marked and you can tell which one, transcribe it. The learner checks your work against the paper in their hand; a missing item helps them less than a transcription they can correct. Only a genuinely absent mark is unresolved.
+- Never pick a letter to fill the shape of the JSON, and never work an answer out yourself under this mode.`}
 
 EXPLANATIONS:
 - The paper may print a rationale or explanation for its items, often in a section at the end. Where it does, use it, in substance and in the paper's own terminology.
@@ -1920,11 +1930,13 @@ export default async function handler(request, response) {
       const kept = ready.slice(0, MAX_IMPORTED_QUESTIONS);
 
       if (!kept.length) {
-        // A 422 with wording written here rather than a provider message, because
-        // this is the one failure the learner can act on: they picked the wrong
-        // answer source, or the upload is unreadable.
+        // Written here rather than passed up from a provider, because this is the one
+        // failure the learner can act on. The likely cause is given, because "no key
+        // found" on a paper that plainly has one sends them looking in the wrong
+        // place. Marks drawn over the page are the usual culprit: a PDF stores them as
+        // drawing instructions rather than ink, and some readers never render them.
         const nothingToImport = safeAnswerSource === "extract"
-          ? "No answer key could be read from that paper, so there was nothing to drill. Pick \"Use the paper's answer key\" only when the key is actually in the upload, or switch to \"Work out the answers\" and the AI will answer the items itself."
+          ? "No answer could be read from that paper, so there was nothing to drill. If the answers are marked on the page as circles, ticks, or handwriting, upload photos of the pages instead of the PDF: a PDF stores those marks as drawing instructions, and they do not always survive as something the AI can see. You can also switch to \"Work out the answers\" and the AI will answer the items itself."
           : "No readable questions could be found in that paper. Try a clearer scan, a PDF, or paste the items as text.";
 
         return sendJson(response, 422, { error: nothingToImport, requestId });
