@@ -5,7 +5,7 @@ import { acceptFriendRequest, listFriendships, removeFriendship } from "../servi
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";
 import { listMyGroupMembers, listMyGroups } from "../services/groups.js";
 import { isFriendVisible, isGroupVisible, normalizeVisibility } from "../services/reviewerVisibility.js";
-import { mergeCloudReviewerCache, SOCIAL_DATA_CHANGED_EVENT, SOCIAL_NOTIFICATION_STATE_KEY } from "../utils/storageUtils.js";
+import { reconcileCloudReviewerCache, SOCIAL_DATA_CHANGED_EVENT, SOCIAL_NOTIFICATION_STATE_KEY } from "../utils/storageUtils.js";
 import { supabase } from "../lib/supabaseClient.js";
 
 // Held per account inside one object, so switching accounts cannot replay the
@@ -157,7 +157,7 @@ export default function SocialNotificationWatcher() {
             sharedGroups: Array.isArray(item.shared_groups) ? item.shared_groups : reviewerData.sharedGroups || null
           };
         });
-        mergeCloudReviewerCache(cachedReviewers);
+        reconcileCloudReviewerCache(cachedReviewers);
 
         const state = loadUserState(user.id);
         const incomingSeen = new Set(state.incomingSeen);

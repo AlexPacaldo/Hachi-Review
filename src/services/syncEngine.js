@@ -27,7 +27,6 @@ import {
   getPendingStudyDays,
   getProgressTimestamp,
   getSyncQueue,
-  cacheCloudReviewer,
   clearPendingStudyDays,
   mergeCloudAttempts,
   mergeCloudProgress,
@@ -356,11 +355,10 @@ async function resolveReviewerMap(reviewerIds) {
 
   fetched.forEach((reviewer) => byId.set(reviewer.reviewerId, reviewer));
 
-  // Cached so the next hydrate finds them complete and does not fetch the same
-  // reviewers again. This runs on a timer, so without this a long history would
-  // be re-downloaded every minute for reviewers the device never opens.
-  if (fetched.length) cacheCloudReviewer(fetched);
-
+  // Deliberately not persisted: fetching these is an automatic sync pass, and
+  // an opened reviewer is not an explicit save, so its questions stay in
+  // memory for this hydrate only. The next hydrate refetches the ones its
+  // progress still points at, which is the cost of not auto-saving.
   return byId;
 }
 

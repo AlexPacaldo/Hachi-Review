@@ -22,7 +22,7 @@ import {
   getSyncQueue,
   queueReviewerForCloudSync,
   REVIEWER_DATA_CHANGED_EVENT,
-  mergeCloudReviewerCache,
+  reconcileCloudReviewerCache,
   restoreLocalDataSnapshot,
   saveCloudReviewerCache,
   saveLocalReviewer,
@@ -213,7 +213,7 @@ export default function Library() {
 
     const ownItems = (data || []).filter((item) => item.owner_id === user.id);
     setCloudReviewers(ownItems);
-    mergeCloudReviewerCache((data || []).map((item) => {
+    reconcileCloudReviewerCache((data || []).map((item) => {
       const reviewerData = item.data || item;
       return {
         ...reviewerData,

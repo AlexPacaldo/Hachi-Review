@@ -570,6 +570,27 @@ export function mergeCloudReviewerCache(entries) {
   return next;
 }
 
+// Same merge as above, but the visible list is the authority: a cached
+// reviewer the cloud no longer returns (a friend deleted it, a share was
+// revoked, the owner removed it from their account) is dropped here instead
+// of lingering on Home forever. Explicit offline saves live in the local
+// reviewer store and are untouched by this. Unlike the additive merge, an
+// empty list really does clear the cache.
+export function reconcileCloudReviewerCache(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const visibleIds = new Set(list.map((entry) => entry?.reviewerId).filter(Boolean));
+  const merged = mergeCloudReviewerCache(list);
+  const next = merged.filter((reviewer) => visibleIds.has(reviewer?.reviewerId));
+  const pruned = merged.length - next.length;
+
+  if (pruned > 0 || !list.length) {
+    writeAccountData(KEYS.cloudReviewerCache, next);
+    notifyReviewerDataChanged();
+  }
+
+  return next;
+}
+
 // Called once a reviewer has been fetched in full, so reopening it works offline.
 export function cacheCloudReviewer(reviewer) {
   if (!reviewer?.reviewerId) return getCloudReviewerCache();

@@ -9,7 +9,7 @@ import hachiDogExcited from "../assets/hachi-dog-excited.png";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { getAllReviewers } from "../data/reviewerRegistry.js";
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";
-import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemptHistory, getStudyStreak, mergeCloudReviewerCache, REVIEWER_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
+import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemptHistory, getStudyStreak, reconcileCloudReviewerCache, REVIEWER_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
 import { getStudySnapshot } from "../utils/studyStats.js";
 
 export default function Home() {
@@ -82,7 +82,7 @@ export default function Home() {
       });
       // Merged rather than replaced, so a reviewer already downloaded on this
       // device keeps its questions until it is opened and fetched again.
-      mergeCloudReviewerCache(cachedReviewers);
+      reconcileCloudReviewerCache(cachedReviewers);
       setReviewerList(getAllReviewers());
     }
 

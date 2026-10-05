@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { describeReviewer, getReviewerById, isReviewerSummary } from "../data/reviewerRegistry.js";
 import { getCloudReviewerById } from "../services/cloudReviewers.js";
-import { cacheCloudReviewer } from "../utils/storageUtils.js";
 
 // Reviewers are listed as summaries now, so a card can be drawn from the list
 // but the questions are only fetched when a reviewer is actually opened. The
-// fetch is cached on the way through, so a second visit, and any later visit
-// while offline, finds the reviewer already complete.
+// fetch is deliberately not persisted: opening a reviewer is not an explicit
+// save, so its questions stay in memory for the session only. Saving to this
+// device happens through saveLocalReviewer when the user asks for it.
 //
 // The list is not required, though. It is a cache, and on a cold load of a
 // reviewer url there is nothing in it yet, so the id in the url is what the
@@ -56,15 +56,11 @@ export function useReviewer(reviewerId, refreshKey = 0) {
           return;
         }
 
-        cacheCloudReviewer(data);
-        // Read back through the registry instead of using the fetched row. A row
-        // straight off the cloud has no source, storageStatus or validation on
-        // it, and pages read all three, so passing it through untouched threw on
-        // the first render of any reviewer this device had not opened yet and
-        // left the page blank until it was reloaded. Going back through the
-        // registry also keeps the merged local-plus-cloud case deciding its
-        // validity the same way it does on every later visit.
-        setLoaded(getReviewerById(reviewerId) || describeReviewer(data, "cloud", "cloud"));
+        // Read straight through the registry rather than persisting the row. A
+        // row off the cloud has no source, storageStatus or validation on it,
+        // and pages read all three. Persisting here would be an auto save to
+        // device storage, so the fetched reviewer lives in state only.
+        setLoaded(describeReviewer(data, "cloud", "cloud"));
         setIsLoading(false);
       })
       .catch(() => {

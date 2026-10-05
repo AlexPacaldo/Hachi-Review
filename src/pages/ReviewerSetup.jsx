@@ -153,7 +153,7 @@ export default function ReviewerSetup() {
       <div className="page narrow reviewer-setup-page">
         <EmptyState
           title="Unable to load this reviewer."
-          message={loadError || "This reviewer has not been downloaded on this device. Open it while online to save it for later."}
+          message={loadError || "This reviewer has not been saved on this device. Open it while online, then use Save offline to keep it for later."}
           action={<div className="button-row"><button className="button primary" type="button" onClick={reload}>Try again</button><Link className="button subtle" to="/home">Back to Reviewers</Link></div>}
         />
       </div>
