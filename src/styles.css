@@ -9213,6 +9213,57 @@ strong {
   margin-top: 34px;
 }
 
+/* Where the traffic numbers actually are. A pointer rather than a set of tiles,
+   because there is nothing in this database to put in them, and a row of zeros would
+   be worse than an honest signpost. */
+.admin-visits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-lg);
+}
+
+.admin-visits-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  border-radius: var(--radius-pill);
+}
+
+.admin-visits-copy {
+  display: grid;
+  gap: 8px;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.admin-visits-copy strong {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.admin-visits-copy p {
+  max-width: 68ch;
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.admin-visits-copy .button-row {
+  margin-top: 2px;
+}
+
 .admin-tile-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

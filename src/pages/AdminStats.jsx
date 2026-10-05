@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { BarChart3, RefreshCw, Users } from "lucide-react";
+import { BarChart3, Activity, ExternalLink, RefreshCw, Users } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { formatPercent, getAdminUserStats } from "../services/adminStats.js";
 import { logClientError } from "../utils/errorLogger.js";
@@ -19,6 +19,49 @@ function MetricCard({ label, value, hint }) {
       <span className="stat-tile-label">{label}</span>
       <strong className="stat-tile-value">{value}</strong>
       {hint ? <span className="stat-tile-hint">{hint}</span> : null}
+    </div>
+  );
+}
+
+// Visits and speed are not counted here, and this card says so plainly rather than
+// letting their absence read as zero traffic.
+//
+// Nothing in the app records a page view, so there is nothing for these numbers to be
+// computed from. The one traffic-shaped thing the database holds is presence_pings,
+// which is a live count of landing page tabs inside a 150 second window whose rows
+// delete themselves after ten minutes. It cannot be trended, and it overcounts anyone
+// with two tabs open, so it is on the Accounts card as "On the landing page now" and
+// deliberately not presented as visits.
+//
+// Vercel Web Analytics does the counting, from the script in index.html, and keeps the
+// result on the Vercel dashboard rather than in this database. That is a deliberate
+// trade: the data stays out of the project's database entirely, which is why nothing
+// here about it is per-account or per-device.
+function VisitsCard() {
+  return (
+    <div className="admin-visits">
+      <div className="admin-visits-icon" aria-hidden="true">
+        <Activity size={20} />
+      </div>
+      <div className="admin-visits-copy">
+        <strong>Visits and speed live in the Vercel dashboard</strong>
+        <p className="muted">
+          Page views, unique visitors, the routes people actually use, and Core Web Vitals such as load time and
+          layout shift are collected by Vercel Analytics and shown on the Vercel project dashboard. They are not
+          stored in this app&rsquo;s database, so there is nothing per-account or per-device to read here, and this
+          page deliberately does not estimate them.
+        </p>
+        <p className="muted">
+          In the Vercel dashboard, open this project and choose the <strong>Analytics</strong> tab for traffic, or
+          <strong> Speed Insights</strong> for performance.
+        </p>
+        <div className="button-row">
+          <a className="button" href="https://vercel.com/dashboard" target="_blank" rel="noreferrer noopener">
+            <ExternalLink size={15} aria-hidden="true" />
+            Open Vercel dashboard
+          </a>
+        </div>
+      </div>
     </div>
   );
 }
@@ -176,9 +219,11 @@ export default function AdminStats() {
       <header className="admin-head">
         <div>
           <p className="eyebrow">Statistics</p>
-          <h1>How Hachi is being used</h1>
+          <h1>How the site is doing</h1>
           <p className="muted">
-            Counts only. No email address, display name, or per-account record is ever sent to this page.
+            Who is here and whether they are still arriving. Counts only: no email address, display name, or
+            per-account record is ever sent to this page. Visits and speed are measured by Vercel Analytics and live
+            in the Vercel dashboard, not here.
           </p>
         </div>
         <button className="button subtle" type="button" onClick={load}>
@@ -188,31 +233,40 @@ export default function AdminStats() {
       </header>
 
       <section className="admin-section">
-        <h2 className="section-heading">Accounts</h2>
+        <h2 className="section-heading">Visits</h2>
+        <VisitsCard />
+      </section>
+
+      <section className="admin-section">
+        <h2 className="section-heading">Audience</h2>
         <div className="admin-tile-grid">
-          <MetricCard label="Total accounts" value={stats.totalUsers} />
-          <MetricCard label="Online now" value={stats.onlineNow} />
+          <MetricCard label="Total accounts" value={stats.totalUsers} hint="Everyone who has ever signed in" />
+          <MetricCard
+            label="On the landing page now"
+            value={stats.onlineNow}
+            hint="Live tabs, not visits. Counted on the public page only"
+          />
           <MetricCard label="New this week" value={stats.newUsers7d} />
           <MetricCard label="New this month" value={stats.newUsers30d} />
-          <MetricCard
-            label="Active this week"
-            value={stats.activeUsers7d}
-            hint={`${formatPercent(stats.activeUsers7d, stats.totalUsers) ?? 0}% of all accounts`}
-          />
-          <MetricCard
-            label="Active this month"
-            value={stats.activeUsers30d}
-            hint={activeRate === null ? null : `${activeRate}% of all accounts`}
-          />
           <MetricCard
             label="Confirmed email"
             value={stats.confirmedUsers}
             hint={signupRate === null ? null : `${signupRate}% of all accounts`}
           />
           <MetricCard
+            label="Studied this week"
+            value={stats.activeUsers7d}
+            hint={`${formatPercent(stats.activeUsers7d, stats.totalUsers) ?? 0}% of all accounts`}
+          />
+          <MetricCard
+            label="Studied this month"
+            value={stats.activeUsers30d}
+            hint={activeRate === null ? null : `${activeRate}% of all accounts`}
+          />
+          <MetricCard
             label="Avg attempts per account"
             value={stats.avgAttemptsPerUser}
-            hint="Accounts that finished at least one quiz"
+            hint="How deeply returning people use it"
           />
         </div>
       </section>
@@ -220,18 +274,6 @@ export default function AdminStats() {
       <section className="admin-section">
         <h2 className="section-heading">Signups over the last 30 days</h2>
         <SignupChart series={state.series} />
-      </section>
-
-      <section className="admin-section">
-        <h2 className="section-heading">Study activity</h2>
-        <div className="admin-tile-grid">
-          <MetricCard label="Reviewers saved" value={stats.reviewerCount} />
-          <MetricCard label="Quiz attempts" value={stats.attemptCount} />
-          <MetricCard label="Attempts this week" value={stats.attempts7d} />
-          <MetricCard label="Friendships" value={stats.friendshipCount} />
-          <MetricCard label="Study groups" value={stats.groupCount} />
-          <MetricCard label="Reviewers shared" value={stats.shareCount} />
-        </div>
       </section>
 
       <footer className="admin-foot">

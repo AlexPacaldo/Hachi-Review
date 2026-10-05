@@ -20,64 +20,61 @@ override, so that is the boundary. Never move a provider key into `VITE_`, into
 The Supabase publishable key and project URL are meant to be public. Everything that
 authorizes a paid call is not.
 
-## Changing the inline script in index.html
+## Scripts load and the CSP
 
-`vercel.json` pins the inline ad-technology script in `index.html` by sha256 and does
-not allow `'unsafe-inline'` for scripts. Editing that inline block without updating
-the hash makes it fail silently in the browser while still working locally.
+`index.html` loads exactly two third-party or same-origin script/security items today:
+the Google AdSense external script, and Vercel Web Analytics served from this
+deployment's own origin (`/_vercel/insights/script.js`). Do not reintroduce an inline
+script block: the CSP pins no hash and allows no `'unsafe-inline'` for scripts, so one
+would fail silently in the browser while still working locally. If a same-origin
+asset is added, it is already allowed by `script-src 'self'`. A third-party host is
+not; it must be added to the relevant directives in `vercel.json` and that change only
+takes effect in production.
 
-A CSP source hash is base64, not hex. Recompute it from the exact bytes of the inline
-script:
-
-```powershell
-$html = Get-Content index.html -Raw
-$match = [regex]::Match($html, '(?s)<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>')
-$bytes = [System.Text.Encoding]::UTF8.GetBytes($match.Groups[1].Value)
-$digest = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes, 0, $bytes.Length)
-"'sha256-" + [System.Convert]::ToBase64String($digest) + "'"
-```
-
-Then replace the existing `sha256-...` value in the `script-src` directive in
-`vercel.json`. Verify the pair still agrees before committing:
-
-```powershell
-(Get-Content vercel.json -Raw) -match [regex]::Escape($computed)
-```
+The AdSense script only runs because `script-src` lists
+`https://pagead2.googlesyndication.com` and its siblings. AdSense also injects a
+runtime inline script that cannot be pinned by hash, because its contents are
+generated per page load, so it stays blocked. That is expected and is not worth
+adding `'unsafe-inline'` for.
 
 ## Ad networks and the CSP
 
-Three networks are loaded from `index.html`: Google AdSense, and two popunder
-networks (`nap5k.com` and `5gvci.com`). Each one needs its own hosts in
-`vercel.json`, and getting this wrong is silent, so the rule is that a network is
-only considered working once a real browser shows its beacons returning 200.
+Only Google AdSense is loaded today. The two popunder networks that used to be in
+`index.html` were removed, and their hosts went with them: `my.rtmark.net`, `jhnwr.com`,
+`nap5k.com`, and `5gvci.com` no longer appear in `vercel.json`, so any attempt to
+fetch them is refused. Do not re-add the tags without the matching vercel.json hosts,
+and do not treat a loaded-but-blocked tag as working: the popunder tags once loaded
+fine while every beacon they send was refused by `connect-src`, so a real browser
+showing its beacons returning 200 is the only definition of working.
 
-What each directive actually permits, because it decides how wide a grant has to
-be:
+What each directive actually permits, because it decides how wide a grant has to be:
 
-- `script-src` lets a host run arbitrary JavaScript on the page. This is the only
-  directive that grants code execution, so keep it as narrow as possible.
-- `connect-src` only allows `fetch`, XHR, beacons and websockets. It can send
-  data out but cannot execute anything.
-- `img-src` only allows image loads. Useful for tracking pixels, harmless
-  otherwise.
-- `frame-src` only allows framing, and the framed document stays on its own
-  origin.
+- `script-src` is the only directive that grants code execution, so keep it as narrow
+  as possible.
+- `connect-src` only allows `fetch`, XHR, beacons and websockets. It can send data
+  out but cannot execute anything.
+- `img-src` only allows image loads. Useful for tracking pixels, harmless otherwise.
+- `frame-src` only allows framing, and the framed document stays on its own origin.
 
 Ad creatives are served as images from `*.googlesyndication.com` and
-`*.doubleclick.net`, so an `img-src` without them renders a filled ad as an
-empty box. The popunder tags cannot report anything at all unless their beacon
-hosts are in `connect-src`; `my.rtmark.net` is a fingerprinting library and
-`jhnwr.com` is a zone beacon, and both were blocked at one point, which is why
-the tag loaded but no ad ever appeared.
-
-AdSense also injects a runtime inline script that cannot be pinned by hash,
-because its contents are generated per page load. It stays blocked. That is
-expected and is not worth adding `'unsafe-inline'` for.
-
-The AdSense grants are kept even while the account is unapproved, so the site is
+`*.doubleclick.net`, so an `img-src` without them renders a filled ad as an empty
+box. The AdSense grants are kept even while the account is unapproved, so the site is
 ready the moment approval lands. Do not assume the presence of these hosts means
 AdSense is earning: the account has to be approved and Auto ads enabled, and
-`ads.txt` only authorises Google, not the popunder networks.
+`ads.txt` only authorises Google.
+
+## Vercel Web Analytics
+
+`index.html` loads `/_vercel/insights/script.js` with `defer`. It answers the only
+traffic question the database physically cannot: how many people visit. The app
+cannot show those numbers itself — `public.presence_pings` is a live count of landing
+page tabs with a ten minute self-destructing lifetime and no history, and nothing
+else records a page view — so `src/pages/AdminStats.jsx` points at the Vercel
+dashboard instead of pretending otherwise. When editing traffic or privacy copy,
+remember that the numbers live in Vercel, not in Supabase, and are never mixed into
+this database. The script and its beacons are same-origin, so no `vercel.json` change
+is (or may ever be) needed for it; a `script-src` host that is not `'self'` must be
+added deliberately.
 
 ## AI generation
 

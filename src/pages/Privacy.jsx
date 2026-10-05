@@ -18,7 +18,7 @@ export default function Privacy() {
 
         <h2>Advertising & Tracking</h2>
         <p>This site carries advertising, and this is how it is kept separate from your study data.</p>
-        <p>We use Google AdSense, Monetag, and one further ad network. Their scripts have to run on this page to load an ad. We limit that as far as we can, but not completely:</p>
+        <p>We use Google AdSense. Its script has to run on this page to load an ad. We limit that as far as we can, but not completely:</p>
         <ul>
           <li>A Content Security Policy lists every script host we permit. Anything not on that list is refused by your browser before it runs, so an advert cannot quietly load additional code of its own.</li>
           <li>Your reviewers, answers, history, and streak are held in your browser and behind your account. None of them can be read through the ad networks.</li>
@@ -32,13 +32,21 @@ export default function Privacy() {
         </ul>
         <p>You can opt-out of targeted advertising by visiting <a href="https://optout.aboutads.info/" target="_blank" rel="noreferrer">About Ads Opt-out</a> or <a href="https://www.youronlinechoices.com/" target="_blank" rel="noreferrer">Your Online Choices</a>.</p>
 
+        <h3>Site analytics</h3>
+        <p>To know how many people visit and which pages they use, this site is measured with Vercel Web Analytics. It counts page views and reports them as aggregate numbers for the site as a whole.</p>
+        <ul>
+          <li>It is cookie-free and does not set an identifier in your browser or on your device.</li>
+          <li>It does not collect personal data, and it never sees your reviewers, answers, history, streak, display name, or email address.</li>
+          <li>Those figures are held on Vercel's dashboard. They are not stored in this site's own database, so no visit is tied to your account.</li>
+        </ul>
+
         <h3>Cookies</h3>
         <p>Our website uses cookies to enhance user experience. These cookies may be essential for the site to function, or may be used for analytics and advertising purposes. You can control cookie preferences through your browser settings.</p>
 
         <h2>Changes to This Privacy Policy</h2>
         <p>We may update our Privacy Policy from time to time. We will post any changes on this page. You are advised to review this Privacy Policy periodically.</p>
         
-        <p>Last updated: 1 October 2026</p>
+        <p>Last updated: 6 October 2026</p>
         
         <h2>Contact</h2>
         <p>For privacy or account questions, use the contact address published on the Contact Us page. It reaches the app owner directly.</p>

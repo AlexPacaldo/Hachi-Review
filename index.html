@@ -18,7 +18,21 @@
     <title>Hachi - Your Study Companion</title>
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6478554400929802"
      crossorigin="anonymous"></script>
-     
+    <!--
+      Vercel Web Analytics. The script and its beacons are both served from this
+      deployment's own origin, so `script-src 'self'` and `connect-src 'self'` in
+      vercel.json already allow them and no policy change is needed. Deliberately the
+      plain script tag rather than the @vercel/analytics package: it injects this
+      same file, and this repository does not take a dependency to save one tag.
+
+      This is what makes "how many people visited" answerable at all. Nothing in this
+      app records a page view, so before this was added the only traffic-shaped number
+      anywhere was presence_pings, which is a live count of landing page tabs with a
+      ten minute lifetime and no history to chart. See src/pages/AdminStats.jsx, which
+      is the page that points at this dashboard, and AGENTS.md.
+    -->
+    <script defer src="/_vercel/insights/script.js"></script>
+
   </head>
   <body>
     <div id="root"></div>
