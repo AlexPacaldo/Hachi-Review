@@ -18,6 +18,7 @@ import {
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import ReviewerCard from "../components/ReviewerCard.jsx";
+import UserAvatar from "../components/UserAvatar.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { validateReviewer } from "../data/reviewerRegistry.js";
 import {
@@ -613,6 +614,7 @@ export default function GroupDetail() {
 
                   return (
                     <div className="group-menu-row" key={member.id || member.user_id}>
+                      <UserAvatar profile={member.profile} size="sm" />
                       <span className="group-menu-name">
                         <strong>
                           {getProfileName(member.profile)}
@@ -677,6 +679,7 @@ export default function GroupDetail() {
                     <div className="group-menu-list">
                       {addableCandidates.map((profile) => (
                         <div className="group-menu-row" key={profile.id}>
+                          <UserAvatar profile={profile} size="sm" />
                           <span className="group-menu-name">
                             <strong>{getProfileName(profile)}</strong>
                           </span>

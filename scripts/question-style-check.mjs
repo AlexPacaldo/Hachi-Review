@@ -1006,6 +1006,44 @@ section("a true/false paper keeps its own choices");
   check("the answer text matches the marked choice", imported.questions[0].answerText, "True");
 }
 
+section("a person's initials come from their first and last real name");
+{
+  const { getProfileInitials, getProfileName, getProfileAvatarUrl } = await import(
+    pathToFileURL(new URL("../src/utils/userProfile.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  check("first and last", getProfileInitials("Alex Pacaldo"), "AP");
+  check("a middle name is skipped", getProfileInitials("Sophia Gail Santos"), "SS");
+  check("a compound surname uses the last real name", getProfileInitials("Maria Dela Cruz Santos"), "MS");
+  check("a one word name gives its first two letters", getProfileInitials("Cher"), "CH");
+
+  // A suffix is not a surname, and taking the last word gave "MJ" for Maria Cristina
+  // Dela Cruz Santos Jr, which is both wrong and unflattering on someone's row.
+  check("a suffix is not the last name", getProfileInitials("Maria Cristina Dela Cruz Santos Jr"), "MS");
+  check("Sr is peeled the same way", getProfileInitials("Alex Pacaldo Sr"), "AP");
+  check("a roman numeral suffix is peeled", getProfileInitials("Juan Dela Cruz III"), "JC");
+  check("only the trailing suffix is peeled", getProfileInitials("Jr Alexander Santos"), "JS");
+  check("a suffix is never stripped from a single name", getProfileInitials("Prince"), "PR");
+
+  check("trailing punctuation is ignored", getProfileInitials("Alex Pacaldo,"), "AP");
+  check("surrounding whitespace is ignored", getProfileInitials("  Alex   Pacaldo  "), "AP");
+  check("case does not matter", getProfileInitials("ALEX PACALDO"), "AP");
+  check("an empty name gives nothing to draw", getProfileInitials("   "), "");
+  check("a one letter name still draws", getProfileInitials("X"), "X");
+
+  // A hidden profile, which is what RLS returns when the row is not readable.
+  check("a missing profile is called a Hachi user", getProfileName(null), "Hachi user");
+  check("a blank name is called a Hachi user", getProfileName({ display_name: "   " }), "Hachi user");
+  // Initials are not invented from the placeholder. A row RLS has hidden has no name
+  // we may show, and "HU" would imply an identity we do not have.
+  check("a missing profile draws a person icon", getProfileInitials(null), "");
+  check("a blank name draws a person icon", getProfileInitials({ display_name: "  " }), "");
+  check("a hidden row does not borrow the placeholder's initials", getProfileInitials({}), "");
+  check("a missing avatar url is an empty string", getProfileAvatarUrl(null), "");
+  check("a padded avatar url is trimmed", getProfileAvatarUrl({ avatar_url: "  https://x/y.png " }), "https://x/y.png");
+  check("a profile object works as well as a string", getProfileInitials({ display_name: "Alex Pacaldo" }), "AP");
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

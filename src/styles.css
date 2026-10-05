@@ -2898,6 +2898,68 @@ legend {
   line-height: 1.4;
 }
 
+/* Someone else's picture, in a row. Same recipe as .top-account-avatar and
+   .account-avatar: an inline-grid circle holding either the image or a short piece
+   of text, separated by a border rather than a shadow. Written against the tokens
+   so it follows the theme in both modes with no override block. */
+.user-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  border-radius: var(--radius-pill);
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-avatar-initials {
+  /* Decorative. The name is always beside the circle, so nothing here needs to be
+     announced, and a touch of inset keeps a narrow pair of letters off the border. */
+  padding-inline: 1px;
+}
+
+/* A row is space-between with the action on the right, so the avatar and the name
+   have to travel together. As separate flex children they would be spread apart. */
+.row-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.row-identity > div {
+  min-width: 0;
+}
+
+.user-avatar-sm {
+  width: 28px;
+  height: 28px;
+  font-size: 0.66rem;
+}
+
+.user-avatar-md {
+  width: 38px;
+  height: 38px;
+  font-size: 0.8rem;
+}
+
+.user-avatar-lg {
+  width: 46px;
+  height: 46px;
+  font-size: 0.95rem;
+}
+
 .optional-tag {
   margin-left: 8px;
   padding: 2px 8px;

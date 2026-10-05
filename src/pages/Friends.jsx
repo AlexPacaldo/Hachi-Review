@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Check, Search, Trash2, UserPlus, Users } from "lucide-react";
 import EmptyState from "../components/EmptyState.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
+import UserAvatar from "../components/UserAvatar.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import {
   acceptFriendRequest,
@@ -209,9 +210,12 @@ export default function Friends() {
           <div className="library-list">
             {searchResults.map((profile) => (
               <article className="library-row" key={profile.id}>
-                <div>
-                  <h3>{getProfileName(profile)}</h3>
-                  <p className="muted">Search matched by name or address</p>
+                <div className="row-identity">
+                  <UserAvatar profile={profile} />
+                  <div>
+                    <h3>{getProfileName(profile)}</h3>
+                    <p className="muted">Search matched by name or address</p>
+                  </div>
                 </div>
                 <button className="button subtle" type="button" onClick={() => requestFriend(profile)}>
                   <UserPlus size={17} aria-hidden="true" />
@@ -233,9 +237,12 @@ export default function Friends() {
             <div className="library-list">
               {incomingRequests.map((friendship) => (
                 <article className="library-row" key={friendship.id}>
-                  <div>
-                    <h3>{getProfileName(friendship.otherProfile)}</h3>
-                    <p className="muted">Incoming request</p>
+                  <div className="row-identity">
+                    <UserAvatar profile={friendship.otherProfile} />
+                    <div>
+                      <h3>{getProfileName(friendship.otherProfile)}</h3>
+                      <p className="muted">Incoming request</p>
+                    </div>
                   </div>
                   <div className="button-row">
                     <button className="button primary" type="button" onClick={() => acceptRequest(friendship)}>
@@ -251,9 +258,12 @@ export default function Friends() {
               ))}
               {outgoingRequests.map((friendship) => (
                 <article className="library-row" key={friendship.id}>
-                  <div>
-                    <h3>{getProfileName(friendship.otherProfile)}</h3>
-                    <p className="muted">Request sent</p>
+                  <div className="row-identity">
+                    <UserAvatar profile={friendship.otherProfile} />
+                    <div>
+                      <h3>{getProfileName(friendship.otherProfile)}</h3>
+                      <p className="muted">Request sent</p>
+                    </div>
                   </div>
                   <button className="button subtle danger-text" type="button" onClick={() => setPendingRemove(friendship)}>
                     <Trash2 size={17} aria-hidden="true" />
@@ -284,9 +294,12 @@ export default function Friends() {
               <div className="library-list">
                 {filteredFriends.map((friendship) => (
                   <article className="library-row" key={friendship.id}>
-                    <div>
-                      <h3>{getProfileName(friendship.otherProfile)}</h3>
-                      <p className="muted">Friends since {new Date(friendship.created_at).toLocaleDateString()}</p>
+                    <div className="row-identity">
+                      <UserAvatar profile={friendship.otherProfile} />
+                      <div>
+                        <h3>{getProfileName(friendship.otherProfile)}</h3>
+                        <p className="muted">Friends since {new Date(friendship.created_at).toLocaleDateString()}</p>
+                      </div>
                     </div>
                     <button className="button subtle danger-text" type="button" onClick={() => setPendingRemove(friendship)}>
                       <Trash2 size={17} aria-hidden="true" />
