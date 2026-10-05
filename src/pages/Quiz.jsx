@@ -10,6 +10,7 @@ import { getReviewerById } from "../data/reviewerRegistry.js";
 import { clearQuizProgress, loadQuizProgress, markStudyDay, saveAttempt, saveQuizProgress } from "../utils/storageUtils.js";
 import { cancelProgressSync, pushAttemptToCloud, pushRemovedProgressToCloud, scheduleProgressSync, scheduleStudyDaySync } from "../services/syncEngine.js";
 import { createAttemptFromSession, formatDuration, getQuestionResult, getSessionElapsed, isTypedQuestion, pauseQuizSession, resumeQuizSession } from "../utils/quizUtils.js";
+import { holdBusyWork } from "../utils/busyWork.js";
 
 function isTypingTarget(target) {
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable;
@@ -40,6 +41,7 @@ export default function Quiz() {
   const isLastQuestion = session ? session.currentIndex === session.questions.length - 1 : false;
   const timeLimit = mode === "timed" ? (session.settings.timeLimitMinutes || 15) * 60 * 1000 : null;
   const remainingTime = timeLimit === null ? null : Math.max(0, timeLimit - elapsed);
+  const isQuizRunning = Boolean(session) && !session.completed;
 
   useEffect(() => {
     if (!session) return;
@@ -47,6 +49,14 @@ export default function Quiz() {
     saveQuizProgress(nextSession);
     scheduleProgressSync(nextSession);
   }, [session]);
+
+  // A running quiz holds the update reload. The session is saved on every
+  // change, so a reload would not lose the answers, but it would drop the
+  // reader back into the middle of a timed paper without warning.
+  useEffect(() => {
+    if (!isQuizRunning) return undefined;
+    return holdBusyWork("quiz");
+  }, [isQuizRunning]);
 
   useEffect(() => {
     if (!session) return;

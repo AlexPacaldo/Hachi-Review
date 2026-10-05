@@ -3,11 +3,29 @@ export function registerServiceWorker() {
 
   window.addEventListener("load", () => {
     const serviceWorkerUrl = `${import.meta.env.BASE_URL}service-worker.js`;
+
+    // A first claim is not an update. When nothing controlled the page, the
+    // worker that installs here claims it and fires controllerchange, and
+    // reloading on that would throw away the page the user just waited for.
+    // Only the first claim is exempt, so the flag has to be consumed rather than
+    // sampled: read once at load it stays false for the life of a tab that
+    // happened to open before its worker existed, and every real update after
+    // that is swallowed, leaving the tab on a stale version indefinitely.
+    let claimed = Boolean(navigator.serviceWorker.controller);
+
+    const announceUpdate = () => {
+      if (claimed) {
+        window.dispatchEvent(new Event("reviewhub:update-ready"));
+        return;
+      }
+      claimed = true;
+    };
+
     navigator.serviceWorker
       .register(serviceWorkerUrl)
       .then((registration) => {
         if (registration.waiting) {
-          window.dispatchEvent(new Event("reviewhub:update-ready"));
+          announceUpdate();
         }
 
         registration.addEventListener("updatefound", () => {
@@ -16,7 +34,7 @@ export function registerServiceWorker() {
 
           newWorker.addEventListener("statechange", () => {
             if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-              window.dispatchEvent(new Event("reviewhub:update-ready"));
+              announceUpdate();
             }
           });
         });
@@ -25,8 +43,6 @@ export function registerServiceWorker() {
         console.warn("Service worker registration failed.", error);
       });
 
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      window.dispatchEvent(new Event("reviewhub:update-ready"));
-    });
+    navigator.serviceWorker.addEventListener("controllerchange", announceUpdate);
   });
 }

@@ -6,6 +6,7 @@ import { validateReviewer } from "../data/reviewerRegistry.js";
 import { upsertCloudReviewer } from "../services/cloudReviewers.js";
 import { clearGeneratorDraft, getCloudReviewerCache, getGeneratorDraft, saveCloudReviewerCache, saveGeneratorDraft, saveLocalReviewer } from "../utils/storageUtils.js";
 import { getQuestionStyle, inferQuestionStyle } from "../utils/quizUtils.js";
+import { holdBusyWork } from "../utils/busyWork.js";
 import { logClientError } from "../utils/errorLogger.js";
 
 const emptyQuestion = {
@@ -335,6 +336,15 @@ const [generationElapsed, setGenerationElapsed] = useState(0);
 
     const timer = window.setInterval(() => setGenerationElapsed((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
+  }, [isGenerating, isAddingQuestions]);
+
+  // A running generation holds the update reload. Everything else on this page
+  // is autosaved into the draft, so it survives a reload, but the request in
+  // flight does not: it would be cancelled part-way and the provider quota it
+  // spent would be gone with nothing to show for it.
+  useEffect(() => {
+    if (!isGenerating && !isAddingQuestions) return undefined;
+    return holdBusyWork("generation");
   }, [isGenerating, isAddingQuestions]);
 
   useEffect(() => {

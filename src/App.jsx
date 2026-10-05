@@ -28,8 +28,14 @@ import Terms from "./pages/Terms.jsx";
 import { AuthProvider } from "./contexts/AuthContext.jsx";
 import { NotificationProvider, useNotifications } from "./contexts/NotificationContext.jsx";
 import { getThemePreference, saveThemePreference } from "./utils/storageUtils.js";
+import { subscribeBusyWork } from "./utils/busyWork.js";
 import { applyDocumentMeta, resolveDocumentMeta } from "./utils/documentMeta.js";
 import { logClientError } from "./utils/errorLogger.js";
+
+// Long enough for a burst of update events to settle into one reload, short
+// enough that an idle tab still picks the new version up without the user
+// noticing it went stale.
+const RELOAD_DELAY_MS = 1200;
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -48,6 +54,7 @@ function ScrollToTop() {
 function AppShell() {
   const [theme, setTheme] = useState(getThemePreference);
   const [updateReady, setUpdateReady] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
   const { notify } = useNotifications();
   const location = useLocation();
   // The public marketing page owns its full-height layout, so the app sidebar,
@@ -68,19 +75,27 @@ function AppShell() {
     applyDocumentMeta(resolveDocumentMeta(location.pathname));
   }, [location.pathname]);
 
+  useEffect(() => subscribeBusyWork(setIsBusy), []);
+
+  // A new version normally takes over on its own: the service worker skips
+  // waiting, so once the update lands the page reloads itself a moment later.
+  // Work that only exists in memory, a running quiz or a generation in flight,
+  // outlives that courtesy, so the reload is held and the banner is offered
+  // instead. Letting the notice go as soon as the page goes idle is what keeps
+  // it from outliving the reason for it.
   useEffect(() => {
-    const showUpdateNotice = () => {
-      setUpdateReady(true);
-      notify({
-        type: "info",
-        title: "Offline update ready",
-        message: "A fresh version of Hachi is ready to load."
-      });
-    };
+    const showUpdateNotice = () => setUpdateReady(true);
 
     window.addEventListener("reviewhub:update-ready", showUpdateNotice);
     return () => window.removeEventListener("reviewhub:update-ready", showUpdateNotice);
-  }, [notify]);
+  }, []);
+
+  useEffect(() => {
+    if (!updateReady || isBusy) return undefined;
+
+    const id = window.setTimeout(() => window.location.reload(), RELOAD_DELAY_MS);
+    return () => window.clearTimeout(id);
+  }, [updateReady, isBusy]);
 
   useEffect(() => {
     const showOnlineNotice = () => {
@@ -133,12 +148,12 @@ function AppShell() {
       {isLanding ? null : <Navbar theme={theme} onToggleTheme={toggleTheme} />}
       {isLanding ? null : <TopActions />}
       <NotificationToasts />
-      {updateReady ? (
+      {updateReady && isBusy ? (
         <div className="update-banner" role="status">
           <span className="banner-icon" aria-hidden="true"><RefreshCw size={15} /></span>
-          <span>New offline version ready.</span>
+          <span>Hachi updates when this is done.</span>
           <button className="button subtle" type="button" onClick={() => window.location.reload()}>
-            Reload
+            Reload now
           </button>
         </div>
       ) : null}
