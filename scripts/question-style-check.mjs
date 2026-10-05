@@ -1121,6 +1121,115 @@ section("suggestions only come from relationships the reader already has");
   }).get("peer"), { reason: "reviewer", detail: "" });
 }
 
+section("friends of friends, as a suggestion, stays inside the policy");
+{
+  const { collectSuggestionCandidates, toSuggestions } = await import(
+    pathToFileURL(new URL("../src/services/social.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const ME = "me";
+  const FOF = [
+    { id: "two-mutual", display_name: "Rizal Bonaparte", avatar_url: null, mutual_count: 2 },
+    { id: "one-mutual", display_name: "Delos Santos", avatar_url: "https://x/d.png", mutual_count: 1 }
+  ];
+  const PROFILES = FOF.map((row) => ({ id: row.id, display_name: row.display_name, avatar_url: row.avatar_url }));
+
+  const candidates = collectSuggestionCandidates({ userId: ME, friendsOfFriends: FOF });
+  const suggestions = toSuggestions(candidates, PROFILES, 6);
+
+  check("a mutual friend is a candidate", [...candidates.keys()], ["two-mutual", "one-mutual"]);
+  check("the reason is a count, not a name", candidates.get("two-mutual"), { reason: "mutual", detail: 2 });
+  check("the count reaches the card", suggestions[0].detail, 2);
+  check("a single mutual friend counts", candidates.get("one-mutual").detail, 1);
+  check("no name is carried on a mutual reason", typeof candidates.get("two-mutual").detail, "number");
+
+  // A person with no mutual friend is not a friends-of-friends, whatever came back.
+  const noMutual = collectSuggestionCandidates({
+    userId: ME,
+    friendsOfFriends: [{ id: "x", display_name: "X", mutual_count: 0 }, { id: "y", display_name: "Y", mutual_count: null }]
+  });
+  check("a zero count is not a suggestion", noMutual.size, 0);
+  check("a missing id is not a suggestion", collectSuggestionCandidates({ userId: ME, friendsOfFriends: [{ mutual_count: 3 }] }).size, 0);
+  check("you are not your own mutual friend", collectSuggestionCandidates({ userId: ME, friendsOfFriends: [{ id: ME, mutual_count: 4 }] }).size, 0);
+  check("an excluded mutual friend is not suggested", collectSuggestionCandidates({ userId: ME, friendsOfFriends: FOF, excludeIds: ["two-mutual"] }).has("two-mutual"), false);
+
+  // Strongest reason first, so a shared group still wins over a mutual friend.
+  const ranked = collectSuggestionCandidates({
+    userId: ME,
+    groups: [{ id: "g1", name: "BSCS 4-101" }],
+    coMembers: [{ group_id: "g1", user_id: "two-mutual" }],
+    friendsOfFriends: FOF,
+    shares: [{ owner_id: "peer", recipient_id: ME, title: "Anatomy" }]
+  });
+  check("a shared group outranks a mutual friend", ranked.get("two-mutual").reason, "group");
+  check("a mutual friend outranks a reviewer share", ranked.get("one-mutual").reason, "mutual");
+  check("a reviewer share is still the last resort", ranked.get("peer").reason, "reviewer");
+
+  // The two-hop source is optional, because it is a separate migration. A database that
+  // has not had it run must still produce a section from the other two.
+  check("the other sources work without it", collectSuggestionCandidates({
+    userId: ME,
+    groups: [{ id: "g1", name: "IT Club" }],
+    coMembers: [{ group_id: "g1", user_id: "clubmate" }],
+    friendsOfFriends: [],
+    shares: [{ owner_id: "peer", recipient_id: ME, title: "Anatomy" }]
+  }).size, 2);
+}
+
+section("the friends-of-friends function cannot be turned into a directory");
+{
+  const fs = await import("node:fs");
+  const files = [
+    "../supabase-schema.sql",
+    "../supabase-migration-2026-10-social-graph.sql"
+  ];
+
+  for (const file of files) {
+    const sql = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    const start = sql.indexOf("create or replace function public.find_friends_of_friends");
+    const end = sql.indexOf("$$;", start);
+    const name = file.split("/").pop();
+    check(`${name}: the function exists`, start > -1, true);
+    if (start < 0) continue;
+    const body = sql.slice(start, end);
+
+    // A security definer function is the easiest way in a schema like this to hand out
+    // the account directory by accident, so each of these is asserted rather than
+    // trusted. Removing one is a security change, not a refactor.
+    check(`${name}: it runs as the owner`, /security definer/.test(body), true);
+    check(`${name}: search_path is pinned`, /set search_path = public/.test(body), true);
+    check(`${name}: the subject is auth.uid() and not a parameter`, body.includes("v_uid uuid := auth.uid()"), true);
+    check(`${name}: no user id is accepted as an argument`, /find_friends_of_friends\(p_user/.test(body), false);
+    check(`${name}: only accepted friendships are walked`, (body.match(/status = 'accepted'/g) || []).length >= 1, true);
+    check(`${name}: no unfiltered select star`, /select \*/.test(body), false);
+    check(`${name}: the returned columns are named one by one`, /returns table \(id uuid, display_name text, avatar_url text, mutual_count integer\)/.test(body), true);
+    check(`${name}: the limit is clamped`, /least\(greatest\(coalesce\(p_limit/.test(body), true);
+    check(`${name}: known friends are excluded in sql`, /not exists \(select 1 from my_friends known/.test(body), true);
+    check(`${name}: open requests are excluded in sql`, /f4\.status = 'pending'/.test(body), true);
+
+    // Anonymous has no business here, and the grant for signed in accounts is not
+    // optional: revoking from PUBLIC without regranting fails closed but silently.
+    check(`${name}: revoked from public and anon`, /revoke all on function public\.find_friends_of_friends\(integer\) from public, anon;/.test(sql), true);
+    check(`${name}: granted to authenticated`, /grant execute on function public\.find_friends_of_friends\(integer\) to authenticated;/.test(sql), true);
+  }
+
+  // The policies themselves must not move. Friends of friends arrives through a
+  // function, and widening these two is what would turn it into a directory. The slice
+  // is bounded by the next policy statement, because the same helper names appear in
+  // several other policies further down the file.
+  const schema = fs.readFileSync(new URL("../supabase-schema.sql", import.meta.url), "utf8");
+  const policyStart = schema.indexOf('create policy "Users can read profiles"');
+  const policyEnd = schema.indexOf("create policy", policyStart + 10);
+  const readPolicy = schema.slice(policyStart, policyEnd);
+
+  check("the profiles read policy still exists", policyStart > -1, true);
+  check("the profiles read policy has exactly four relationships",
+    (readPolicy.match(/auth\.uid\(\) = id|is_friend|shares_group_with|owns_shared_reviewer_with/g) || []).length, 4);
+  check("friends of friends was not smuggled into the policy", /find_friends_of_friends|mutual/.test(readPolicy), false);
+  check("the friendships policy is not widened to the whole table",
+    (schema.match(/create policy "Users can read own friendships"[\s\S]{0,400}?;/g) || []).some((text) => /using \(auth\.uid\(\) = requester_id or auth\.uid\(\) = addressee_id\)/.test(text)), true);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

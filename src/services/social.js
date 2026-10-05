@@ -153,10 +153,11 @@ export async function listFriendships(userId) {
 // widening the policy, which is the opposite of what this is for.
 
 // First half: turn the rows already fetched into an ordered list of candidates and
-// the reason each one is worth suggesting. Insertion order is the preference order,
-// and a shared group outranks a reviewer share, so the first reason recorded for a
-// person is the one that gets shown.
-export function collectSuggestionCandidates({ userId, myGroupIds = [], groups = [], coMembers = [], shares = [], excludeIds = [] }) {
+// the reason each one is worth suggesting. Insertion order is the preference order, and
+// the sources are applied strongest first: a named group is the most concrete reason, a
+// mutual friend is next, and a reviewer share is the weakest. The first reason recorded
+// for a person is the one that gets shown.
+export function collectSuggestionCandidates({ userId, myGroupIds = [], groups = [], coMembers = [], friendsOfFriends = [], shares = [], excludeIds = [] }) {
   const excluded = new Set([userId, ...(excludeIds || []).filter(Boolean)]);
   const candidates = new Map();
 
@@ -172,6 +173,16 @@ export function collectSuggestionCandidates({ userId, myGroupIds = [], groups = 
           candidates.set(row.user_id, { reason: "group", detail: group.name });
         });
     });
+
+  // Two hops out, already filtered to accepted friendships and to people who are not
+  // already known by the function itself. The count is the only thing carried: naming
+  // the friends behind it would tell the reader facts about the suggested person's own
+  // friendships, which is not what a suggestion is for.
+  (friendsOfFriends || []).forEach((row) => {
+    const mutualCount = Number(row?.mutual_count) || 0;
+    if (!row?.id || mutualCount < 1 || excluded.has(row.id) || candidates.has(row.id)) return;
+    candidates.set(row.id, { reason: "mutual", detail: mutualCount });
+  });
 
   (shares || []).forEach((share) => {
     const peerId = share.owner_id === userId ? share.recipient_id : share.owner_id;
@@ -202,15 +213,22 @@ export function toSuggestions(candidates, profiles, limit = SUGGESTION_LIMIT) {
 export async function listSuggestedPeople(userId, { excludeIds = [], limit = SUGGESTION_LIMIT } = {}) {
   if (!supabase || !userId) return { data: [], error: null };
 
-  const [{ data: myMemberships }, { data: shares }] = await Promise.all([
+  // The friends-of-friends call is a separate migration, so it can be missing on a
+  // database that has not had supabase-migration-2026-10-social-graph.sql run yet.
+  // That is an expected state, not a fault: its failure is dropped and the other two
+  // sources still produce a section, rather than the whole feature disappearing
+  // because of a function nobody has deployed.
+  const [membershipsResult, sharesResult, mutualResult] = await Promise.all([
     supabase.from(GROUP_MEMBERS_TABLE).select("group_id").eq("user_id", userId),
     supabase
       .from(SHARES_TABLE)
       .select("owner_id, recipient_id, title")
-      .or(`owner_id.eq.${userId},recipient_id.eq.${userId}`)
+      .or(`owner_id.eq.${userId},recipient_id.eq.${userId}`),
+    supabase.rpc("find_friends_of_friends", { p_limit: limit * 2 })
   ]);
 
-  const myGroupIds = [...new Set((myMemberships || []).map((row) => row.group_id))];
+  const friendsOfFriends = mutualResult.error ? [] : (mutualResult.data || []);
+  const myGroupIds = [...new Set((membershipsResult.data || []).map((row) => row.group_id))];
   const [{ data: coMembers }, { data: groups }] = myGroupIds.length
     ? await Promise.all([
         supabase.from(GROUP_MEMBERS_TABLE).select("group_id, user_id").in("group_id", myGroupIds),
@@ -218,7 +236,14 @@ export async function listSuggestedPeople(userId, { excludeIds = [], limit = SUG
       ])
     : [{ data: [] }, { data: [] }];
 
-  const candidates = collectSuggestionCandidates({ userId, groups, coMembers, shares, excludeIds });
+  const candidates = collectSuggestionCandidates({
+    userId,
+    groups,
+    coMembers,
+    friendsOfFriends,
+    shares: sharesResult.data || [],
+    excludeIds
+  });
   if (!candidates.size) return { data: [], error: null };
 
   // Overfetched on purpose, because the policy can still hide a profile row and four

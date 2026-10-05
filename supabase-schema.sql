@@ -226,6 +226,102 @@ grant execute on function public.is_group_member(uuid, uuid) to authenticated;
 grant execute on function public.is_group_owner_or_admin(uuid, uuid) to authenticated;
 grant execute on function public.is_group_owner(uuid, uuid) to authenticated;
 
+-- Friends of friends, as a suggestion, and nothing more than that.
+--
+-- This cannot be assembled by the client. The friendships policy only lets a caller
+-- read rows they are a party to, so the middle step of the walk, one of your own
+-- friends' friendships, is precisely the row you are not allowed to see. Reaching it
+-- therefore needs a function running with the owner's privileges, and a security
+-- definer function is the easiest way in a schema like this to hand out the whole
+-- directory by accident. Every property below is load bearing:
+--
+--   * The subject is auth.uid() and there is no parameter for it. A function taking a
+--     user id would answer for whoever was named, so there is deliberately no argument
+--     here the caller could get wrong.
+--   * set search_path is pinned to public. Without it, anyone able to create objects in
+--     a schema on the path can shadow friendships or profiles and read anything.
+--   * Only id, display_name and avatar_url come back, named one by one. A select * would
+--     begin leaking the moment a column is added to profiles.
+--   * Only accepted friendships are walked. is_friend does not check status, so without
+--     this a pending request would put somebody in a suggestions list.
+--   * People you already know are removed here and not only in the interface, so this
+--     cannot be used to re-read a profile the policy already permits.
+--   * The limit is clamped, so the result cannot be paged through.
+--   * Only a count of mutual friends comes back, never their names. Naming them would
+--     tell the caller facts about the suggested person's own friendships, which is not
+--     what this is in the business of handing over.
+--
+-- What it does expose is the existence and name of anyone within two accepted
+-- friendships of you. That is inherent to the feature rather than an oversight, and it
+-- is a far larger surface than find_people, which only answers to a term the caller
+-- already supplied.
+create or replace function public.find_friends_of_friends(p_limit integer default 6)
+returns table (id uuid, display_name text, avatar_url text, mutual_count integer)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_capped integer := least(greatest(coalesce(p_limit, 6), 1), 12);
+begin
+  if v_uid is null then
+    return;
+  end if;
+
+  return query
+    with my_friends as (
+      select case
+               when f.requester_id = v_uid then f.addressee_id
+               else f.requester_id
+             end as friend_id
+      from public.friendships f
+      where f.status = 'accepted'
+        and (f.requester_id = v_uid or f.addressee_id = v_uid)
+    ),
+    mutual as (
+      select f2.other_id as other_id, count(distinct f2.via_id)::integer as mutual_count
+      from my_friends mine
+      join lateral (
+        select
+          case
+            when f3.requester_id = mine.friend_id then f3.addressee_id
+            else f3.requester_id
+          end as other_id,
+          mine.friend_id as via_id
+        from public.friendships f3
+        where f3.status = 'accepted'
+          and (f3.requester_id = mine.friend_id or f3.addressee_id = mine.friend_id)
+      ) f2 on true
+      where f2.other_id <> v_uid
+        -- Already a friend, or has a request open in either direction. Both would
+        -- otherwise arrive here and be suggested to somebody the interface already
+        -- lists on another part of the page.
+        and not exists (select 1 from my_friends known where known.friend_id = f2.other_id)
+        and not exists (
+          select 1 from public.friendships f4
+          where f4.status = 'pending'
+            and (
+              (f4.requester_id = v_uid and f4.addressee_id = f2.other_id)
+              or (f4.addressee_id = v_uid and f4.requester_id = f2.other_id)
+            )
+        )
+      group by f2.other_id
+      having count(distinct f2.via_id) >= 1
+    )
+    select p.id, p.display_name, p.avatar_url, m.mutual_count
+    from mutual m
+    join public.profiles p on p.id = m.other_id
+    order by m.mutual_count desc, p.display_name nulls last
+    limit v_capped;
+end;
+$$;
+
+revoke all on function public.find_friends_of_friends(integer) from public, anon;
+
+grant execute on function public.find_friends_of_friends(integer) to authenticated;
+
 -- A group is readable by its members. Membership is checked through
 -- public.is_group_member so non-members can never discover a group.
 drop policy if exists "Members can read own groups" on public.study_groups;

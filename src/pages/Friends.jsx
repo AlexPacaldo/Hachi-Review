@@ -24,9 +24,14 @@ function getProfileName(profile) {
 
 // Why this person is a suggestion, in one line. The reason is the whole value of the
 // section: a stranger with an Add button is noise, a classmate in your block is a
-// reason to press it.
+// reason to press it. Mutual friends are given as a count and never by name, because
+// naming them would tell you things about the suggested person's own friendships.
 function getSuggestionReason(suggestion) {
   if (suggestion.reason === "group") return `In ${suggestion.detail} with you`;
+  if (suggestion.reason === "mutual") {
+    const count = Number(suggestion.detail) || 0;
+    return `${count} mutual friend${count === 1 ? "" : "s"}`;
+  }
   if (suggestion.detail) return `Shared "${suggestion.detail}" with you`;
   return "Shared a reviewer with you";
 }

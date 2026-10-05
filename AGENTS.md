@@ -196,32 +196,60 @@ written down, so prefer the flag. Do not add an address to a committed SQL file.
 
 ## Suggesting people
 
-The "People you may know" section on `/friends` is built from exactly two
-relationships, and that is a privacy constraint rather than a limitation of the idea:
+The "People you may know" section on `/friends` is built from exactly three
+relationships:
 
 - someone in a group you are both in
 - someone who shared a reviewer with you, or that you shared with them
+- a friend of a friend, via `public.find_friends_of_friends`
 
-The `profiles` select policy permits reading a row for exactly four relationships,
-and a fifth "anybody" path would be the leak the policy exists to prevent: the table
-once carried a duplicate email column behind a `using (true)` policy, which let any
-signed-in account enumerate the whole directory through the friend search. A
-suggestion panel is that same hole under a friendlier label, except it needs no
-typing at all. So it is assembled only from relationships the policy already allows,
-and a peer the policy withholds simply does not appear. Nothing here loosens a
-policy, which is why it needs no migration.
+The first two come from rows the `profiles` select policy already lets you read, and
+a peer the policy withholds simply does not appear. A fifth "anybody" path on that
+policy would be the leak it exists to prevent: the table once carried a duplicate email
+column behind a `using (true)` policy, which let any signed-in account enumerate the
+whole directory through the friend search. A suggestion panel is that same hole under
+a friendlier label, except it needs no typing at all. So the policy is not widened, and
+there is no migration for the first two sources.
 
-Friends of friends is absent for the same reason: a friend of a friend satisfies none
-of the four predicates, so no row comes back. Adding them means widening the policy,
-so treat it as a schema decision rather than a UI one.
+**Friends of friends cannot be done from the client**, and that is the whole reason it
+needs a function. The `friendships` policy only lets a caller read rows they are a
+party to, so the middle step of the walk, one of your own friends' friendships, is
+precisely the row you may not see. `find_friends_of_friends` is `security definer`,
+which is the easiest way in a schema like this to hand out the whole directory by
+accident, so each of these is deliberate and asserted in
+`scripts/question-style-check.mjs` rather than trusted:
+
+- the subject is `auth.uid()` and **there is no user-id parameter**, so there is no
+  argument the caller could get wrong
+- `set search_path = public` is pinned, or a caller who can create objects on the path
+  can shadow `friendships` or `profiles` and read anything
+- three columns come back, named one by one. Never `select *`, so a column added to
+  `profiles` later cannot leak through this path by accident
+- only `status = 'accepted'` is walked. `is_friend` does not check status, so without
+  this a pending request would put someone in a list
+- existing friends and open requests are excluded **in SQL**, so this cannot be used to
+  re-read a profile the policy already permits
+- the limit is clamped to twelve, so the result cannot be paged through
+- only a **count** of mutual friends comes back, never their names. Naming them would
+  tell the reader facts about the suggested person's own friendships.
+
+What it still exposes is the existence, name and picture of anyone within two accepted
+friendships. That is inherent to the feature rather than an oversight, and it is a much
+larger surface than `find_people`, which only answers to a term the caller supplied. If
+the two-hop neighbourhood is too much, drop the `supabase.rpc` call in
+`listSuggestedPeople` and the other two sources keep working unchanged.
+
+It needs `supabase-migration-2026-10-social-graph.sql`, and it is safe to deploy before
+that migration: the RPC error is swallowed and the other two sources still populate the
+section. That is why the call is not awaited into a failure.
 
 `collectSuggestionCandidates` and `toSuggestions` in `src/services/social.js` are
 split out and exported so the rules can be tested without a database, the same reason
-`buildExamImportPrompt` and friends are exported from the endpoint. Two behaviours are
-load-bearing and asserted in `scripts/question-style-check.mjs`: a shared group
-outranks a reviewer share as the stated reason, and a candidate whose profile the
-policy withheld is dropped rather than rendered as a nameless card.
+`buildExamImportPrompt` and friends are exported from the endpoint. Three behaviours are
+load-bearing and asserted there: a shared group outranks a mutual friend, which outranks
+a reviewer share, and a candidate whose profile the policy withheld is dropped rather
+than rendered as a nameless card.
 
 The section is hidden when there is nobody to suggest. An always-present empty panel
-teaches people to scroll past it, and for someone in no groups it could never be
-anything but empty.
+teaches people to scroll past it, and for someone in no groups and no friendships it
+could never be anything but empty.
