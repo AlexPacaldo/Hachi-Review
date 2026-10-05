@@ -4122,11 +4122,6 @@ legend {
     display: inline-flex;
   }
 
-  .update-banner {
-    top: 0;
-    flex-wrap: wrap;
-  }
-
   .nav-links a {
     justify-content: flex-start;
     min-width: 0;
@@ -5796,6 +5791,30 @@ strong {
     right: 12px;
     left: 12px;
     width: auto;
+  }
+
+  /* The account pill is pinned to the top-right corner on narrow layouts, so a
+     full-width bar tucked under it left the reload button unreachable behind the
+     pill. Anchored to the bottom instead, clear of the pill and of everything else
+     that floats. The stacking sits under the nav drawer so opening the menu still
+     covers it. */
+  .update-banner {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    left: 12px;
+    z-index: 34;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--info) 30%, var(--separator));
+    border-radius: var(--radius-lg);
+  }
+
+  .update-banner .button {
+    flex: 0 0 auto;
+    margin-left: auto;
   }
 
   .notification-popover {
