@@ -22,8 +22,8 @@ authorizes a paid call is not.
 
 ## Scripts load and the CSP
 
-`index.html` loads three third-party or same-origin script/security items today:
-the Google AdSense external script, the Monetag tag, and Vercel Web Analytics served from this
+`index.html` loads exactly two third-party or same-origin script/security items today:
+the Google AdSense external script, and Vercel Web Analytics served from this
 deployment's own origin (`/_vercel/insights/script.js`). Do not reintroduce an inline
 script block: the CSP pins no hash and allows no `'unsafe-inline'` for scripts, so one
 would fail silently in the browser while still working locally. If a same-origin
@@ -39,15 +39,13 @@ adding `'unsafe-inline'` for.
 
 ## Ad networks and the CSP
 
-Google AdSense and a Monetag popunder are loaded. The Monetag tag is a plain
-external script tag (`https://nap5k.com/tag.min.js`, zone 11915305) rather than the
-vendor's inline bootstrap, because the CSP allows no inline scripts and an inline
-block fails silently in the browser while "working" locally. Its hosts -
-`https://nap5k.com`, `https://my.rtmark.net`, and `https://*.rtmark.net` - are granted
-in `script-src`, `connect-src`, and `img-src`, since the tag executes remote code,
-sends beacons, and loads pixels from those origins. Do not treat a
-loaded-but-blocked tag as working: a real browser showing its beacons returning 200 is
-the only definition of working.
+Only Google AdSense is loaded today. The two popunder networks that used to be in
+`index.html` were removed, and their hosts went with them: `my.rtmark.net`, `jhnwr.com`,
+`nap5k.com`, and `5gvci.com` no longer appear in `vercel.json`, so any attempt to
+fetch them is refused. Do not re-add the tags without the matching vercel.json hosts,
+and do not treat a loaded-but-blocked tag as working: the popunder tags once loaded
+fine while every beacon they send was refused by `connect-src`, so a real browser
+showing its beacons returning 200 is the only definition of working.
 
 What each directive actually permits, because it decides how wide a grant has to be:
 
