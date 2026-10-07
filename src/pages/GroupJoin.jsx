@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Loader2, UsersRound } from "lucide-react";
 import EmptyState from "../components/EmptyState.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { getGroupInvitePreview, joinGroupByInvite } from "../services/groups.js";
+import { getGroupInvitePreview, joinGroupByInvite, listMyGroups } from "../services/groups.js";
 
 const POST_AUTH_PATH_KEY = "hachi:post-auth-path";
 
@@ -12,8 +12,8 @@ export default function GroupJoin() {
   const navigate = useNavigate();
   const { configured, loading, user } = useAuth();
   const [preview, setPreview] = useState(null);
+  const [alreadyMember, setAlreadyMember] = useState(false);
   const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [joining, setJoining] = useState(false);
 
@@ -54,6 +54,11 @@ export default function GroupJoin() {
       }
 
       setPreview(data);
+
+      const { data: myGroups } = await listMyGroups(user.id);
+      if (!cancelled) {
+        setAlreadyMember((myGroups || []).some((group) => group.id === data.group_id));
+      }
     })();
 
     return () => {
@@ -77,11 +82,6 @@ export default function GroupJoin() {
     }
 
     if (data?.group_id) {
-      if (data.already_member) {
-        setNotice("You are already in this group. Opening it...");
-        window.setTimeout(() => navigate(`/groups/${data.group_id}`), 1200);
-        return;
-      }
       navigate(`/groups/${data.group_id}`);
       return;
     }
@@ -144,15 +144,19 @@ export default function GroupJoin() {
 
         {preview.description ? <p className="group-detail-description">{preview.description}</p> : null}
 
-        {notice ? <p className="sync-message success">{notice}</p> : null}
+        {alreadyMember ? <p className="sync-message success">You are already in this group.</p> : null}
         {error ? <p className="sync-message error">{error}</p> : null}
 
         <div className="modal-actions">
           <Link className="button subtle" to="/groups">Not now</Link>
-          <button className="button primary" type="button" onClick={join} disabled={joining}>
-            {joining ? <Loader2 className="spinner" size={16} aria-hidden="true" /> : null}
-            {joining ? "Joining..." : "Join group"}
-          </button>
+          {alreadyMember ? (
+            <Link className="button primary" to={`/groups/${preview.group_id}`}>Open group</Link>
+          ) : (
+            <button className="button primary" type="button" onClick={join} disabled={joining}>
+              {joining ? <Loader2 className="spinner" size={16} aria-hidden="true" /> : null}
+              {joining ? "Joining..." : "Join group"}
+            </button>
+          )}
         </div>
       </section>
     </div>
