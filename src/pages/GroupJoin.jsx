@@ -13,6 +13,7 @@ export default function GroupJoin() {
   const { configured, loading, user } = useAuth();
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [joining, setJoining] = useState(false);
 
@@ -76,6 +77,11 @@ export default function GroupJoin() {
     }
 
     if (data?.group_id) {
+      if (data.already_member) {
+        setNotice("You are already in this group. Opening it...");
+        window.setTimeout(() => navigate(`/groups/${data.group_id}`), 1200);
+        return;
+      }
       navigate(`/groups/${data.group_id}`);
       return;
     }
@@ -138,6 +144,7 @@ export default function GroupJoin() {
 
         {preview.description ? <p className="group-detail-description">{preview.description}</p> : null}
 
+        {notice ? <p className="sync-message success">{notice}</p> : null}
         {error ? <p className="sync-message error">{error}</p> : null}
 
         <div className="modal-actions">
