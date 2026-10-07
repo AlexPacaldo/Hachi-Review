@@ -111,7 +111,7 @@ export default function ReviewerSetup() {
 
   const [settings, setSettings] = useState({
     questionCount: defaultQuestionCount,
-    questionOrder: "random",
+    questionOrder: "original",
     choiceOrder: "shuffle",
     mode: "practice",
     timeLimitMinutes: 15,
