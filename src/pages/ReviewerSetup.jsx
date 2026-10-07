@@ -88,7 +88,9 @@ export default function ReviewerSetup() {
       ? reviewer.ownerId === user.id
       : reviewer?.source !== "cloud" && reviewer?.source !== "built-in"
     : reviewer?.source === "local";
-  const isSharedWithMe = Boolean(reviewer?.ownerName) && !isOwnerReviewer;
+  const isSharedWithMe = reviewer?.ownerId && user
+    ? reviewer.ownerId !== user.id
+    : Boolean(reviewer?.ownerName) && !isOwnerReviewer;
   const mistakeIds = latestAttempt?.incorrectQuestionIds || [];
 
   const totalQuestions = reviewer?.questions?.length || 0;
@@ -280,7 +282,7 @@ export default function ReviewerSetup() {
           <div>
             <h2>
               {isSharedWithMe
-                ? `Shared with you by ${reviewer.ownerName}`
+                ? `Shared with you by ${reviewer.ownerName || "a friend"}`
                 : hasCloud && isOwnerReviewer
                   ? "Saved in your cloud account"
                   : hasLocal

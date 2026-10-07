@@ -325,11 +325,21 @@ export async function getCloudReviewerById(reviewerId, ownerId) {
 
   if (error || !data) return { data: null, error };
 
+  // A cold load of /reviewer/:id has no cache entry behind it, so the row's
+  // owner name has to come from the profile table the way the list path does.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, display_name, avatar_url")
+    .eq("id", data.owner_id)
+    .maybeSingle();
+
   return {
     data: {
       ...data.data,
       reviewerId: data.reviewer_id,
       ownerId: data.owner_id,
+      ownerName: profile ? profile.display_name || "A friend" : null,
+      ownerProfile: profile || null,
       visibility: normalizeVisibility(data.visibility || data.data?.visibility),
       sharedWith: data.shared_with || data.data?.sharedWith || null,
       sharedGroups: data.shared_groups || data.data?.sharedGroups || null,
