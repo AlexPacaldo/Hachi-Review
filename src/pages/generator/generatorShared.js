@@ -389,7 +389,10 @@ export function getFriendlyGenerationError(error) {
     return "That file could not be sent to the AI, or it is too large to send after browser encoding. Compress or split it, use fewer images, or paste the study material as text and try again.";
   }
 
-  return message || "Could not generate a reviewer.";
+  if (!message) return "Could not generate a reviewer. Try generating again in a moment.";
+  if (/try again/i.test(message)) return message;
+
+  return `${message} Try generating again in a moment.`;
 }
 
 // Whether a failed request is worth retrying from the PDF's text layer instead. The
