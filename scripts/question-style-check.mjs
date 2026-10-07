@@ -1230,6 +1230,50 @@ section("the friends-of-friends function cannot be turned into a directory");
     (schema.match(/create policy "Users can read own friendships"[\s\S]{0,400}?;/g) || []).some((text) => /using \(auth\.uid\(\) = requester_id or auth\.uid\(\) = addressee_id\)/.test(text)), true);
 }
 
+section("the group invite functions cannot be turned into a directory");
+{
+  const fs = await import("node:fs");
+  const files = [
+    "../supabase-schema.sql",
+    "../supabase-migration-2026-10-group-invites.sql"
+  ];
+  const functions = ["get_group_invite_preview", "join_group_by_invite"];
+
+  for (const file of files) {
+    const sql = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    const name = file.split("/").pop();
+
+    check(`${name}: the invite code column exists`, /invite_code text not null/.test(sql) || /add column if not exists invite_code text/.test(sql), true);
+    check(`${name}: invite codes are random`, /encode\(gen_random_bytes/.test(sql), true);
+
+    for (const fn of functions) {
+      const start = sql.indexOf(`create or replace function public.${fn}`);
+      const end = sql.indexOf("$$;", start);
+      check(`${name}: ${fn} exists`, start > -1, true);
+      if (start < 0) continue;
+      const body = sql.slice(start, end);
+
+      // Same reasoning as find_friends_of_friends: a security definer function is
+      // one copy-paste away from handing out the whole groups table.
+      check(`${name}: ${fn} runs as the owner`, /security definer/.test(body), true);
+      check(`${name}: ${fn} pins search_path`, /set search_path = public/.test(body), true);
+      check(`${name}: ${fn} derives the caller from auth.uid()`, body.includes("v_uid uuid := auth.uid()"), true);
+      check(`${name}: ${fn} accepts no user id argument`, new RegExp(`${fn}\\(p_user`).test(body), false);
+      check(`${name}: ${fn} has no unfiltered select star`, /select \*/.test(body.replace(/select \* into/, "")), false);
+      check(`${name}: ${fn} is revoked from public and anon`, new RegExp(`revoke all on function public\\.${fn}\\(text\\) from public, anon;`).test(sql), true);
+      check(`${name}: ${fn} is granted to authenticated`, new RegExp(`grant execute on function public\\.${fn}\\(text\\) to authenticated;`).test(sql), true);
+    }
+  }
+
+  // The membership policy must stay the only way in without a code: no new
+  // self-join path may appear on group_members.
+  const schema = fs.readFileSync(new URL("../supabase-schema.sql", import.meta.url), "utf8");
+  const insertStart = schema.indexOf('create policy "Owners and admins can add members"');
+  const insertEnd = schema.indexOf("create policy", insertStart + 10);
+  const insertPolicy = schema.slice(insertStart, insertEnd);
+  check("the members insert policy still requires an owner or admin", /is_group_owner_or_admin/.test(insertPolicy), true);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

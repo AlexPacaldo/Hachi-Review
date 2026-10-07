@@ -23,11 +23,13 @@ import { useAuth } from "../contexts/AuthContext.jsx";
 import { validateReviewer } from "../data/reviewerRegistry.js";
 import {
   addGroupMember,
+  buildGroupInviteUrl,
   deleteGroup,
   leaveGroup,
   listGroupMembers,
   listGroupReviewers,
   listMyGroups,
+  regenerateGroupInviteCode,
   removeGroupMember,
   setGroupMemberRole,
   shareReviewerWithGroups,
@@ -102,6 +104,8 @@ export default function GroupDetail() {
   const [pendingUnshare, setPendingUnshare] = useState(null);
   const [pendingLeave, setPendingLeave] = useState(false);
   const [pendingDeleteGroup, setPendingDeleteGroup] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState(false);
 
   const menuRef = useRef(null);
   const popoverRef = useRef(null);
@@ -505,6 +509,39 @@ export default function GroupDetail() {
     });
   }
 
+  const inviteUrl = buildGroupInviteUrl(group?.invite_code);
+
+  async function copyInviteLink() {
+    if (!inviteUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setInviteCopied(true);
+      window.setTimeout(() => setInviteCopied(false), 1800);
+    } catch {
+      setMessage({ type: "error", text: "Could not copy the link. Select it and copy it by hand." });
+    }
+  }
+
+  async function rotateInviteLink() {
+    if (inviteBusy) return;
+
+    setInviteBusy(true);
+    setMessage(null);
+
+    const { error } = await regenerateGroupInviteCode(groupId);
+
+    setInviteBusy(false);
+
+    if (error) {
+      setMessage({ type: "error", text: error.message || "Could not make a new invite link." });
+      return;
+    }
+
+    setMessage({ type: "success", text: "New invite link created. The old one no longer works." });
+    await loadGroup(true);
+  }
+
   if (!configured) {
     return (
       <div className="page narrow">
@@ -658,6 +695,29 @@ export default function GroupDetail() {
                   );
                 })}
               </div>
+
+              {inviteUrl ? (
+                <div className="group-menu-section">
+                  <span className="group-menu-label">Invite link</span>
+                  <div className="group-menu-search">
+                    <input value={inviteUrl} readOnly aria-label="Group invite link" onFocus={(event) => event.target.select()} />
+                    <button className="button subtle" type="button" onClick={copyInviteLink}>
+                      {inviteCopied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  {canManage ? (
+                    <button
+                      className="button subtle small"
+                      type="button"
+                      onClick={rotateInviteLink}
+                      disabled={inviteBusy}
+                    >
+                      {inviteBusy ? <Loader2 className="spinner" size={14} aria-hidden="true" /> : null}
+                      New link
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
 
               {canManage ? (
                 <div className="group-menu-section">

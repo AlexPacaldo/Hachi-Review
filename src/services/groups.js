@@ -499,6 +499,78 @@ export async function unshareReviewerFromGroup(userId, reviewerId, groupId) {
   });
 }
 
+// Converts the browser's random bytes into the same hex shape the database
+// default produces, so a regenerated code is indistinguishable from a fresh row.
+function generateInviteCode() {
+  const bytes = new Uint8Array(9);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function buildGroupInviteUrl(inviteCode) {
+  if (!inviteCode || typeof inviteCode !== "string") return null;
+  const origin = typeof window !== "undefined" && window.location?.origin
+    ? window.location.origin
+    : "https://hachi-review.site";
+  return `${origin}/groups/join/${encodeURIComponent(inviteCode)}`;
+}
+
+export async function getGroupInvitePreview(inviteCode) {
+  if (!supabase) return NOT_CONFIGURED();
+  if (!inviteCode) return { data: null, error: new Error("This invite link is missing its code.") };
+
+  const { data, error } = await supabase.rpc("get_group_invite_preview", { p_code: inviteCode });
+
+  if (error) {
+    if (/function .* does not exist|schema cache/i.test(error.message || "")) {
+      return { data: null, error: new Error("Invite links need a database update. Run supabase-migration-2026-10-group-invites.sql in your Supabase SQL editor.") };
+    }
+    return { data: null, error };
+  }
+
+  return { data: Array.isArray(data) ? data[0] || null : data || null, error: null };
+}
+
+export async function joinGroupByInvite(inviteCode) {
+  if (!supabase) return NOT_CONFIGURED();
+  if (!inviteCode) return { data: null, error: new Error("This invite link is missing its code.") };
+
+  const { data, error } = await supabase.rpc("join_group_by_invite", { p_code: inviteCode });
+
+  if (error) {
+    if (/function .* does not exist|schema cache/i.test(error.message || "")) {
+      return { data: null, error: new Error("Invite links need a database update. Run supabase-migration-2026-10-group-invites.sql in your Supabase SQL editor.") };
+    }
+    return { data: null, error };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!error) announceSocialChange();
+  return { data: row || null, error: null };
+}
+
+// Rotates the invite code, invalidating every outstanding link. Only owners and
+// admins can save because the study_groups update policy gates the write.
+export async function regenerateGroupInviteCode(groupId) {
+  if (!supabase) return NOT_CONFIGURED();
+  if (!groupId) return { error: new Error("This group no longer exists.") };
+
+  const { data, error } = await supabase
+    .from(GROUPS_TABLE)
+    .update({ invite_code: generateInviteCode(), updated_at: new Date().toISOString() })
+    .eq("id", groupId)
+    .select()
+    .single();
+
+  if (!error) announceSocialChange();
+
+  if (error?.code === "PGRST116") {
+    return { data: null, error: new Error("Only the group owner or an admin can change the invite link.") };
+  }
+
+  return { data, error: friendlyGroupsError(error) };
+}
+
 // Counts the reviewers shared into each of the given groups, one count-only
 // read per group, so no reviewer rows are transferred to count them here.
 export async function listGroupReviewerCounts(groupIds) {

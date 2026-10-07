@@ -7,6 +7,7 @@ create table if not exists public.study_groups (
   name text not null check (char_length(trim(name)) between 1 and 60),
   description text check (char_length(coalesce(description, '')) <= 240),
   owner_id uuid not null references auth.users(id) on delete cascade,
+  invite_code text not null default encode(gen_random_bytes(9), 'hex'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -26,6 +27,15 @@ create table if not exists public.group_members (
 -- notification can name them instead of saying "someone".
 alter table public.group_members add column if not exists added_by uuid references auth.users(id) on delete set null;
 
+-- Invite links arrive after the table did, so older databases pick the column
+-- up here rather than in the create statement above.
+alter table public.study_groups add column if not exists invite_code text;
+update public.study_groups
+set invite_code = encode(gen_random_bytes(9), 'hex')
+where invite_code is null;
+alter table public.study_groups alter column invite_code set not null;
+alter table public.study_groups alter column invite_code set default encode(gen_random_bytes(9), 'hex');
+
 alter table public.study_groups enable row level security;
 
 alter table public.group_members enable row level security;
@@ -41,7 +51,10 @@ create index if not exists group_members_group_idx
 on public.group_members(group_id, created_at);
 
 create index if not exists group_members_user_idx
-on public.group_members(user_id, created_at desc);
+  on public.group_members(user_id, created_at desc);
+
+create unique index if not exists study_groups_invite_code_idx
+  on public.study_groups(invite_code);
 
 -- Row level security helpers.
 --
@@ -321,6 +334,87 @@ $$;
 revoke all on function public.find_friends_of_friends(integer) from public, anon;
 
 grant execute on function public.find_friends_of_friends(integer) to authenticated;
+
+-- Group invite links. The joiner is auth.uid() rather than a parameter, the
+-- search_path is pinned, the returned columns are named one by one, and the
+-- preview leaks nothing about invalid codes beyond a missing row. invite_code
+-- is a bearer secret: 72 bits of hex, rotatable by writing a new value to the
+-- column (only owners and admins can update the row).
+create or replace function public.get_group_invite_preview(p_code text)
+returns table (group_id uuid, group_name text, description text, member_count bigint)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_code text := lower(trim(coalesce(p_code, '')));
+begin
+  if v_uid is null or v_code = '' then
+    return;
+  end if;
+
+  return query
+    select g.id, g.name, g.description,
+           (select count(*)::bigint from public.group_members gm where gm.group_id = g.id)
+    from public.study_groups g
+    where g.invite_code = v_code
+    limit 1;
+end;
+$$;
+
+create or replace function public.join_group_by_invite(p_code text)
+returns table (group_id uuid, group_name text, already_member boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_code text := lower(trim(coalesce(p_code, '')));
+  v_group public.study_groups%rowtype;
+begin
+  if v_uid is null then
+    raise exception 'Sign in to join a group.';
+  end if;
+
+  select * into v_group
+  from public.study_groups
+  where study_groups.invite_code = v_code
+  limit 1;
+
+  if v_group.id is null then
+    raise exception 'That invite link is not valid.';
+  end if;
+
+  if exists (
+    select 1
+    from public.group_members gm
+    where gm.group_id = v_group.id
+      and gm.user_id = v_uid
+  ) then
+    return query select v_group.id, v_group.name, true;
+    return;
+  end if;
+
+  begin
+    insert into public.group_members (group_id, user_id, role, added_by)
+    values (v_group.id, v_uid, 'member', v_uid);
+  exception when unique_violation then
+    return query select v_group.id, v_group.name, true;
+    return;
+  end;
+
+  return query select v_group.id, v_group.name, false;
+end;
+$$;
+
+revoke all on function public.get_group_invite_preview(text) from public, anon;
+revoke all on function public.join_group_by_invite(text) from public, anon;
+
+grant execute on function public.get_group_invite_preview(text) to authenticated;
+grant execute on function public.join_group_by_invite(text) to authenticated;
 
 -- A group is readable by its members. Membership is checked through
 -- public.is_group_member so non-members can never discover a group.

@@ -21,6 +21,7 @@ import AdminStats from "./pages/AdminStats.jsx";
 import Friends from "./pages/Friends.jsx";
 import Groups from "./pages/Groups.jsx";
 import GroupDetail from "./pages/GroupDetail.jsx";
+import GroupJoin from "./pages/GroupJoin.jsx";
 import About from "./pages/About.jsx";
 import Contact from "./pages/Contact.jsx";
 import Privacy from "./pages/Privacy.jsx";
@@ -173,6 +174,7 @@ function AppShell() {
             <Route path="/friends" element={<Friends />} />
             <Route path="/groups" element={<Groups />} />
             <Route path="/groups/:groupId" element={<GroupDetail />} />
+            <Route path="/groups/join/:inviteCode" element={<GroupJoin />} />
             <Route path="/generator" element={<Generator />} />
             <Route path="/account" element={<Account />} />
             <Route path="/admin/stats" element={<AdminStats />} />
