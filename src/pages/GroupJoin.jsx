@@ -112,28 +112,26 @@ export default function GroupJoin() {
 
   return (
     <div className="page narrow">
-      <section className="section-heading">
-        <div>
-          <p className="eyebrow">Group invite</p>
-          <h1>{preview.group_name}</h1>
-          <p className="muted">
-            <UsersRound size={14} aria-hidden="true" />{" "}
-            {preview.member_count} member{Number(preview.member_count) === 1 ? "" : "s"}
-          </p>
+      <section className="modal group-invite-card" aria-label="Group invite">
+        <p className="eyebrow">Group invite</p>
+        <h1>{preview.group_name}</h1>
+        <p className="muted">
+          <UsersRound size={14} aria-hidden="true" />{" "}
+          {preview.member_count} member{Number(preview.member_count) === 1 ? "" : "s"}
+        </p>
+
+        {preview.description ? <p className="group-detail-description">{preview.description}</p> : null}
+
+        {error ? <p className="sync-message error">{error}</p> : null}
+
+        <div className="modal-actions">
+          <Link className="button subtle" to="/groups">Not now</Link>
+          <button className="button primary" type="button" onClick={join} disabled={joining}>
+            {joining ? <Loader2 className="spinner" size={16} aria-hidden="true" /> : null}
+            {joining ? "Joining..." : "Join group"}
+          </button>
         </div>
       </section>
-
-      {preview.description ? <p className="group-detail-description">{preview.description}</p> : null}
-
-      {error ? <p className="sync-message error">{error}</p> : null}
-
-      <div className="modal-actions">
-        <Link className="button subtle" to="/groups">Not now</Link>
-        <button className="button primary" type="button" onClick={join} disabled={joining}>
-          {joining ? <Loader2 className="spinner" size={16} aria-hidden="true" /> : null}
-          {joining ? "Joining..." : "Join group"}
-        </button>
-      </div>
     </div>
   );
 }
