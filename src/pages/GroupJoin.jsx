@@ -5,6 +5,8 @@ import EmptyState from "../components/EmptyState.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { getGroupInvitePreview, joinGroupByInvite } from "../services/groups.js";
 
+const POST_AUTH_PATH_KEY = "hachi:post-auth-path";
+
 export default function GroupJoin() {
   const { inviteCode } = useParams();
   const navigate = useNavigate();
@@ -13,6 +15,20 @@ export default function GroupJoin() {
   const [error, setError] = useState(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [joining, setJoining] = useState(false);
+
+  useEffect(() => {
+    if (!configured || !inviteCode) return undefined;
+
+    // Signed out: remember this invite so sign-in can bring the user back to
+    // it. Signed in (already here, or just back from OAuth): drop the marker.
+    if (!user) {
+      sessionStorage.setItem(POST_AUTH_PATH_KEY, `/groups/join/${inviteCode}`);
+      return undefined;
+    }
+
+    sessionStorage.removeItem(POST_AUTH_PATH_KEY);
+    return undefined;
+  }, [configured, user?.id, inviteCode]);
 
   useEffect(() => {
     if (!configured || !user || !inviteCode) return undefined;
@@ -84,7 +100,7 @@ export default function GroupJoin() {
       <div className="page narrow">
         <EmptyState
           title="Sign in to join this group"
-          message="Groups need your account so the people you study with can see what you share. After signing in, open this invite link again."
+          message="Groups need your account so the people you study with can see what you share. Sign in and you will be brought right back to this invite."
           action={<Link className="button primary" to="/account">Go to Account</Link>}
         />
       </div>

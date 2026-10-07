@@ -59,15 +59,19 @@ export default function Account() {
       return;
     }
 
+    const returnPath = sessionStorage.getItem("hachi:post-auth-path");
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: authRedirectUrl
+        redirectTo: returnPath ? `${authRedirectUrl.replace(/\/$/, "")}${returnPath}` : authRedirectUrl
       }
     });
 
     if (error) {
       setMessage({ type: "error", text: error.message });
+    } else {
+      sessionStorage.removeItem("hachi:post-auth-path");
     }
   }
 
