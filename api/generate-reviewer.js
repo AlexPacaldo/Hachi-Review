@@ -153,6 +153,37 @@ function isImageMimeType(mimeType) {
   return String(mimeType || "").startsWith("image/");
 }
 
+// Only reached after every provider that can read PDFs has failed: pulls the
+// text layer out so a non-vision provider can take the request. A scanned PDF
+// yields nothing and the caller moves on to the original error.
+async function extractPdfTextFromParts(pdfParts) {
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const texts = [];
+
+    for (const part of pdfParts || []) {
+      const buffer = Buffer.from(String(part.inline_data?.data || ""), "base64");
+      if (!buffer.length) continue;
+
+      const doc = await pdfjs
+        .getDocument({ data: new Uint8Array(buffer), useSystemFonts: true, isEvalSupported: false })
+        .promise;
+      const pageCount = Math.min(doc.numPages, 60);
+
+      for (let pageNum = 1; pageNum <= pageCount; pageNum += 1) {
+        const page = await doc.getPage(pageNum);
+        const content = await page.getTextContent();
+        texts.push(content.items.map((item) => item.str || "").join(" "));
+      }
+    }
+
+    return texts.join("\n").replace(/[ \t]+/g, " ").trim();
+  } catch (error) {
+    console.warn(`PDF text extraction failed: ${error?.message || "unknown error"}`);
+    return "";
+  }
+}
+
 const DIFFICULTY_INSTRUCTIONS = {
   easy: "Favor direct recall, simple definitions, and straightforward concept checks.",
   mixed: "Use a balanced mix of recall, concept, scenario, and application questions.",
@@ -1700,80 +1731,126 @@ async function requestReviewerWithFallback({ parts, hasReadableMaterial, request
     throw error;
   }
 
-  const attempts = [];
-  const attachmentKind = describeAttachedFiles(getAttachedFileMimeTypes(parts));
-  const dependsOnFile = hasFileData && !hasReadableMaterial;
-
-  for (const [index, provider] of providers.entries()) {
-    // The single choke point for every upstream call. Falling through to the next
-    // provider costs a unit too, so a broken chain cannot quietly multiply the bill.
-    if (!budget?.take()) {
-      const error = new Error(
-        attempts.length
-          ? "The AI providers are all busy after several attempts. Try again in a moment."
-          : "This request used up its AI call allowance. Try again in a few minutes."
-      );
-      error.statusCode = 429;
-      error.isClientSafe = true;
-      error.providerAttempts = attempts;
-      throw error;
-    }
-
-    const timeoutMs = getProviderTimeoutMs(provider);
-
-    try {
-      const apiKey = process.env[provider.apiKeyEnv];
-      const model = getProviderModel(provider);
-      const reviewer = provider.kind === "gemini"
-        ? await requestReviewerFromGemini({ apiKey, model, parts, timeoutMs, schema })
-        : await requestReviewerFromOpenAi({ provider, apiKey, model, parts, hasReadableMaterial, timeoutMs });
-
-      if (attempts.length) {
-        console.warn(`[${requestId}] Recovered with ${provider.name} after ${attempts.length} earlier failure(s).`);
-      }
-      return { reviewer };
-    } catch (error) {
-      attempts.push({ provider: provider.name, error });
-      console.warn(`[${requestId}] ${provider.name} failed (${error?.statusCode || "unknown"}): ${error?.message || "Unknown error"}`);
-
-      if (error?.isUnreadableFile) {
-        // Only give up once no remaining provider is able to read the attachment. An
-        // image counts even when there is pasted text, because the alternative is
-        // answering from the notes while the file the person uploaded goes unread.
-        const rescuable = providers.slice(index + 1).some((next) => next.supportsVision)
-          && (dependsOnFile || hasImageAttachment);
-
-        if (!rescuable) {
-          const tooLarge = /expected pattern|function_payload_too_large|payload too large|request entity too large/i
-            .test(error.message || "");
-
-          // Wording is written here rather than passed up from the provider, because
-          // a provider message names the provider and the model. The size case still
-          // gets its own hint so the interface can suggest pasting text instead.
-          const finalError = new Error(
-            tooLarge
-              ? `That ${attachmentKind} is too large to send to the AI after browser encoding. Compress or split the file, or paste the study material as text to keep going.`
-              : dependsOnFile
-                ? `The AI providers that can read this ${attachmentKind} are unavailable, and the file has no readable text to fall back on. Paste the study material as text to keep going.`
-                : GENERIC_AI_FAILURE_MESSAGE
-          );
-          finalError.statusCode = tooLarge ? 413 : 422;
-          finalError.isClientSafe = true;
-          finalError.providerAttempts = attempts;
-          throw finalError;
-        }
-      }
-
-      if (error?.isNonRetryable) {
+  async function runProviderChain(partsToUse, readable) {
+    for (const [index, provider] of providersFor(readable).entries()) {
+      // The single choke point for every upstream call. Falling through to the next
+      // provider costs a unit too, so a broken chain cannot quietly multiply the bill.
+      if (!budget?.take()) {
+        const error = new Error(
+          attempts.length
+            ? "The AI providers are all busy after several attempts. Try again in a moment."
+            : "This request used up its AI call allowance. Try again in a few minutes."
+        );
+        error.statusCode = 429;
+        error.isClientSafe = true;
         error.providerAttempts = attempts;
         throw error;
+      }
+
+      const timeoutMs = getProviderTimeoutMs(provider);
+
+      try {
+        const apiKey = process.env[provider.apiKeyEnv];
+        const model = getProviderModel(provider);
+        const reviewer = provider.kind === "gemini"
+          ? await requestReviewerFromGemini({ apiKey, model, parts: partsToUse, timeoutMs, schema })
+          : await requestReviewerFromOpenAi({ provider, apiKey, model, parts: partsToUse, hasReadableMaterial: readable, timeoutMs });
+
+        if (attempts.length) {
+          console.warn(`[${requestId}] Recovered with ${provider.name} after ${attempts.length} earlier failure(s).`);
+        }
+        return { reviewer };
+      } catch (error) {
+        attempts.push({ provider: provider.name, error });
+        console.warn(`[${requestId}] ${provider.name} failed (${error?.statusCode || "unknown"}): ${error?.message || "Unknown error"}`);
+
+        if (error?.isUnreadableFile) {
+          // Only give up once no remaining provider is able to read the attachment. An
+          // image counts even when there is pasted text, because the alternative is
+          // answering from the notes while the file the person uploaded goes unread.
+          const rescuable = providersFor(readable).slice(index + 1).some((next) => next.supportsVision)
+            && (dependsOnFile || hasImageAttachment);
+
+          if (!rescuable) {
+            const tooLarge = /expected pattern|function_payload_too_large|payload too large|request entity too large/i
+              .test(error.message || "");
+
+            // Wording is written here rather than passed up from the provider, because
+            // a provider message names the provider and the model. The size case still
+            // gets its own hint so the interface can suggest pasting text instead.
+            const finalError = new Error(
+              tooLarge
+                ? `That ${attachmentKind} is too large to send to the AI after browser encoding. Compress or split the file, or paste the study material as text to keep going.`
+                : dependsOnFile
+                  ? `The AI providers that can read this ${attachmentKind} are unavailable, and the file has no readable text to fall back on. Paste the study material as text to keep going.`
+                  : GENERIC_AI_FAILURE_MESSAGE
+            );
+            finalError.statusCode = tooLarge ? 413 : 422;
+            finalError.isClientSafe = true;
+            finalError.providerAttempts = attempts;
+            throw finalError;
+          }
+        }
+
+        if (error?.isNonRetryable) {
+          error.providerAttempts = attempts;
+          throw error;
+        }
+      }
+    }
+
+    throw new Error("__chain_exhausted__");
+  }
+
+  const providersFor = (readable) => getConfiguredProviders({ hasFileData, hasReadableMaterial: readable, requiresVision });
+
+  const attachmentKind = describeAttachedFiles(getAttachedFileMimeTypes(parts));
+  const dependsOnFile = hasFileData && !hasReadableMaterial;
+  const attempts = [];
+
+  let chainError = null;
+
+  try {
+    return await runProviderChain(parts, hasReadableMaterial);
+  } catch (error) {
+    // A PDFs-only request is worth one more shot after any provider-chain
+    // failure: extracting the text layer makes every non-vision provider
+    // reachable. A hard size/config error is not that case, so it propagates.
+    const recoverable = error?.message === "__chain_exhausted__"
+      || (error?.isClientSafe && error?.statusCode === 422 && dependsOnFile);
+
+    if (!recoverable) throw error;
+    chainError = error;
+  }
+
+  // When only PDFs blocked a provider from reading, the text layer is one
+  // extraction away. Only tried after the vision/PDF chain actually fails, so
+  // extraction never masks a working Gemini.
+  const pdfInlineParts = (parts || []).filter((part) => part?.inline_data?.mime_type === "application/pdf");
+
+  if (dependsOnFile && !hasImageAttachment && pdfInlineParts.length) {
+    const extracted = await extractPdfTextFromParts(pdfInlineParts);
+
+    if (extracted.length >= 100) {
+      const textParts = parts
+        .filter((part) => part?.text)
+        .concat([{ text: `Extracted text from the attached PDF:\n${extracted.slice(0, MAX_SOURCE_LENGTH)}` }]);
+
+      try {
+        const result = await runProviderChain(textParts, true);
+        console.warn(`[${requestId}] Recovered from PDF text extraction after the provider chain failed.`);
+        return result;
+      } catch (retryError) {
+        if (retryError?.message !== "__chain_exhausted__") throw retryError;
+        chainError = retryError;
       }
     }
   }
 
   // Report the primary provider's failure, which is the most representative, and
   // carry the full attempt list so the server log shows where the chain stopped.
-  const primaryError = attempts[0]?.error;
+  if (chainError?.message === "__chain_exhausted__") chainError = null;
+  const primaryError = attempts[0]?.error || chainError;
   const error = primaryError || new Error("Every AI provider failed to generate a reviewer.");
   error.providerAttempts = attempts;
   throw error;
