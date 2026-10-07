@@ -6996,6 +6996,17 @@ strong {
 }
 
 @media (max-width: 460px) {
+  .generator-mode-tabs {
+    flex-wrap: nowrap;
+  }
+
+  .generator-mode-tab {
+    padding: 0 10px;
+    gap: 6px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
   .home-hero {
     padding: 20px;
     border-radius: var(--radius-xl);
