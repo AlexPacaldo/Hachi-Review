@@ -2561,6 +2561,12 @@ legend {
   cursor: pointer;
 }
 
+.ai-upload-zone.drag-active {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+  border-color: var(--accent);
+  border-style: solid;
+}
+
 .prompt-box {
   display: grid;
   gap: 8px;

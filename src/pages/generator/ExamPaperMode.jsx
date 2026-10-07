@@ -269,7 +269,7 @@ export default function ExamPaperMode({
         <SourceFileField
           label="Exam paper"
           uploadTitle="Upload the exam paper"
-          hint="PDF, image, or TXT, MD, CSV, JSON. Photograph the pages, or attach the PDF. Up to six files."
+          hint="PDF, image, or TXT, MD, CSV, JSON — click to browse or drag files here. Photograph the pages, or attach the PDF. Up to six files."
           emptyHint="A paper that runs to several pages can be attached as several photos, in page order. Include the answer key pages if you chose to use the paper's own answers."
           notesLabel="Paper text"
           notesPlaceholder="Optional: paste the paper's questions here, or use this instead of uploading a file."

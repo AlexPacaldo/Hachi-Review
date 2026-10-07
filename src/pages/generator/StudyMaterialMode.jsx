@@ -387,7 +387,7 @@ export default function StudyMaterialMode({
 
         <SourceFileField
           label="Study material"
-          hint="PDF, image, or TXT, MD, CSV, JSON. A photo of your notes works, and images are resized before sending."
+          hint="PDF, image, or TXT, MD, CSV, JSON — click to browse or drag files here. A photo of your notes works, and images are resized before sending."
           emptyHint="Attach up to six files. Images are read as pictures, PDFs as documents, and text files fill the notes box instead."
           notesLabel="Extra Notes"
           notesPlaceholder="Optional: paste notes here, or use this instead of uploading a file."

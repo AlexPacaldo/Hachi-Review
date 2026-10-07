@@ -1,4 +1,4 @@
-import { useId, useRef } from "react";
+import { useId, useRef, useState } from "react";
 import { FileText, ImageIcon, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
 import {
   MAX_AI_ATTACHMENT_BYTES,
@@ -39,11 +39,20 @@ export default function SourceFileField({
 }) {
   const inputId = useId();
   const inputRef = useRef(null);
+  const [dragActive, setDragActive] = useState(false);
+  const dragDepth = useRef(0);
 
   const handleChange = (event) => {
     addFiles(event.target.files);
     // Reset so choosing the same file twice in a row still fires a change event.
     event.target.value = "";
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragActive(false);
+    if (event.dataTransfer?.files?.length) addFiles(event.dataTransfer.files);
   };
 
   const budgetUsed = Math.round((usedBytes / MAX_AI_ATTACHMENT_BYTES) * 100);
@@ -52,7 +61,21 @@ export default function SourceFileField({
     <>
       <div className="source-field">
         <span className="source-field-label" id={`${inputId}-label`}>{label}</span>
-        <label className="upload-zone ai-upload-zone" htmlFor={inputId}>
+        <label
+          className={`upload-zone ai-upload-zone${dragActive ? " drag-active" : ""}`}
+          htmlFor={inputId}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            dragDepth.current += 1;
+            setDragActive(true);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => {
+            dragDepth.current = Math.max(0, dragDepth.current - 1);
+            if (dragDepth.current === 0) setDragActive(false);
+          }}
+          onDrop={handleDrop}
+        >
           <input
             id={inputId}
             ref={inputRef}
@@ -62,8 +85,8 @@ export default function SourceFileField({
             onChange={handleChange}
           />
           {isReading ? <Loader2 className="spinner" size={30} aria-hidden="true" /> : <Upload size={30} aria-hidden="true" />}
-          <strong>{isReading ? "Reading files..." : uploadTitle}</strong>
-          <span>{hint}</span>
+          <strong>{isReading ? "Reading files..." : dragActive ? "Drop files here" : uploadTitle}</strong>
+          <span>{dragActive ? "Release to attach them." : hint}</span>
         </label>
         {emptyHint ? <p className="generation-hint">{emptyHint}</p> : null}
 
