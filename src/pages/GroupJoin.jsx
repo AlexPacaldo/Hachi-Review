@@ -15,10 +15,7 @@ export default function GroupJoin() {
   const [joining, setJoining] = useState(false);
 
   useEffect(() => {
-    if (!configured || !user || !inviteCode) {
-      setLoadingPreview(false);
-      return undefined;
-    }
+    if (!configured || !user || !inviteCode) return undefined;
 
     let cancelled = false;
     setLoadingPreview(true);
@@ -94,7 +91,10 @@ export default function GroupJoin() {
     );
   }
 
-  if (loadingPreview) {
+  // The preview is only null before the fetch starts; without this guard a
+  // render between the session resolving and the effect firing would read
+  // properties off null.
+  if (loadingPreview || (!preview && !error)) {
     return <div className="page narrow"><p className="muted">Loading invite...</p></div>;
   }
 
