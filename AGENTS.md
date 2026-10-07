@@ -43,7 +43,8 @@ Google AdSense and a Monetag popunder are loaded. The Monetag tag is a plain
 external script tag (`https://nap5k.com/tag.min.js`, zone 11915305) rather than the
 vendor's inline bootstrap, because the CSP allows no inline scripts and an inline
 block fails silently in the browser while "working" locally. Its hosts -
-`https://nap5k.com`, `https://my.rtmark.net`, and `https://*.rtmark.net` - are granted
+`https://nap5k.com`, `https://rtmark.net`, `https://my.rtmark.net`,
+`https://*.rtmark.net`, `https://jhnwr.com`, and `https://5gvci.com` - are granted
 in `script-src`, `connect-src`, and `img-src`, since the tag executes remote code,
 sends beacons, and loads pixels from those origins. Do not treat a
 loaded-but-blocked tag as working: a real browser showing its beacons returning 200 is
