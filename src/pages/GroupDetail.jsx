@@ -9,6 +9,7 @@ import {
   MoreVertical,
   Search,
   Pencil,
+  Share2,
   Trash2,
   UserMinus,
   UserPlus,
@@ -106,6 +107,9 @@ export default function GroupDetail() {
   const [pendingDeleteGroup, setPendingDeleteGroup] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareCandidates, setShareCandidates] = useState([]);
+  const [sharingId, setSharingId] = useState(null);
 
   const menuRef = useRef(null);
   const popoverRef = useRef(null);
@@ -509,6 +513,40 @@ export default function GroupDetail() {
     });
   }
 
+  function openShareWithGroup() {
+    const candidates = getCloudReviewerCache()
+      .filter((item) => item.ownerId === user.id)
+      .filter((item) => !(item.sharedGroups || []).map(String).includes(String(groupId)))
+      .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+
+    setShareCandidates(candidates);
+    setShareOpen(true);
+  }
+
+  async function shareWithGroup(reviewer) {
+    if (sharingId) return;
+
+    setSharingId(reviewer.reviewerId);
+
+    const { error } = await shareReviewerWithGroups(
+      user.id,
+      reviewer.reviewerId,
+      [...(reviewer.sharedGroups || []), groupId],
+      { friendsVisible: isFriendVisible(reviewer.visibility) }
+    );
+
+    setSharingId(null);
+
+    if (error) {
+      setMessage({ type: "error", text: error.message || "Could not share that reviewer." });
+      return;
+    }
+
+    setShareCandidates((current) => current.filter((item) => item.reviewerId !== reviewer.reviewerId));
+    setMessage({ type: "success", text: `Shared "${reviewer.title || "Untitled reviewer"}" with ${group.name}.` });
+    await loadGroup(true);
+  }
+
   const inviteUrl = buildGroupInviteUrl(group?.invite_code);
 
   async function copyInviteLink() {
@@ -822,6 +860,10 @@ export default function GroupDetail() {
           <h2>Choose a Reviewer</h2>
           <p className="muted">Everyone in this group can open these. Save one offline to study without a connection.</p>
         </div>
+        <button className="button subtle" type="button" onClick={openShareWithGroup}>
+          <Share2 size={15} aria-hidden="true" />
+          Share a reviewer
+        </button>
       </section>
 
       {cards.length ? (
@@ -942,6 +984,61 @@ export default function GroupDetail() {
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {shareOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setShareOpen(false)}>
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-reviewer-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <h2 id="share-reviewer-title">Share a reviewer</h2>
+                <p className="muted">Pick one from your library to share with {group.name}.</p>
+              </div>
+              <button
+                className="icon-button small"
+                type="button"
+                onClick={() => setShareOpen(false)}
+                aria-label="Close"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            {shareCandidates.length ? (
+              <div className="group-menu-list">
+                {shareCandidates.map((reviewer) => (
+                  <div className="group-menu-row" key={reviewer.reviewerId}>
+                    <span className="group-menu-name">
+                      <strong>{reviewer.title || "Untitled reviewer"}</strong>
+                      <small>{reviewer.subject || "No subject"}</small>
+                    </span>
+                    <button
+                      className="button subtle small"
+                      type="button"
+                      onClick={() => shareWithGroup(reviewer)}
+                      disabled={sharingId === reviewer.reviewerId}
+                    >
+                      {sharingId === reviewer.reviewerId ? <Loader2 className="spinner" size={14} aria-hidden="true" /> : <Share2 size={14} aria-hidden="true" />}
+                      Share
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="group-menu-note">
+                {getCloudReviewerCache().some((item) => item.ownerId === user.id)
+                  ? "Every reviewer you own is already shared with this group."
+                  : "No cloud reviewers yet. Generate or upload one first."}
+              </p>
+            )}
           </section>
         </div>
       ) : null}
