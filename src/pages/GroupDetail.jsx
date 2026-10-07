@@ -129,6 +129,7 @@ export default function GroupDetail() {
   );
 
   const myRole = members.find((member) => member.user_id === user?.id)?.role || null;
+  const loadingRef = useRef(false);
   const canManage = myRole === "owner" || myRole === "admin";
 
   const memberIds = useMemo(() => new Set(members.map((member) => member.user_id)), [members]);
@@ -151,8 +152,14 @@ export default function GroupDetail() {
   const loadGroup = useCallback(async (quiet = false) => {
     if (!user || !groupId) return;
 
+    // A mutation fires SOCIAL_DATA_CHANGED_EVENT and also reloads directly, so
+    // without this guard two near-identical full fetches race each other.
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
     if (!quiet) setLoadingData(true);
 
+    try {
     const [groupsResult, membersResult, reviewersResult] = await Promise.all([
       listMyGroups(user.id),
       listGroupMembers(groupId),
@@ -220,6 +227,9 @@ export default function GroupDetail() {
 
     if (reviewersResult.error) {
       setMessage({ type: "error", text: reviewersResult.error.message || "Could not load group reviewers." });
+    }
+    } finally {
+      loadingRef.current = false;
     }
   }, [user?.id, groupId]);
 
@@ -409,6 +419,10 @@ export default function GroupDetail() {
 
     if (!result.ok) return;
 
+    // Drop the card immediately; the reload below confirms it from the server.
+    setReviewers((current) =>
+      current.filter((row) => (row.reviewer_id || row.reviewerId || row.data?.reviewerId) !== pendingUnshare.reviewer_id)
+    );
     setMessage({ type: "success", text: `Stopped sharing "${title}" with this group.` });
     await loadGroup(true);
   }

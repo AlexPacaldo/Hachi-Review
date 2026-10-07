@@ -617,6 +617,37 @@ export async function shareReviewerWithGroups(userId, reviewerId, groupIds, { fr
     .select()
     .single();
 
+  // The share table is supposed to track shared_groups through a trigger, but
+  // a database that missed that part of the schema leaves it stale forever.
+  // Reconcile by hand so the group list is never wrong about who is shared.
+  if (!error && data?.id) {
+    const { data: shareRows } = await supabase
+      .from(SHARES_TABLE)
+      .select("group_id")
+      .eq("reviewer_id", data.id);
+
+    const desired = new Set(nextGroupIds.map(String));
+    const stale = (shareRows || [])
+      .map((row) => String(row.group_id))
+      .filter((groupId) => !desired.has(groupId));
+    const missing = nextGroupIds.filter((groupId) =>
+      !(shareRows || []).some((row) => String(row.group_id) === String(groupId))
+    );
+
+    if (stale.length) {
+      await supabase.from(SHARES_TABLE).delete().eq("reviewer_id", data.id).in("group_id", stale);
+    }
+    if (missing.length) {
+      await supabase.from(SHARES_TABLE).upsert(
+        missing.map((groupId) => ({ reviewer_id: data.id, group_id: groupId, shared_by: userId })),
+        { onConflict: "reviewer_id,group_id", ignoreDuplicates: true }
+      );
+    }
+  }
+
+  // Announce only after the share table agrees with shared_groups, otherwise
+  // the page's event-driven reload can read a stale share list.
   if (!error) announceSocialChange();
+
   return { data, error };
 }
