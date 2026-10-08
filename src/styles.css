@@ -6115,6 +6115,18 @@ strong {
   filter: drop-shadow(0 10px 14px rgba(39, 52, 42, 0.14));
 }
 
+.reviewer-card-dog-gif {
+  display: none;
+}
+
+.reviewer-card:hover .reviewer-card-dog-gif {
+  display: block;
+}
+
+.reviewer-card:hover .reviewer-card-dog-png {
+  display: none;
+}
+
 .reviewer-card-dog.in-progress {
   right: 0;
   bottom: -8px;

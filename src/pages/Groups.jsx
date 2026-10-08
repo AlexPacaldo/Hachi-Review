@@ -7,6 +7,9 @@ import { useAuth } from "../contexts/AuthContext.jsx";
 import hachiDogCurious from "../assets/hachi-dog-curious.gif";
 import hachiDogFocused from "../assets/hachi-dog-focused.gif";
 import hachiDogProud from "../assets/hachi-dog-proud.gif";
+import hachiDogCuriousStill from "../assets/hachi-dog-curious.png";
+import hachiDogFocusedStill from "../assets/hachi-dog-focused.png";
+import hachiDogProudStill from "../assets/hachi-dog-proud.png";
 import { createGroup, deleteGroup, listGroupReviewerCounts, listMyGroups } from "../services/groups.js";
 import { SOCIAL_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
 
@@ -21,9 +24,9 @@ const ROLE_LABELS = {
 // A group borrows the reviewer card anatomy, so your role picks the same three
 // visual states the homepage uses for progress.
 const ROLE_STATES = {
-  owner: { state: "completed", label: "You own this", dog: hachiDogProud },
-  admin: { state: "in-progress", label: "You help run this", dog: hachiDogFocused },
-  member: { state: "not-started", label: "You are a member", dog: hachiDogCurious }
+  owner: { state: "completed", label: "You own this", dog: hachiDogProud, still: hachiDogProudStill },
+  admin: { state: "in-progress", label: "You help run this", dog: hachiDogFocused, still: hachiDogFocusedStill },
+  member: { state: "not-started", label: "You are a member", dog: hachiDogCurious, still: hachiDogCuriousStill }
 };
 
 function pluralize(count, singular, plural = `${singular}s`) {
@@ -206,7 +209,13 @@ export default function Groups() {
                     <h3>{group.name}</h3>
                     <p>{group.description || "No description yet."}</p>
                     <img
-                      className={`reviewer-card-dog ${roleState.state}`}
+                      className={`reviewer-card-dog reviewer-card-dog-png ${roleState.state}`}
+                      src={roleState.still}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                    <img
+                      className={`reviewer-card-dog reviewer-card-dog-gif ${roleState.state}`}
                       src={roleState.dog}
                       alt=""
                       aria-hidden="true"

@@ -1,32 +1,22 @@
 import { Link } from "react-router-dom";
 import { Layers, Trash2, Users } from "lucide-react";
 import hachiDogCurious from "../assets/hachi-dog-curious.gif";
-import hachiDogExcited from "../assets/hachi-dog-excited.gif";
 import hachiDogFocused from "../assets/hachi-dog-focused.gif";
 import hachiDogProud from "../assets/hachi-dog-proud.gif";
+import hachiDogCuriousStill from "../assets/hachi-dog-curious.png";
+import hachiDogFocusedStill from "../assets/hachi-dog-focused.png";
+import hachiDogProudStill from "../assets/hachi-dog-proud.png";
 
 function getDogState({ progress, hasCompleted }) {
   if (progress) {
-    return {
-      label: "In progress",
-      className: "in-progress",
-      image: hachiDogFocused
-    };
+    return { label: "In progress", className: "in-progress", image: hachiDogFocused, still: hachiDogFocusedStill };
   }
 
   if (hasCompleted) {
-    return {
-      label: "Completed",
-      className: "completed",
-      image: hachiDogProud
-    };
+    return { label: "Completed", className: "completed", image: hachiDogProud, still: hachiDogProudStill };
   }
 
-  return {
-    label: "Not started",
-    className: "not-started",
-    image: hachiDogCurious
-  };
+  return { label: "Not started", className: "not-started", image: hachiDogCurious, still: hachiDogCuriousStill };
 }
 
 export default function ReviewerCard({
@@ -67,7 +57,8 @@ export default function ReviewerCard({
 
           <h3>{reviewer.subject}</h3>
           <p>{reviewer.title}</p>
-          <img className={`reviewer-card-dog ${dogState.className}`} src={dogState.image || hachiDogExcited} alt="" aria-hidden="true" />
+          <img className={`reviewer-card-dog reviewer-card-dog-png ${dogState.className}`} src={dogState.still} alt="" aria-hidden="true" />
+          <img className={`reviewer-card-dog reviewer-card-dog-gif ${dogState.className}`} src={dogState.image} alt="" aria-hidden="true" />
         </div>
 
         <div className="coverage-block">
