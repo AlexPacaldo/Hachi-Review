@@ -393,7 +393,7 @@ export default function Quiz() {
       )}
 
       {isPracticeRevealed ? (
-        <section className={`feedback-panel ${result.isCorrect ? "success" : "danger"}`}>
+        <section className={`feedback-panel ${result.isCorrect ? "success answer-pop" : "danger answer-shake"}`}>
           <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
           <p>Your answer: <strong>{result.selectedText}</strong></p>
           <p>Correct answer: <strong>{result.correctText}</strong></p>
