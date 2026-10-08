@@ -69,16 +69,20 @@ export default function Results() {
           <h2>Practice Breakdown</h2>
           <div className="summary-grid">
             <div>
-              <span>Questions Mastered</span>
-              <strong>{attempt.practiceStats.mastered}</strong>
+              <span>First-Try Accuracy</span>
+              <strong>{attempt.practiceStats.firstTryRate ?? 0}%</strong>
             </div>
             <div>
               <span>Initially Missed</span>
-              <strong>{attempt.practiceStats.initiallyMissed}</strong>
+              <strong>{attempt.practiceStats.initiallyMissed ?? 0}</strong>
+            </div>
+            <div>
+              <span>Fixed During Practice</span>
+              <strong>{attempt.practiceStats.masteredAfterRetry ?? 0}</strong>
             </div>
             <div>
               <span>Total Retries</span>
-              <strong>{attempt.practiceStats.totalRetries}</strong>
+              <strong>{attempt.practiceStats.totalRetries ?? 0}</strong>
             </div>
             {attempt.practiceStats.mostDifficultTopic ? (
               <div>

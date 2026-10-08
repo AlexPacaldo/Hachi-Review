@@ -117,10 +117,19 @@ export function summarizePractice(tracker) {
     .filter((stat) => stat.incorrectCount > 0)
     .sort((left, right) => right.incorrectCount - left.incorrectCount)[0];
 
+  const total = stats.length;
+  const firstTryCorrect = stats.filter((stat) => stat.firstTryCorrect === true).length;
+  const initiallyMissed = stats.filter((stat) => stat.everMissed).length;
+  const masteredAfterRetry = stats.filter((stat) => stat.mastered && stat.everMissed).length;
+
   return {
+    total,
+    firstTryCorrect,
+    firstTryRate: total ? Math.round((firstTryCorrect / total) * 100) : 0,
+    initiallyMissed,
+    masteredAfterRetry,
+    unresolved: stats.filter((stat) => !stat.resolved).length,
     totalRetries: tracker?.totalRetries || 0,
-    initiallyMissed: stats.filter((stat) => stat.everMissed).length,
-    mastered: stats.filter((stat) => stat.mastered).length,
     mostDifficultTopic: difficult ? difficult.topic : null
   };
 }
