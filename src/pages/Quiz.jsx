@@ -347,7 +347,7 @@ export default function Quiz() {
               ? `${practiceResolved} of ${practiceTotal} answered`
               : `Question ${session.currentIndex + 1} of ${session.questions.length}`}
           </h1>
-          {currentIsRetry ? <p className="muted">Revisiting a question you missed earlier.</p> : null}
+          {currentIsRetry ? <p className="muted">You got this one wrong before — try again!</p> : null}
         </div>
         <div className="quiz-meta">
           {mode === "timed" ? <span className={`timer ${remainingTime === 0 ? "danger" : ""}`}>{formatDuration(remainingTime)}</span> : null}
