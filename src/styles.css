@@ -6218,7 +6218,7 @@ strong {
 }
 
 :root[data-theme="dark"] .reviewer-card-not-started .reviewer-card-hero {
-  background: linear-gradient(135deg, #2c2413 0%, #3a2f18 100%);
+  background: linear-gradient(135deg, #34270b 0%, #4a3a0e 100%);
 }
 
 :root[data-theme="dark"] .reviewer-card .course-code,
