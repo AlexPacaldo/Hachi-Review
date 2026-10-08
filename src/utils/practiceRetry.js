@@ -46,7 +46,8 @@ export function recordPracticeOutcome(tracker, question, isCorrect, isRetry, cur
     return bumpStat(tracker, questionId, question.topic, {
       correctCount: stat.correctCount + 1,
       resolved: true,
-      mastered: stat.mastered || isRetry
+      mastered: stat.mastered || isRetry,
+      ...(isRetry ? {} : { firstTryCorrect: true })
     });
   }
 
@@ -59,7 +60,7 @@ export function recordPracticeOutcome(tracker, question, isCorrect, isRetry, cur
       { ...tracker, pending: withoutThis },
       questionId,
       question.topic,
-      { incorrectCount, everMissed: true }
+      { incorrectCount, everMissed: true, ...(isRetry ? {} : { firstTryCorrect: false }) }
     ),
     pending: [...withoutThis, { id: questionId, incorrectCount, eligibleAt: currentIndex + gap }]
   };

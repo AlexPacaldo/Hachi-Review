@@ -261,17 +261,31 @@ export default function Quiz() {
 
     if (mode === "practice" && sessionOverride.practice) {
       attempt.practiceStats = summarizePractice(sessionOverride.practice);
-      // Mastery eventually lands on 100%, so weak topics have to come from the
-      // retry tracker: topics the learner actually stumbled on, even if fixed.
-      const struggledTopics = new Set(
-        Object.values(sessionOverride.practice.stats || {})
-          .filter((stat) => stat.incorrectCount > 0)
-          .map((stat) => stat.topic)
-      );
-      attempt.weakTopics = [...struggledTopics];
-      attempt.incorrectQuestionIds = Object.entries(sessionOverride.practice.stats || {})
-        .filter(([, stat]) => stat.everMissed)
-        .map(([id]) => id);
+      // Retries always bring practice to 100% mastery, so the headline score and
+      // topics reflect first-try correctness — that is the honest measure here.
+      const statsByQuestion = sessionOverride.practice.stats || {};
+      const firstTryIds = Object.keys(statsByQuestion);
+      const firstTryCorrect = firstTryIds.filter((id) => statsByQuestion[id].firstTryCorrect === true);
+      const topicStats = new Map();
+
+      for (const question of attemptSession.questions) {
+        const correct = statsByQuestion[question.id]?.firstTryCorrect === true;
+        const current = topicStats.get(question.topic || "General") || { topic: question.topic || "General", total: 0, correct: 0, incorrect: 0, percentage: 0 };
+        current.total += 1;
+        current.correct += correct ? 1 : 0;
+        current.incorrect += correct ? 0 : 1;
+        current.percentage = current.total ? Math.round((current.correct / current.total) * 100) : 0;
+        topicStats.set(current.topic, current);
+      }
+
+      attempt.score = firstTryCorrect.length;
+      attempt.correctAnswers = firstTryCorrect.length;
+      attempt.totalQuestions = attemptSession.questions.length;
+      attempt.percentage = attempt.totalQuestions ? Math.round((attempt.score / attempt.totalQuestions) * 100) : 0;
+      attempt.wrongAnswers = attempt.totalQuestions - attempt.score;
+      attempt.topicStats = [...topicStats.values()].sort((a, b) => a.percentage - b.percentage || b.total - a.total);
+      attempt.incorrectQuestionIds = firstTryIds.filter((id) => statsByQuestion[id].firstTryCorrect !== true);
+      attempt.weakTopics = attempt.topicStats.filter((topic) => topic.percentage < 70).map((topic) => topic.topic);
     }
 
     saveAttempt(attempt);
