@@ -283,7 +283,6 @@ export default function ReviewerSetup() {
         </div>
 
         <div className="availability-box">
-          <img className="availability-dog" src={isSharedWithMe ? hachiDogExcited : hachiDogFocused} alt="" aria-hidden="true" />
           <div className="availability-icon" aria-hidden="true">
             {isSharedWithMe ? <Users size={20} /> : hasCloud && isOwnerReviewer ? <Cloud size={20} /> : hasLocal ? <HardDrive size={20} /> : <BookOpen size={20} />}
           </div>
