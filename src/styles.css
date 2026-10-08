@@ -6229,6 +6229,14 @@ strong {
   border-color: var(--border);
 }
 
+:root[data-theme="dark"] .reviewer-card-hero h3 {
+  color: #f2f6ff;
+}
+
+:root[data-theme="dark"] .reviewer-card-hero p {
+  color: rgba(226, 234, 250, 0.72);
+}
+
 :root[data-theme="dark"] .reviewer-card-completed .course-code {
   color: #7ee2ac;
 }
