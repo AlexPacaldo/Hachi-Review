@@ -41,6 +41,7 @@ export default class ErrorBoundary extends Component {
           <div>
             <h2>This page ran into a problem</h2>
             <p className="muted">{error.message || "Something went wrong while drawing this page."}</p>
+            <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.75rem" }}>{error.stack}</pre>
             <p className="muted">
               Your reviewers, saved quizzes, and history are unaffected. Reloading usually clears it, and the details
               are recorded under Library if it happens again.
