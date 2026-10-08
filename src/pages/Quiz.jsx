@@ -12,6 +12,8 @@ import { cancelProgressSync, pushAttemptToCloud, pushRemovedProgressToCloud, sch
 import { createAttemptFromSession, formatDuration, getQuestionResult, getSessionElapsed, isAnswerCorrect, isTypedQuestion, pauseQuizSession, resumeQuizSession } from "../utils/quizUtils.js";
 import { countResolved, createPracticeTracker, getDueRetry, getMostUrgentRetry, markRetryServed, recordPracticeOutcome, shiftPendingEligibility, summarizePractice } from "../utils/practiceRetry.js";
 import { holdBusyWork } from "../utils/busyWork.js";
+import hachiDogHearts from "../assets/hachi-dog-hearts.gif";
+import hachiDogLying from "../assets/hachi-dog-lying.gif";
 
 function isTypingTarget(target) {
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable;
@@ -422,6 +424,11 @@ export default function Quiz() {
 
       {isPracticeRevealed ? (
         <section className={`feedback-panel ${result.isCorrect ? "success answer-pop" : "danger answer-shake"}`}>
+          {mode === "practice" ? (
+            <div className="feedback-dog" aria-hidden="true">
+              <img src={result.isCorrect ? hachiDogHearts : hachiDogLying} alt="" />
+            </div>
+          ) : null}
           <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
           <p>Your answer: <strong>{result.selectedText}</strong></p>
           <p>Correct answer: <strong>{result.correctText}</strong></p>

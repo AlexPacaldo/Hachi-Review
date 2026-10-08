@@ -3536,6 +3536,24 @@ legend {
   border-color: var(--danger);
 }
 
+.feedback-dog {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.feedback-dog img {
+  display: block;
+  width: min(180px, 55%);
+  height: auto;
+}
+
+@media (max-width: 560px) {
+  .feedback-dog img {
+    width: min(140px, 60%);
+  }
+}
+
 .answer-pop {
   animation: answerPop 0.45s ease-out;
 }
