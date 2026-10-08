@@ -405,10 +405,14 @@ export default function Quiz() {
       ) : null}
 
       <section className="quiz-actions">
-        <button className="button subtle" type="button" onClick={goPrevious} disabled={session.currentIndex === 0 || mode === "practice"}>
-          <ArrowLeft size={17} aria-hidden="true" />
-          Previous
-        </button>
+        {mode !== "practice" ? (
+          <button className="button subtle" type="button" onClick={goPrevious} disabled={session.currentIndex === 0}>
+            <ArrowLeft size={17} aria-hidden="true" />
+            Previous
+          </button>
+        ) : (
+          <span />
+        )}
 
         <span className="answered-count">
           {isPractice ? Object.keys(session.practice.stats).length : answeredCount} answered
