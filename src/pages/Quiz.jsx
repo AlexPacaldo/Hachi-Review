@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Grid3X3 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Grid3X3, X } from "lucide-react";
 import EmptyState from "../components/EmptyState.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import QuizQuestion from "../components/QuizQuestion.jsx";
@@ -424,19 +424,36 @@ export default function Quiz() {
 
       {isPracticeRevealed ? (
         <section className={`feedback-panel ${result.isCorrect ? "success answer-pop" : "danger answer-shake"}`}>
-          {mode === "practice" ? (
-            <div className="feedback-dog" aria-hidden="true">
-              <span className="feedback-dog-badge">
-                <img src={result.isCorrect ? hachiDogHearts : hachiDogLying} alt="" />
+          <div className="feedback-head">
+            <div className="feedback-status">
+              <span className="feedback-status-icon" aria-hidden="true">
+                {result.isCorrect ? <Check size={22} strokeWidth={2.6} /> : <X size={22} strokeWidth={2.6} />}
               </span>
-              <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
+              <div className="feedback-status-text">
+                <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
+                <p>{result.isCorrect ? "Hachi approves." : "Hachi will get you there."}</p>
+              </div>
             </div>
-          ) : (
-            <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
-          )}
-          <p>Your answer: <strong>{result.selectedText}</strong></p>
-          <p>Correct answer: <strong>{result.correctText}</strong></p>
-          <p><strong>Explanation:</strong> {currentQuestion.explanation}</p>
+            {mode === "practice" ? (
+              <div className="feedback-dog" aria-hidden="true">
+                <img src={result.isCorrect ? hachiDogHearts : hachiDogLying} alt="" />
+              </div>
+            ) : null}
+          </div>
+          <dl className="feedback-details">
+            <div className="feedback-row">
+              <dt>Your answer</dt>
+              <dd>{result.selectedText}</dd>
+            </div>
+            <div className="feedback-row">
+              <dt>Correct answer</dt>
+              <dd>{result.correctText}</dd>
+            </div>
+          </dl>
+          <div className="feedback-note">
+            <span>Explanation</span>
+            <p>{currentQuestion.explanation}</p>
+          </div>
         </section>
       ) : null}
 
