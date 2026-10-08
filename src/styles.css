@@ -3547,10 +3547,21 @@ legend {
   margin: 0;
 }
 
+.feedback-dog-badge {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  flex: none;
+  background: var(--surface, #fff);
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(30, 45, 32, 0.08);
+}
+
 .feedback-dog img {
   display: block;
-  width: 88px;
-  max-width: 28%;
+  width: 56px;
   height: auto;
   image-rendering: pixelated;
 }
@@ -3560,8 +3571,14 @@ legend {
     gap: 10px;
   }
 
+  .feedback-dog-badge {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+  }
+
   .feedback-dog img {
-    width: 64px;
+    width: 42px;
   }
 }
 

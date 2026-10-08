@@ -426,7 +426,9 @@ export default function Quiz() {
         <section className={`feedback-panel ${result.isCorrect ? "success answer-pop" : "danger answer-shake"}`}>
           {mode === "practice" ? (
             <div className="feedback-dog" aria-hidden="true">
-              <img src={result.isCorrect ? hachiDogHearts : hachiDogLying} alt="" />
+              <span className="feedback-dog-badge">
+                <img src={result.isCorrect ? hachiDogHearts : hachiDogLying} alt="" />
+              </span>
               <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
             </div>
           ) : (
