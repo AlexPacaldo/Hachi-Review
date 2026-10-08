@@ -1078,6 +1078,13 @@ main {
   background: var(--warning-soft);
 }
 
+/* Somebody else's reviewer kept on this device. Neutral rather than green,
+   because green marks a reviewer of this account's own. */
+.reviewer-source-badge.offline {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
 .icon-danger {
   color: var(--danger);
 }
