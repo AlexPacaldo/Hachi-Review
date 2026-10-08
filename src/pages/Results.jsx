@@ -64,6 +64,31 @@ export default function Results() {
   return (
     <div className="page narrow">
       <ResultsSummary attempt={attempt} />
+      {attempt.practiceStats ? (
+        <section className="results-detail-panel">
+          <h2>Practice Breakdown</h2>
+          <div className="summary-grid">
+            <div>
+              <span>Questions Mastered</span>
+              <strong>{attempt.practiceStats.mastered}</strong>
+            </div>
+            <div>
+              <span>Initially Missed</span>
+              <strong>{attempt.practiceStats.initiallyMissed}</strong>
+            </div>
+            <div>
+              <span>Total Retries</span>
+              <strong>{attempt.practiceStats.totalRetries}</strong>
+            </div>
+            {attempt.practiceStats.mostDifficultTopic ? (
+              <div>
+                <span>Most Difficult Topic</span>
+                <strong>{attempt.practiceStats.mostDifficultTopic}</strong>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
       {attempt.topicStats?.length ? (
         <section className="results-detail-panel">
           <h2>Progress by Topic</h2>

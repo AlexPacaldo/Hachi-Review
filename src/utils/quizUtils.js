@@ -1,3 +1,5 @@
+import { createPracticeTracker } from "./practiceRetry.js";
+
 export function shuffleItems(items) {
   const copy = [...items];
   for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -584,7 +586,14 @@ export function createQuizSession(reviewer, settings, retryQuestionIds = null) {
     startedAt: null,
     elapsedBeforePause: 0,
     updatedAt: now,
-    completed: false
+    completed: false,
+    ...(settings.mode === "practice"
+      ? {
+          practice: createPracticeTracker(),
+          entryMeta: questions.map(() => ({ retry: false })),
+          originalQuestionCount: questions.length
+        }
+      : {})
   };
 }
 

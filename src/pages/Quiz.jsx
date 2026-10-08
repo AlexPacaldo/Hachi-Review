@@ -9,11 +9,21 @@ import ConfirmModal from "../components/ConfirmModal.jsx";
 import { getReviewerById } from "../data/reviewerRegistry.js";
 import { clearQuizProgress, loadQuizProgress, markStudyDay, saveAttempt, saveQuizProgress } from "../utils/storageUtils.js";
 import { cancelProgressSync, pushAttemptToCloud, pushRemovedProgressToCloud, scheduleProgressSync, scheduleStudyDaySync } from "../services/syncEngine.js";
-import { createAttemptFromSession, formatDuration, getQuestionResult, getSessionElapsed, isTypedQuestion, pauseQuizSession, resumeQuizSession } from "../utils/quizUtils.js";
+import { createAttemptFromSession, formatDuration, getQuestionResult, getSessionElapsed, isAnswerCorrect, isTypedQuestion, pauseQuizSession, resumeQuizSession } from "../utils/quizUtils.js";
+import { countResolved, createPracticeTracker, getDueRetry, getMostUrgentRetry, markRetryServed, recordPracticeOutcome, shiftPendingEligibility, summarizePractice } from "../utils/practiceRetry.js";
 import { holdBusyWork } from "../utils/busyWork.js";
 
 function isTypingTarget(target) {
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable;
+}
+
+function dedupeQuestionsById(questions) {
+  const seen = new Set();
+  return (questions || []).filter((question) => {
+    if (!question?.id || seen.has(question.id)) return false;
+    seen.add(question.id);
+    return true;
+  });
 }
 
 export default function Quiz() {
@@ -57,6 +67,19 @@ export default function Quiz() {
     if (!isQuizRunning) return undefined;
     return holdBusyWork("quiz");
   }, [isQuizRunning]);
+
+  useEffect(() => {
+    if (!session || mode !== "practice" || session.practice) return;
+    // Sessions saved before the retry tracker existed adopt it on open.
+    setSession((current) => current && !current.practice
+      ? {
+          ...current,
+          practice: createPracticeTracker(),
+          entryMeta: current.entryMeta || current.questions.map(() => ({ retry: false })),
+          originalQuestionCount: current.originalQuestionCount || current.questions.length
+        }
+      : current);
+  }, [session, mode]);
 
   useEffect(() => {
     if (!session) return;
@@ -135,6 +158,10 @@ export default function Quiz() {
   });
 
   const answeredCount = useMemo(() => (session ? Object.values(session.answers).filter((answer) => String(answer || "").trim()).length : 0), [session]);
+  const isPractice = mode === "practice" && session?.practice;
+  const practiceResolved = isPractice ? countResolved(session.practice) : 0;
+  const practiceTotal = isPractice ? session.originalQuestionCount || session.questions.length : 0;
+  const currentIsRetry = isPractice && Boolean(session.entryMeta?.[session.currentIndex]?.retry);
 
   if (!reviewer || !session) {
     return (
@@ -158,6 +185,12 @@ export default function Quiz() {
     setSession((current) => ({ ...current, ...patch }));
   }
 
+  function recordPracticeAnswer(question, answer) {
+    if (mode !== "practice" || !session.practice) return null;
+    const isRetry = Boolean(session.entryMeta?.[session.currentIndex]?.retry);
+    return recordPracticeOutcome(session.practice, question, isAnswerCorrect(question, answer), isRetry, session.currentIndex);
+  }
+
   function chooseAnswer(answer) {
     if (isImmediateMode && (isPracticeRevealed || isPracticeSubmitted)) return;
     if (currentQuestionIsTyped) {
@@ -170,14 +203,16 @@ export default function Quiz() {
     }
     patchSession({
       answers: { ...session.answers, [currentQuestion.id]: answer },
-      submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true }
+      submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true },
+      ...(mode === "practice" ? { practice: recordPracticeAnswer(currentQuestion, answer) } : {})
     });
   }
 
   function submitTypedPracticeAnswer() {
     if (!selectedAnswer?.trim()) return;
     patchSession({
-      submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true }
+      submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true },
+      ...(mode === "practice" ? { practice: recordPracticeAnswer(currentQuestion, selectedAnswer) } : {})
     });
   }
 
@@ -215,8 +250,18 @@ export default function Quiz() {
     // elapsedBeforePause here would bank the whole total and then add the
     // running segment again, so every attempt came out at roughly double.
     completedRef.current = true;
-    const finalSession = { ...sessionOverride, completed: true };
+    // A practice session's question list carries retries, so the attempt is
+    // built from one entry per question: the last answer to each decides.
+    const attemptSession = mode === "practice"
+      ? { ...sessionOverride, questions: dedupeQuestionsById(sessionOverride.questions) }
+      : sessionOverride;
+    const finalSession = { ...attemptSession, completed: true };
     const attempt = createAttemptFromSession(finalSession);
+
+    if (mode === "practice" && sessionOverride.practice) {
+      attempt.practiceStats = summarizePractice(sessionOverride.practice);
+    }
+
     saveAttempt(attempt);
     clearQuizProgress(session.reviewerId);
     cancelProgressSync(session.reviewerId);
@@ -225,7 +270,67 @@ export default function Quiz() {
     navigate(`/results/${session.reviewerId}?attempt=${attempt.attemptId}`);
   }
 
+  function insertRetryQuestion(entry, nextIndex) {
+    const source = session.questions.find((question) => question.id === entry.id);
+    const practiceAfterServed = markRetryServed(session.practice, entry.id, source?.topic);
+
+    if (!source) {
+      setSession((current) => ({
+        ...current,
+        practice: { ...practiceAfterServed, pending: practiceAfterServed.pending.filter((item) => item.id !== entry.id) },
+        currentIndex: nextIndex
+      }));
+      return;
+    }
+
+    const answers = { ...session.answers };
+    delete answers[entry.id];
+    const submittedQuestions = { ...session.submittedQuestions };
+    delete submittedQuestions[entry.id];
+    const questions = [...session.questions];
+    questions.splice(nextIndex, 0, source);
+    const entryMeta = [...(session.entryMeta || session.questions.map(() => ({ retry: false })))];
+    entryMeta.splice(nextIndex, 0, { retry: true });
+
+    setSession((current) => ({
+      ...current,
+      questions,
+      entryMeta,
+      answers,
+      submittedQuestions,
+      currentIndex: nextIndex,
+      practice: shiftPendingEligibility(
+        { ...practiceAfterServed, pending: practiceAfterServed.pending.filter((item) => item.id !== entry.id) },
+        nextIndex
+      )
+    }));
+  }
+
   function goNextOrFinish() {
+    if (mode === "practice" && session.practice) {
+      const nextIndex = session.currentIndex + 1;
+      const atEnd = nextIndex >= session.questions.length;
+      const due = getDueRetry(session.practice, nextIndex);
+
+      if (due) {
+        insertRetryQuestion(due, nextIndex);
+        return;
+      }
+
+      if (atEnd) {
+        const urgent = getMostUrgentRetry(session.practice);
+        if (urgent) {
+          insertRetryQuestion(urgent, nextIndex);
+          return;
+        }
+        completeQuiz();
+        return;
+      }
+
+      goNext();
+      return;
+    }
+
     if (isLastQuestion) completeQuiz();
     else goNext();
   }
@@ -237,7 +342,12 @@ export default function Quiz() {
       <section className="quiz-topbar">
         <div>
           <p className="eyebrow">{session.subject}</p>
-          <h1>Question {session.currentIndex + 1} of {session.questions.length}</h1>
+          <h1>
+            {isPractice
+              ? `${practiceResolved} of ${practiceTotal} answered`
+              : `Question ${session.currentIndex + 1} of ${session.questions.length}`}
+          </h1>
+          {currentIsRetry ? <p className="muted">Revisiting a question you missed earlier.</p> : null}
         </div>
         <div className="quiz-meta">
           {mode === "timed" ? <span className={`timer ${remainingTime === 0 ? "danger" : ""}`}>{formatDuration(remainingTime)}</span> : null}
@@ -252,7 +362,11 @@ export default function Quiz() {
         </div>
       </section>
 
-      <ProgressBar value={session.currentIndex + 1} max={session.questions.length} label="Quiz progress" />
+      <ProgressBar
+        value={isPractice ? practiceResolved : session.currentIndex + 1}
+        max={isPractice ? practiceTotal : session.questions.length}
+        label="Quiz progress"
+      />
 
       {isFlashcardMode ? (
         <section className="question-panel flashcard-panel">
@@ -293,7 +407,9 @@ export default function Quiz() {
           Previous
         </button>
 
-        <span className="answered-count">{answeredCount} answered</span>
+        <span className="answered-count">
+          {isPractice ? Object.keys(session.practice.stats).length : answeredCount} answered
+        </span>
 
         {isFlashcardMode ? (
           isFlashcardRevealed ? (
