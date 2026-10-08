@@ -238,6 +238,7 @@ export default function Quiz() {
   }
 
   function goPrevious() {
+    if (mode === "practice") return;
     if (session.currentIndex > 0) patchSession({ currentIndex: session.currentIndex - 1 });
   }
 
@@ -404,7 +405,7 @@ export default function Quiz() {
       ) : null}
 
       <section className="quiz-actions">
-        <button className="button subtle" type="button" onClick={goPrevious} disabled={session.currentIndex === 0}>
+        <button className="button subtle" type="button" onClick={goPrevious} disabled={session.currentIndex === 0 || mode === "practice"}>
           <ArrowLeft size={17} aria-hidden="true" />
           Previous
         </button>
