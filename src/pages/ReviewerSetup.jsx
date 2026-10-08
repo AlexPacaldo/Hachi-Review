@@ -516,7 +516,7 @@ export default function ReviewerSetup() {
               onClick={() => updateSetting("mode", "practice")}
             >
               <strong>Practice Mode</strong>
-              <span>Shows if your answer is correct immediately, displays the correct answer and explanation, then lets you continue.</span>
+              <span>Checks each answer right away and explains it. Missed questions come back later in the same quiz until you get them right.</span>
             </button>
             <button
               type="button"

@@ -44,7 +44,7 @@ const MODES = [
   {
     key: "practice",
     label: "Practice Mode",
-    blurb: "Shows if your answer is correct immediately, displays the correct answer and explanation, then lets you continue.",
+    blurb: "Checks each answer right away and explains it. Missed questions come back later in the same quiz until you get them right.",
     state: "correct",
     action: "Next Question",
     timer: null
