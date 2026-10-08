@@ -267,6 +267,12 @@ export function flushPendingProgress() {
 async function writeQueuedItem(item) {
   switch (item.type) {
     case "upsert-reviewer":
+      // A queued upload of somebody else's reviewer would recreate the duplicate
+      // row this pass exists to prevent, and the queue outlives a sign-out, so
+      // the check cannot live only in pushUnsyncedLocalData.
+      if (item.payload?.ownerId && item.payload.ownerId !== item.userId) {
+        return { error: null, data: null, skipped: true };
+      }
       return upsertCloudReviewer(item.userId, item.payload);
     case "upsert-progress":
       return upsertCloudProgress(item.userId, item.payload);
@@ -448,6 +454,14 @@ export async function pushUnsyncedLocalData() {
   const uploaded = [];
   for (const reviewer of getLocalReviewers()) {
     if (cloudReviewerIds.has(reviewer.reviewerId)) continue;
+    // An offline copy of somebody else's reviewer is a cache, not this account's
+    // work. It is absent from listMyCloudReviewers precisely because the owner is
+    // somebody else, so the check above can never catch it: uploading it created a
+    // second reviewers row under this account carrying the original's visibility,
+    // shared groups and shared recipients. The insert trigger then re-announced it
+    // to the group, which is how one reviewer ended up on the group's page twice and
+    // in the sharer's own feed. Local copies are not uploads.
+    if (reviewer.ownerId && reviewer.ownerId !== userId) continue;
 
     // Reviewers that only ever lived on this device were never explicitly
     // shared, so they land on the account as private until the owner shares them.

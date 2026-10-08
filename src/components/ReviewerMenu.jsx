@@ -543,7 +543,7 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
       ));
       const { data } = cachedFull
         ? { data: cachedFull }
-        : await getCloudReviewerById(offlineReviewer?.reviewerId, user?.id);
+        : await getCloudReviewerById(offlineReviewer?.reviewerId, reviewer?.ownerId || user?.id);
       offlineReviewer = data;
     }
 

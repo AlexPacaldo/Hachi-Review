@@ -150,6 +150,19 @@ export async function upsertCloudReviewer(userId, reviewer) {
       : VISIBILITY_PRIVATE;
   }
 
+  // A payload that names a different owner is a cached copy of somebody else's
+  // reviewer, not this account's own. owner_id is the caller's here, so an
+  // uploaded copy would silently become a second row owned by the recipient while
+  // carrying the original's audience, and the group share trigger would
+  // re-announce it. Sharing is the owner's decision, so the scope is dropped and
+  // the copy lands private until this account deliberately shares it.
+  const isForeignCopy = Boolean(reviewer.ownerId) && reviewer.ownerId !== userId;
+  if (isForeignCopy) {
+    groupScope = [];
+    sharedWith = null;
+    visibility = VISIBILITY_PRIVATE;
+  }
+
   const payload = {
     owner_id: userId,
     reviewer_id: reviewer.reviewerId,
@@ -157,7 +170,9 @@ export async function upsertCloudReviewer(userId, reviewer) {
     subject: reviewer.subject,
     // The resolved scope is stored in the blob too, so a payload read back out
     // of the row never disagrees with the sharing columns next to it.
-    data: { ...reviewer, visibility, sharedWith, sharedGroups: groupScope },
+    data: isForeignCopy
+      ? { ...reviewer, ownerId: userId, ownerName: reviewer.ownerName, visibility, sharedWith, sharedGroups: groupScope }
+      : { ...reviewer, visibility, sharedWith, sharedGroups: groupScope },
     visibility,
     shared_with: sharedWith,
     shared_groups: groupScope,
@@ -290,11 +305,24 @@ export async function listVisibleCloudReviewers(userId) {
 
   const profilesById = new Map((profiles || []).map((profile) => [profile.id, profile]));
 
+  // The same reviewer can arrive under two owners when somebody uploaded a copy
+  // of a group-shared reviewer from an offline save. The reader caches by
+  // reviewer_id, so whichever row is processed last decides the owner and the
+  // name; deduping on the way out keeps the original instead.
+  const byReviewerId = new Map();
+  for (const row of visibleRows) {
+    const existing = byReviewerId.get(row.reviewer_id);
+    if (!existing || new Date(row.created_at) < new Date(existing.created_at)) {
+      byReviewerId.set(row.reviewer_id, row);
+    }
+  }
+  const uniqueRows = [...byReviewerId.values()];
+
   // The summary is flattened onto the row, so callers that used to read
   // item.data keep working and simply see the lighter object. Questions are
   // fetched later, per reviewer, by getCloudReviewerById.
   return {
-    data: visibleRows.map((row) => {
+    data: uniqueRows.map((row) => {
       const profile = row.owner_id === userId ? null : profilesById.get(row.owner_id) || null;
 
       return {

@@ -147,7 +147,14 @@ export default function Library() {
 
   const unsyncedLocalReviewers = useMemo(() => {
     if (!user) return [];
-    return localReviewers.filter((reviewer) => !cloudReviewerIds.has(reviewer.reviewerId));
+    // Someone else's reviewer saved offline is a cache, not this account's work.
+    // It is never in cloudReviewers because that lists only the account's own
+    // rows, so without this it reads as unsynced and gets uploaded as a second
+    // copy owned by this account.
+    return localReviewers.filter((reviewer) => (
+      !cloudReviewerIds.has(reviewer.reviewerId)
+      && (!reviewer.ownerId || reviewer.ownerId === user.id)
+    ));
   }, [cloudReviewerIds, localReviewers, user]);
 
   function refreshLocalData() {

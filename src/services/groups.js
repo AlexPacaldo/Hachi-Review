@@ -36,6 +36,25 @@ function normalizeGroupIds(groupIds) {
   return [...new Set((groupIds || []).filter((id) => typeof id === "string" && id))];
 }
 
+// One reviewer can exist as more than one row: the owner, plus a copy some group
+// member uploaded from an offline save before the upload pass learned to skip a
+// reviewer it does not own. Both rows carry the same reviewer_id and both are
+// announced to the group, so the group page would list the reviewer twice and the
+// count would be double. The oldest row is the original, so it is the one kept.
+function dedupeByReviewerId(rows) {
+  const byReviewerId = new Map();
+
+  for (const row of rows || []) {
+    if (!row?.reviewer_id) continue;
+    const existing = byReviewerId.get(row.reviewer_id);
+    if (!existing || new Date(row.created_at) < new Date(existing.created_at)) {
+      byReviewerId.set(row.reviewer_id, row);
+    }
+  }
+
+  return [...byReviewerId.values()];
+}
+
 // Group ids reach these functions from the route, and they are interpolated
 // into a jsonb filter, so anything that is not a uuid is rejected first.
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -80,21 +99,29 @@ async function readGroupReviewers(groupId) {
 }
 
 async function readGroupReviewerCount(groupId) {
-  const { count, error } = await supabase
+  // The count is over distinct reviewers, not share rows: one reviewer shared
+  // into two groups, or existing twice under different owners, is still one
+  // reviewer on the group's page.
+  const { data, error } = await supabase
     .from(SHARES_TABLE)
-    .select("reviewer_id", { count: "exact", head: true })
+    .select("reviewers!inner(reviewer_id)")
     .eq("group_id", groupId);
 
-  if (!error) return { count: count || 0, error: null };
+  if (!error) {
+    const ids = new Set((data || []).map((row) => row.reviewers?.reviewer_id).filter(Boolean));
+    return { count: ids.size, error: null };
+  }
   if (!isMissingRelation(error)) return { count: 0, error };
 
   const fallback = await supabase
     .from(REVIEWERS_TABLE)
-    .select("id", { count: "exact", head: true })
+    .select("reviewer_id")
     .in("visibility", GROUP_VISIBILITIES)
     .contains("shared_groups", sharedWithGroupFilter(groupId));
 
-  return { count: fallback.count || 0, error: fallback.error || null };
+  if (fallback.error) return { count: 0, error: fallback.error };
+
+  return { count: new Set((fallback.data || []).map((row) => row.reviewer_id).filter(Boolean)).size, error: null };
 }
 
 export async function listMyGroups(userId) {
@@ -444,7 +471,7 @@ export async function listGroupReviewers(groupId) {
   const profilesById = mapById(profiles);
 
   return {
-    data: matches
+    data: dedupeByReviewerId(matches)
       .map((row) => ({
         ...row,
         ownerName: profilesById.get(row.owner_id)?.display_name

@@ -489,6 +489,10 @@ export default function GroupDetail() {
 
   async function saveReviewerOffline(reviewer) {
     const payload = reviewer.data || reviewer;
+    // The row knows who owns it and the stored blob usually does not. Recording
+    // it is what lets the sync pass tell an offline cache of somebody else's
+    // reviewer apart from a reviewer this account created and never uploaded.
+    const ownerId = reviewer.owner_id || payload.ownerId || null;
 
     // Group reviewers are listed as summaries, so the questions are downloaded
     // before anything is written to local storage.
@@ -503,19 +507,19 @@ export default function GroupDetail() {
       ));
       const { data } = cachedFull
         ? { data: cachedFull }
-        : await getCloudReviewerById(payload.reviewerId, user?.id);
+        : await getCloudReviewerById(payload.reviewerId, ownerId || user?.id);
 
       if (!data?.questions) {
         setMessage({ type: "error", text: "Could not download this reviewer." });
         return;
       }
 
-      saveLocalReviewer(data);
+      saveLocalReviewer({ ...data, ownerId: ownerId || data.ownerId || null });
       setMessage({ type: "success", text: "Saved on this device." });
       return;
     }
 
-    saveLocalReviewer(payload);
+    saveLocalReviewer({ ...payload, ownerId });
     setMessage({ type: "success", text: "Saved on this device." });
   }
 
