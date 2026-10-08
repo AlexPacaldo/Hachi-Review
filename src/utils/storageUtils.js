@@ -500,16 +500,35 @@ export function forgetTombstonedReviewers(reviewerIds) {
 
   if (!ids.size) return { local: 0, cached: 0, progress: 0 };
 
-  const keptLocal = getLocalReviewers().filter((reviewer) => !ids.has(reviewer?.reviewerId));
-  const keptCache = getCloudReviewerCache().filter((reviewer) => !ids.has(reviewer?.reviewerId));
+  // A reviewer id is only unique per owner, so an id in this set can still belong
+  // to somebody else's reviewer that this account merely holds offline. Deleting
+  // this account's own row for that id says nothing about the original, and
+  // forgetting by id alone made an offline copy disappear on every sign-in: the
+  // duplicate row an earlier upload pass had created was deleted, its tombstone
+  // carried the same reviewer id, and this pass then removed the offline copy of
+  // the real reviewer along with it. Only copies this account owns are forgotten.
+  const isForeignCopy = (reviewer) => Boolean(reviewer?.ownerId) && reviewer.ownerId !== accountDataOwnerId;
+  const currentLocal = getLocalReviewers();
+  const currentCache = getCloudReviewerCache();
+  const keptLocal = currentLocal.filter((reviewer) => !ids.has(reviewer?.reviewerId) || isForeignCopy(reviewer));
+  const keptCache = currentCache.filter((reviewer) => !ids.has(reviewer?.reviewerId) || isForeignCopy(reviewer));
 
-  const local = getLocalReviewers().length - keptLocal.length;
-  const cached = getCloudReviewerCache().length - keptCache.length;
+  const local = currentLocal.length - keptLocal.length;
+  const cached = currentCache.length - keptCache.length;
 
   let progress = 0;
   const sessions = getAllProgress();
 
-  ids.forEach((id) => {
+  // Progress is this account's own record against its own reviewer, so it is only
+  // cleared for an id this account actually held. Otherwise deleting a copy would
+  // take the attempt history for the original with it.
+  const forgottenIds = new Set(
+    currentLocal
+      .filter((reviewer) => ids.has(reviewer?.reviewerId) && !isForeignCopy(reviewer))
+      .map((reviewer) => reviewer.reviewerId)
+  );
+
+  forgottenIds.forEach((id) => {
     if (sessions[id]) {
       delete sessions[id];
       progress += 1;
