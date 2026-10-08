@@ -39,6 +39,7 @@ export default function Quiz() {
   const [elapsed, setElapsed] = useState(0);
   const sessionRef = useRef(session);
   const completedRef = useRef(false);
+  const feedbackRef = useRef(null);
   sessionRef.current = session;
 
   const currentQuestion = session?.questions[session.currentIndex];
@@ -193,6 +194,16 @@ export default function Quiz() {
     return recordPracticeOutcome(session.practice, question, isAnswerCorrect(question, answer), isRetry, session.currentIndex, answer);
   }
 
+  function scrollToFeedback() {
+    // Practice Mode only. The feedback panel sits below the answers, and on a long
+    // question the reveal can land off-screen, so the answer a person just gave
+    // would look like nothing happened.
+    if (mode !== "practice") return;
+    requestAnimationFrame(() => {
+      feedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+
   function chooseAnswer(answer) {
     if (isImmediateMode && (isPracticeRevealed || isPracticeSubmitted)) return;
     if (currentQuestionIsTyped) {
@@ -208,6 +219,7 @@ export default function Quiz() {
       submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true },
       ...(mode === "practice" ? { practice: recordPracticeAnswer(currentQuestion, answer) } : {})
     });
+    scrollToFeedback();
   }
 
   function submitTypedPracticeAnswer() {
@@ -216,6 +228,7 @@ export default function Quiz() {
       submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true },
       ...(mode === "practice" ? { practice: recordPracticeAnswer(currentQuestion, selectedAnswer) } : {})
     });
+    scrollToFeedback();
   }
 
   function revealFlashcard() {
@@ -431,7 +444,7 @@ export default function Quiz() {
       )}
 
       {isPracticeRevealed ? (
-        <section className={`feedback-panel ${result.isCorrect ? "success answer-pop" : "danger answer-shake"}`}>
+        <section ref={feedbackRef} className={`feedback-panel ${result.isCorrect ? "success answer-pop" : "danger answer-shake"}`}>
           <div className="feedback-head">
             <div className="feedback-status">
               <span className="feedback-status-icon" aria-hidden="true">
