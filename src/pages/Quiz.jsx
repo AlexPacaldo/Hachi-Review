@@ -193,12 +193,11 @@ export default function Quiz() {
     return recordPracticeOutcome(session.practice, question, isAnswerCorrect(question, answer), isRetry, session.currentIndex, answer);
   }
 
-  function scrollToFeedback() {
+  function scrollToBottom() {
     // The feedback panel sits below the answers, and on a long question the
     // reveal can land off-screen, so the answer a person just gave would look
     // like nothing happened. Scrolling to the end also brings the Next button
     // into view, which is the only way forward from here.
-    if (!isImmediateMode) return;
     requestAnimationFrame(() => {
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     });
@@ -225,7 +224,7 @@ export default function Quiz() {
       submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true },
       ...(mode === "practice" ? { practice: recordPracticeAnswer(currentQuestion, answer) } : {})
     });
-    scrollToFeedback();
+    scrollToBottom();
   }
 
   function submitTypedPracticeAnswer() {
@@ -234,13 +233,14 @@ export default function Quiz() {
       submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true },
       ...(mode === "practice" ? { practice: recordPracticeAnswer(currentQuestion, selectedAnswer) } : {})
     });
-    scrollToFeedback();
+    scrollToBottom();
   }
 
   function revealFlashcard() {
     patchSession({
       submittedQuestions: { ...session.submittedQuestions, [currentQuestion.id]: true }
     });
+    scrollToBottom();
   }
 
   function gradeFlashcard(answer) {
@@ -256,15 +256,22 @@ export default function Quiz() {
     }
 
     setSession({ ...nextSession, currentIndex: session.currentIndex + 1 });
+    scrollToTop();
   }
 
   function goPrevious() {
     if (mode === "practice") return;
-    if (session.currentIndex > 0) patchSession({ currentIndex: session.currentIndex - 1 });
+    if (session.currentIndex > 0) {
+      patchSession({ currentIndex: session.currentIndex - 1 });
+      scrollToTop();
+    }
   }
 
   function goNext() {
-    if (!isLastQuestion) patchSession({ currentIndex: session.currentIndex + 1 });
+    if (!isLastQuestion) {
+      patchSession({ currentIndex: session.currentIndex + 1 });
+      scrollToTop();
+    }
   }
 
   function completeQuiz(sessionOverride = session) {
@@ -546,7 +553,10 @@ export default function Quiz() {
           currentIndex={session.currentIndex}
           answers={session.answers}
           submittedQuestions={session.submittedQuestions}
-          onJump={(index) => patchSession({ currentIndex: index })}
+          onJump={(index) => {
+            patchSession({ currentIndex: index });
+            scrollToTop();
+          }}
           onClose={() => setNavigatorOpen(false)}
         />
       ) : null}
