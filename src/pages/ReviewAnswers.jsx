@@ -18,9 +18,13 @@ export default function ReviewAnswers() {
 
   const reviewedQuestions = useMemo(() => {
     if (!attempt) return [];
+    // A practice attempt's answers map holds each question's last answer, which is
+    // correct for every question the retry flow fixed. Its firstTryAnswers is what
+    // the score, the topic bars and the review all describe.
+    const answers = attempt.firstTryAnswers || attempt.answers;
     return attempt.questions
       .map((question, index) => {
-        const result = getQuestionResult(question, attempt.answers[question.id]);
+        const result = getQuestionResult(question, answers[question.id]);
         return { ...question, index, ...result };
       })
       .filter((question) => filter === "all" || (filter === "correct" ? question.isCorrect : !question.isCorrect));

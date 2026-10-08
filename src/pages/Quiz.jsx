@@ -190,7 +190,7 @@ export default function Quiz() {
   function recordPracticeAnswer(question, answer) {
     if (mode !== "practice" || !session.practice) return null;
     const isRetry = Boolean(session.entryMeta?.[session.currentIndex]?.retry);
-    return recordPracticeOutcome(session.practice, question, isAnswerCorrect(question, answer), isRetry, session.currentIndex);
+    return recordPracticeOutcome(session.practice, question, isAnswerCorrect(question, answer), isRetry, session.currentIndex, answer);
   }
 
   function chooseAnswer(answer) {
@@ -288,6 +288,14 @@ export default function Quiz() {
       attempt.topicStats = [...topicStats.values()].sort((a, b) => a.percentage - b.percentage || b.total - a.total);
       attempt.incorrectQuestionIds = firstTryIds.filter((id) => statsByQuestion[id].firstTryCorrect !== true);
       attempt.weakTopics = attempt.topicStats.filter((topic) => topic.percentage < 70).map((topic) => topic.topic);
+      // What the learner picked the first time round, which is what the score
+      // above reflects. Without this the answers map holds the last answer, and
+      // every question the retries fixed would read as correct on review.
+      attempt.firstTryAnswers = Object.fromEntries(
+        firstTryIds
+          .filter((id) => statsByQuestion[id].firstTryAnswer !== undefined)
+          .map((id) => [id, statsByQuestion[id].firstTryAnswer])
+      );
     }
 
     saveAttempt(attempt);

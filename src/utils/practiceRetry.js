@@ -35,15 +35,19 @@ function bumpStat(tracker, questionId, topic, patch) {
 }
 
 // Recorded the moment an answer is checked, so a correct answer on the first
-// try counts as resolved, and a correct retry counts as mastered.
-export function recordPracticeOutcome(tracker, question, isCorrect, isRetry, currentIndex) {
+// try counts as resolved, and a correct retry counts as mastered. The first
+// answer is kept as well, because the attempt's own answers map ends up holding
+// the last one, which is correct for every question the retries fixed.
+export function recordPracticeOutcome(tracker, question, isCorrect, isRetry, currentIndex, answer = null) {
   const questionId = question?.id;
   if (!questionId) return tracker;
 
   const stat = ensureStat(tracker, questionId, question.topic);
+  const firstTry = isRetry ? {} : { firstTryAnswer: answer };
 
   if (isCorrect) {
     return bumpStat(tracker, questionId, question.topic, {
+      ...firstTry,
       correctCount: stat.correctCount + 1,
       resolved: true,
       mastered: stat.mastered || isRetry,
@@ -60,7 +64,7 @@ export function recordPracticeOutcome(tracker, question, isCorrect, isRetry, cur
       { ...tracker, pending: withoutThis },
       questionId,
       question.topic,
-      { incorrectCount, everMissed: true, ...(isRetry ? {} : { firstTryCorrect: false }) }
+      { ...firstTry, incorrectCount, everMissed: true, ...(isRetry ? {} : { firstTryCorrect: false }) }
     ),
     pending: [...withoutThis, { id: questionId, incorrectCount, eligibleAt: currentIndex + gap }]
   };
