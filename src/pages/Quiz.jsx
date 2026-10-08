@@ -427,9 +427,11 @@ export default function Quiz() {
           {mode === "practice" ? (
             <div className="feedback-dog" aria-hidden="true">
               <img src={result.isCorrect ? hachiDogHearts : hachiDogLying} alt="" />
+              <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
             </div>
-          ) : null}
-          <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
+          ) : (
+            <h2>{result.isCorrect ? "Correct!" : "Incorrect"}</h2>
+          )}
           <p>Your answer: <strong>{result.selectedText}</strong></p>
           <p>Correct answer: <strong>{result.correctText}</strong></p>
           <p><strong>Explanation:</strong> {currentQuestion.explanation}</p>

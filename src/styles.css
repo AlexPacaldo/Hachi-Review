@@ -3538,19 +3538,30 @@ legend {
 
 .feedback-dog {
   display: flex;
-  justify-content: center;
+  align-items: center;
+  gap: 14px;
   margin-bottom: 10px;
+}
+
+.feedback-dog h2 {
+  margin: 0;
 }
 
 .feedback-dog img {
   display: block;
-  width: min(180px, 55%);
+  width: 88px;
+  max-width: 28%;
   height: auto;
+  image-rendering: pixelated;
 }
 
 @media (max-width: 560px) {
+  .feedback-dog {
+    gap: 10px;
+  }
+
   .feedback-dog img {
-    width: min(140px, 60%);
+    width: 64px;
   }
 }
 
