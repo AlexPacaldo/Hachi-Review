@@ -11,10 +11,24 @@ function getDisplayName(user) {
   return user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "Hachi User";
 }
 
+function getAvatarUrl(user) {
+  return user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
+}
+
 function mapById(items) {
   return new Map((items || []).map((item) => [item.id, item]));
 }
 
+// Creates this account's profile row, and never edits it afterwards.
+//
+// The display name is the app's own value, edited from the account page, but the
+// name in auth metadata belongs to whichever provider signed the account in.
+// Google repopulates its own metadata on every later login, so a profile write
+// derived from it put the provider's name back over the edited one: the rename
+// held until the next sign-in, and on /friends it could be undone within thirty
+// seconds, because this used to be called from a poll as well as on load.
+// Insert-only means the first value wins and only a profile row that does not
+// exist yet can be created here.
 export async function ensureMyProfile(user) {
   if (!supabase || !user?.id) return { data: null, error: null };
 
@@ -25,17 +39,45 @@ export async function ensureMyProfile(user) {
   const payload = {
     id: user.id,
     display_name: getDisplayName(user),
-    avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+    avatar_url: getAvatarUrl(user),
     updated_at: new Date().toISOString()
   };
 
   const { data, error } = await supabase
     .from(PROFILES_TABLE)
-    .upsert(payload, { onConflict: "id" })
+    .upsert(payload, { onConflict: "id", ignoreDuplicates: true })
     .select()
-    .single();
+    .maybeSingle();
 
-  return { data, error };
+  if (error) return { data: null, error };
+
+  // insert-if-missing has no column list, so on conflict it leaves the row alone
+  // rather than confirming what it now holds. Reading it back is what lets the
+  // interface show the name other people see.
+  const { data: profile, error: readError } = await supabase
+    .from(PROFILES_TABLE)
+    .select("id, display_name, avatar_url")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (readError) return { data, error: readError };
+
+  // The avatar is provider-owned, so a row created before the provider supplied a
+  // picture can still be filled in. Scoped to rows with no display name, which is
+  // exactly the set this insert just created, so it cannot rewrite an edited name.
+  if (payload.avatar_url && profile && !profile.display_name) {
+    const { data: filled } = await supabase
+      .from(PROFILES_TABLE)
+      .update({ avatar_url: payload.avatar_url, updated_at: payload.updated_at })
+      .eq("id", user.id)
+      .is("display_name", null)
+      .select("id, display_name, avatar_url")
+      .maybeSingle();
+
+    return { data: filled || profile, error: null };
+  }
+
+  return { data: profile || data, error: null };
 }
 
 export async function updateMyProfile(user, updates) {
@@ -44,15 +86,35 @@ export async function updateMyProfile(user, updates) {
   const payload = {
     id: user.id,
     display_name: String(updates.displayName || "").trim() || null,
-    avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+    // Only written when supplied. The picture is provider-owned, so re-deriving it
+    // from metadata on every save was another way a rename could be undone.
+    ...(updates.avatarUrl !== undefined ? { avatar_url: updates.avatarUrl } : {}),
     updated_at: new Date().toISOString()
   };
 
+  // An update, not an upsert: the row is created by ensureMyProfile, and writing it
+  // here would recreate a profile this account had asked to delete.
   const { data, error } = await supabase
     .from(PROFILES_TABLE)
-    .upsert(payload, { onConflict: "id" })
+    .update(payload)
+    .eq("id", user.id)
     .select()
     .single();
+
+  return { data, error };
+}
+
+// The signed-in account's own profile row, which is the app's source of truth for
+// the display name. Nothing reads it for the current user, which is how a rename
+// and the name friends saw could disagree without either side noticing.
+export async function getMyProfile(userId) {
+  if (!supabase || !userId) return { data: null, error: null };
+
+  const { data, error } = await supabase
+    .from(PROFILES_TABLE)
+    .select("id, display_name, avatar_url")
+    .eq("id", userId)
+    .maybeSingle();
 
   return { data, error };
 }

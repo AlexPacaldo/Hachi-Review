@@ -14,6 +14,34 @@ export function getProfileName(profile) {
   return name || "Hachi user";
 }
 
+// What the signed-in account's own name falls back to before its profile row
+// exists, taken from the sign-in provider's metadata. This is a starting value
+// only: the name a person edits in the app lives on the profile row, because the
+// metadata belongs to the provider and is rewritten on every later OAuth login.
+export function getMetadataName(user) {
+  return String(
+    user?.user_metadata?.full_name
+    || user?.user_metadata?.name
+    || user?.email?.split("@")[0]
+    || ""
+  ).trim();
+}
+
+export function getMetadataAvatarUrl(user) {
+  return String(user?.user_metadata?.avatar_url || user?.user_metadata?.picture || "").trim();
+}
+
+// The signed-in account's own name: its profile row first, the provider's metadata
+// only as a fallback. Reading metadata first is what showed a name the account had
+// already changed.
+export function getOwnDisplayName(user, profile) {
+  return String(profile?.display_name || "").trim() || getMetadataName(user) || "Hachi User";
+}
+
+export function getOwnAvatarUrl(user, profile) {
+  return getProfileAvatarUrl(profile) || getMetadataAvatarUrl(user);
+}
+
 // Suffixes are not surnames, and a name is very likely to carry one. Filipino and
 // Spanish names in particular run to a middle name and a suffix, so taking the last
 // space-separated word gives the wrong initial for a lot of real people.

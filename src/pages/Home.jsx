@@ -13,7 +13,7 @@ import { clearCloudReviewerCache, deleteLocalReviewer, getAllProgress, getAttemp
 import { getStudySnapshot } from "../utils/studyStats.js";
 
 export default function Home() {
-  const { configured, loading, user } = useAuth();
+  const { configured, loading, user, displayName } = useAuth();
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [reviewerList, setReviewerList] = useState(getAllReviewers);
@@ -111,7 +111,10 @@ export default function Home() {
     const term = search.trim().toLowerCase();
     if (!term) return reviewerList;
 
-    const myName = user?.user_metadata?.display_name || user?.email?.split("@")[0] || "";
+    // The account's own display name, so a reviewer of theirs can be found by typing
+    // the name they set. This used to read user_metadata.display_name, a key
+    // nothing in the app writes, so it always fell back to the email prefix.
+    const myName = displayName || user?.email?.split("@")[0] || "";
 
     return reviewerList.filter((reviewer) => {
       const haystack = [

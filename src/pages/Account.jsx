@@ -27,18 +27,10 @@ const SIGN_IN_BENEFITS = [
   }
 ];
 
-function getUserName(user) {
-  return user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "Hachi User";
-}
-
-function getUserAvatar(user) {
-  return user?.user_metadata?.avatar_url || user?.user_metadata?.picture || "";
-}
-
 export default function Account() {
-  const { configured, loading, session, user } = useAuth();
+  const { configured, loading, session, user, profile, displayName, avatarUrl, refreshProfile } = useAuth();
   const [message, setMessage] = useState(null);
-  const [profileName, setProfileName] = useState(() => getUserName(user));
+  const [profileName, setProfileName] = useState(() => displayName);
   const [savingProfile, setSavingProfile] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
 
@@ -47,9 +39,12 @@ export default function Account() {
   // convenience rather than the control that keeps the numbers private.
   const isOwner = user?.app_metadata?.admin === true;
 
+  // Seeded from the account's own profile row, which is the name friends see. The
+  // id is not the dependency: the row arrives after the session does, and a
+  // rename must replace what is in the field.
   useEffect(() => {
-    setProfileName(getUserName(user));
-  }, [user?.id]);
+    setProfileName(displayName);
+  }, [user?.id, displayName]);
 
   async function signInWithGoogle() {
     setMessage(null);
@@ -85,17 +80,22 @@ export default function Account() {
     setSavingProfile(true);
     setMessage(null);
 
-    const { error: metadataError } = await supabase.auth.updateUser({
-      data: { full_name: profileName.trim() || getUserName(user) }
-    });
-
-    const { error: profileError } = await updateMyProfile(user, { displayName: profileName });
+    // Only the profile row is written. This used to also write the name into
+    // auth metadata, under the key the sign-in provider owns: Google repopulates
+    // its own claims on every later login, so the old name came back with them and
+    // was then copied over the profile row on the next load. The two stores also
+    // disagreed whenever that write failed, because it was not allowed to stop the
+    // save.
+    const { error } = await updateMyProfile(user, { displayName: profileName });
 
     setSavingProfile(false);
-    const failed = metadataError?.message || profileError?.message;
-    setMessage(failed
-      ? { type: "error", text: failed }
-      : { type: "success", text: "Profile saved." });
+    if (error) {
+      setMessage({ type: "error", text: error.message || "Could not save your profile." });
+      return;
+    }
+
+    await refreshProfile();
+    setMessage({ type: "success", text: "Profile saved." });
   }
 
   async function deleteCloudData() {
@@ -131,8 +131,6 @@ export default function Account() {
     }
   }
 
-  const avatarUrl = getUserAvatar(user);
-  const displayName = getUserName(user);
   // An empty field would fall back to the current name on save, so the button
   // only lights up when there is a real change to send.
   const hasNameChange = Boolean(profileName.trim()) && profileName.trim() !== displayName;

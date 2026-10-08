@@ -111,6 +111,9 @@ export default function Friends() {
       setMessage(null);
     }
 
+    // Creates the profile row if it is missing, and never rewrites an existing one.
+    // This used to be the worst offender for a name reverting: it ran here on a
+    // thirty second tick, so a rename could be undone while the page stayed open.
     await ensureMyProfile(user);
 
     // Suggestions are deliberately skipped on the quiet path. The 30 second tick
