@@ -98,7 +98,8 @@ export default function ReviewerSetup() {
   const questionCountMax = Math.max(questionCountMin, Math.min(100, totalQuestions));
   const defaultQuestionCount = Math.min(Math.max(questionCountMin, totalQuestions <= 10 ? totalQuestions : 10), questionCountMax);
 
-  const questionTypeOptions = useMemo(() => (reviewer ? getQuestionTypeOptions(reviewer) : []), [reviewer]);
+  // Flashcards are their own Quiz Mode, so they are not a per-question-type choice.
+  const questionTypeOptions = useMemo(() => (reviewer ? getQuestionTypeOptions(reviewer).filter((type) => type !== "flashcard") : []), [reviewer]);
   const defaultQuestionTypes = useMemo(() => (reviewer ? getStoredQuestionTypes(reviewer) : []), [reviewer]);
   const styleCounts = useMemo(() => getReviewerStyleCounts(reviewer?.questions || []), [reviewer]);
   const negativeStemCount = useMemo(() => countNegativeStemQuestions(reviewer?.questions || []), [reviewer]);
@@ -201,7 +202,14 @@ export default function ReviewerSetup() {
     : reviewer.questions.slice(0, Number(flashcardLimit));
 
   const updateSetting = (key, value) => {
-    setSettings((current) => ({ ...current, [key]: value }));
+    setSettings((current) => ({
+      ...current,
+      [key]: value,
+      // Switching away from Flashcard Mode drops the flashcard-only type override.
+      ...(key === "mode" && value !== "flashcard" && current.questionTypes.includes("flashcard")
+        ? { questionTypes: defaultQuestionTypes }
+        : {})
+    }));
   };
 
   const toggleQuestionType = (value) => {
@@ -498,11 +506,9 @@ export default function ReviewerSetup() {
               ))}
             </div>
             <p className="muted">
-              {settings.questionTypes.includes("flashcard")
-                ? "Flashcards run as their own review session and won't mix with other question types."
-                : questionTypeOptions.length > 1
-                  ? "Pick the formats to use. Selecting only one converts the whole quiz to it."
-                  : "This reviewer uses this question format."}
+            {questionTypeOptions.length > 1
+              ? "Pick the formats to use. Selecting only one converts the whole quiz to it."
+              : "This reviewer uses this question format."}
             </p>
           </fieldset>
         ) : null}
@@ -546,7 +552,11 @@ export default function ReviewerSetup() {
             <button
               type="button"
               className={`mode-card ${settings.mode === "flashcard" ? "active" : ""}`}
-              onClick={() => updateSetting("mode", "flashcard")}
+              onClick={() => setSettings((current) => ({
+                ...current,
+                mode: "flashcard",
+                questionTypes: ["flashcard"]
+              }))}
             >
               <strong>Flashcard Mode</strong>
               <span>Shows the prompt first, then reveals the answer so you can mark whether you remembered it.</span>
