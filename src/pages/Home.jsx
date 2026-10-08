@@ -5,7 +5,7 @@ import ReviewerCard from "../components/ReviewerCard.jsx";
 import ReviewerSearch from "../components/ReviewerSearch.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
-import hachiDogExcited from "../assets/hachi-dog-excited.png";
+import hachiDogExcited from "../assets/hachi-dog-excited.gif";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { getAllReviewers } from "../data/reviewerRegistry.js";
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";

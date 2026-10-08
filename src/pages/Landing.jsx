@@ -20,7 +20,7 @@ import {
   X
 } from "lucide-react";
 import appLogo from "../assets/Icon.png";
-import hachiDogExcited from "../assets/hachi-dog-excited.png";
+import hachiDogExcited from "../assets/hachi-dog-excited.gif";
 import DepthCarousel from "../components/DepthCarousel.jsx";
 import { PREVIEW_MODE_ITEMS } from "../components/PreviewModeCard.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";

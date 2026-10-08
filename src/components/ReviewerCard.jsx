@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
 import { Layers, Trash2, Users } from "lucide-react";
-import hachiDogCurious from "../assets/hachi-dog-curious.png";
-import hachiDogExcited from "../assets/hachi-dog-excited.png";
-import hachiDogFocused from "../assets/hachi-dog-focused.png";
-import hachiDogProud from "../assets/hachi-dog-proud.png";
+import hachiDogCurious from "../assets/hachi-dog-curious.gif";
+import hachiDogExcited from "../assets/hachi-dog-excited.gif";
+import hachiDogFocused from "../assets/hachi-dog-focused.gif";
+import hachiDogProud from "../assets/hachi-dog-proud.gif";
 
 function getDogState({ progress, hasCompleted }) {
   if (progress) {

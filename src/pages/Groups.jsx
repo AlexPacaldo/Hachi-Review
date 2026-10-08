@@ -4,9 +4,9 @@ import { Layers, Plus, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import hachiDogCurious from "../assets/hachi-dog-curious.png";
-import hachiDogFocused from "../assets/hachi-dog-focused.png";
-import hachiDogProud from "../assets/hachi-dog-proud.png";
+import hachiDogCurious from "../assets/hachi-dog-curious.gif";
+import hachiDogFocused from "../assets/hachi-dog-focused.gif";
+import hachiDogProud from "../assets/hachi-dog-proud.gif";
 import { createGroup, deleteGroup, listGroupReviewerCounts, listMyGroups } from "../services/groups.js";
 import { SOCIAL_DATA_CHANGED_EVENT } from "../utils/storageUtils.js";
 

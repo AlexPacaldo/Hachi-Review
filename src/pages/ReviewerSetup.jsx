@@ -9,10 +9,10 @@ import { useReviewer } from "../hooks/useReviewer.js";
 import { countNegativeStemQuestions, createQuizSession, findChoiceBalanceIssues, getQuestionDifficulty, getQuestionStyle, getQuestionTypeOptions, getReviewerStyleCounts, getStoredQuestionTypes } from "../utils/quizUtils.js";
 import { clearQuizProgress, getLatestAttempt, loadQuizProgress, markStudyDay, saveQuizProgress } from "../utils/storageUtils.js";
 import { pushRemovedProgressToCloud, scheduleProgressSync, scheduleStudyDaySync } from "../services/syncEngine.js";
-import hachiDogCurious from "../assets/hachi-dog-curious.png";
-import hachiDogExcited from "../assets/hachi-dog-excited.png";
-import hachiDogFocused from "../assets/hachi-dog-focused.png";
-import hachiDogProud from "../assets/hachi-dog-proud.png";
+import hachiDogCurious from "../assets/hachi-dog-curious.gif";
+import hachiDogExcited from "../assets/hachi-dog-excited.gif";
+import hachiDogFocused from "../assets/hachi-dog-focused.gif";
+import hachiDogProud from "../assets/hachi-dog-proud.gif";
 
 const QUESTION_TYPE_LABELS = {
   multiple_choice: "Multiple Choice",
