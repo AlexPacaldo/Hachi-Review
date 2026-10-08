@@ -6208,6 +6208,51 @@ strong {
   color: color-mix(in srgb, var(--text) 72%, var(--muted));
 }
 
+/* The card tints are pastel by design, which reads as glare once the page is
+   dark. Dark mode keeps the same three states but as deep, low-saturation
+   tints, so the cards sit in the page instead of glowing off it. */
+:root[data-theme="dark"] .reviewer-card-hero {
+  background: linear-gradient(135deg, #0f2a1f 0%, #16382a 100%);
+}
+
+:root[data-theme="dark"] .reviewer-card-in-progress .reviewer-card-hero {
+  background: linear-gradient(135deg, #10243c 0%, #16304f 100%);
+}
+
+:root[data-theme="dark"] .reviewer-card-not-started .reviewer-card-hero {
+  background: linear-gradient(135deg, #2c2413 0%, #3a2f18 100%);
+}
+
+:root[data-theme="dark"] .reviewer-card .course-code,
+:root[data-theme="dark"] .reviewer-card .question-count {
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] .reviewer-card-completed .course-code {
+  color: #7ee2ac;
+}
+
+:root[data-theme="dark"] .reviewer-card-in-progress .course-code {
+  color: #93c5fd;
+}
+
+:root[data-theme="dark"] .reviewer-card-not-started .course-code {
+  color: #fcd34d;
+}
+
+:root[data-theme="dark"] .reviewer-card-completed .reviewer-card-hero::before {
+  color: rgba(126, 226, 172, 0.22);
+}
+
+:root[data-theme="dark"] .reviewer-card-in-progress .reviewer-card-hero::before {
+  color: rgba(147, 197, 253, 0.22);
+}
+
+:root[data-theme="dark"] .reviewer-card-not-started .reviewer-card-hero::before {
+  color: rgba(252, 211, 77, 0.24);
+}
+
 .reviewer-card .reviewer-source-badge,
 .reviewer-card .reviewer-owner-note {
   position: relative;
