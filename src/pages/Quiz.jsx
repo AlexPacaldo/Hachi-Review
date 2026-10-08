@@ -163,7 +163,7 @@ export default function Quiz() {
   const practiceTotal = isPractice ? session.originalQuestionCount || session.questions.length : 0;
   const currentIsRetry = isPractice && Boolean(session.entryMeta?.[session.currentIndex]?.retry);
 
-  if (!reviewer || !session) {
+  if (!reviewer || !session || !Array.isArray(session.questions) || session.questions.length === 0 || !currentQuestion) {
     return (
       <EmptyState
         title="No active quiz"
