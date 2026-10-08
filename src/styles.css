@@ -2779,6 +2779,31 @@ legend {
   line-height: 1.35;
 }
 
+.retry-notice {
+  display: inline-block;
+  margin: 10px 0 0;
+  padding: 8px 16px;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.92rem;
+  font-weight: 900;
+  line-height: 1.3;
+  animation: retry-notice-pop 0.35s ease-out;
+}
+
+@keyframes retry-notice-pop {
+  0% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .more-question-tools {
   display: flex;
   flex-wrap: wrap;
