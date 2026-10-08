@@ -261,6 +261,17 @@ export default function Quiz() {
 
     if (mode === "practice" && sessionOverride.practice) {
       attempt.practiceStats = summarizePractice(sessionOverride.practice);
+      // Mastery eventually lands on 100%, so weak topics have to come from the
+      // retry tracker: topics the learner actually stumbled on, even if fixed.
+      const struggledTopics = new Set(
+        Object.values(sessionOverride.practice.stats || {})
+          .filter((stat) => stat.incorrectCount > 0)
+          .map((stat) => stat.topic)
+      );
+      attempt.weakTopics = [...struggledTopics];
+      attempt.incorrectQuestionIds = Object.entries(sessionOverride.practice.stats || {})
+        .filter(([, stat]) => stat.everMissed)
+        .map(([id]) => id);
     }
 
     saveAttempt(attempt);
