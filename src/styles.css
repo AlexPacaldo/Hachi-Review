@@ -847,8 +847,7 @@ main {
   padding: 36px 0 64px;
 }
 
-.page.narrow,
-.quiz-layout {
+.page.narrow {
   width: min(920px, calc(100% - 32px));
 }
 
@@ -3392,7 +3391,7 @@ legend {
 }
 
 .question-panel h1 {
-  max-width: 42ch;
+  max-width: 62ch;
   font-size: 1.9rem;
   line-height: 1.3;
   font-weight: 850;
@@ -5448,7 +5447,6 @@ summary {
 }
 
 .page.narrow,
-.quiz-layout,
 .generator-page {
   width: min(1160px, calc(100% - 48px));
 }
