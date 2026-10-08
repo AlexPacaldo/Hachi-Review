@@ -555,6 +555,11 @@ export function buildSessionQuestions(questions, settings, retryQuestionIds = nu
     ? questions.filter((question) => retryQuestionIds.includes(question.id))
     : [...questions];
 
+  // A saved retry list pointing at questions that are no longer in the reviewer
+  // (regenerated review, stale attempt) would produce an empty session, so fall
+  // back to the whole set instead of starting a quiz with no questions.
+  if (retryQuestionIds?.length && !pool.length) pool = [...questions];
+
   pool = resolveDifficultyForSession(pool, settings.difficulty);
   pool = resolveStyleForSession(pool, settings.includeScenarioQuestions);
   pool = resolveQuestionTypesForSession(pool, settings.questionTypes);
