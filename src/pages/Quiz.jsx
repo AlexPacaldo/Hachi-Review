@@ -352,10 +352,12 @@ export default function Quiz() {
         <div className="quiz-meta">
           {mode === "timed" ? <span className={`timer ${remainingTime === 0 ? "danger" : ""}`}>{formatDuration(remainingTime)}</span> : null}
           {mode === "exam" ? <span className="timer">{formatDuration(elapsed)}</span> : null}
-          <button className="button subtle" type="button" onClick={() => setNavigatorOpen(true)}>
-            <Grid3X3 size={17} aria-hidden="true" />
-            Questions
-          </button>
+          {mode !== "practice" ? (
+            <button className="button subtle" type="button" onClick={() => setNavigatorOpen(true)}>
+              <Grid3X3 size={17} aria-hidden="true" />
+              Questions
+            </button>
+          ) : null}
           <button className="button subtle" type="button" onClick={() => setConfirmLeave(true)}>
             Leave
           </button>
@@ -451,15 +453,17 @@ export default function Quiz() {
         )}
       </section>
 
-      <QuestionNavigator
-        open={navigatorOpen}
-        questions={session.questions}
-        currentIndex={session.currentIndex}
-        answers={session.answers}
-        submittedQuestions={session.submittedQuestions}
-        onJump={(index) => patchSession({ currentIndex: index })}
-        onClose={() => setNavigatorOpen(false)}
-      />
+      {mode !== "practice" ? (
+        <QuestionNavigator
+          open={navigatorOpen}
+          questions={session.questions}
+          currentIndex={session.currentIndex}
+          answers={session.answers}
+          submittedQuestions={session.submittedQuestions}
+          onJump={(index) => patchSession({ currentIndex: index })}
+          onClose={() => setNavigatorOpen(false)}
+        />
+      ) : null}
 
       <ConfirmModal
         open={confirmSubmit}
