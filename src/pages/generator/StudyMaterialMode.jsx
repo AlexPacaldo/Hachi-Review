@@ -11,7 +11,6 @@ import {
   MAX_AI_SOURCE_TEXT_LENGTH,
   MAX_REVIEWER_QUESTIONS,
   MIN_EXTRACTED_TEXT_LENGTH,
-  QUESTION_COUNT_OPTIONS,
   checkAiRateLimit,
   extractPdfText,
   getFriendlyGenerationError,
@@ -371,18 +370,33 @@ export default function StudyMaterialMode({
 
         <fieldset className="generator-option-group">
           <legend>Number of Questions</legend>
-          <div className="segmented">
-            {QUESTION_COUNT_OPTIONS.map((option) => (
-              <button
-                className={targetQuestionCount === option.value ? "active" : ""}
-                type="button"
-                key={option.value}
-                onClick={() => setTargetQuestionCount(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <label className="question-count-control">
+            <span className="question-count-value">
+              <strong>{targetQuestionCount === "comprehensive" ? "Comprehensive" : targetQuestionCount}</strong>
+              <small>{targetQuestionCount === "comprehensive" ? "covers everything important" : "questions"}</small>
+            </span>
+            <input
+              type="range"
+              min={20}
+              max={MAX_REVIEWER_QUESTIONS}
+              step={5}
+              value={targetQuestionCount === "comprehensive" ? MAX_REVIEWER_QUESTIONS : Number(targetQuestionCount) || 50}
+              disabled={targetQuestionCount === "comprehensive"}
+              onChange={(event) => setTargetQuestionCount(event.target.value)}
+            />
+            <span className="question-count-range">
+              <small>20</small>
+              <small>{MAX_REVIEWER_QUESTIONS}</small>
+            </span>
+          </label>
+          <label className="generator-checkbox">
+            <input
+              type="checkbox"
+              checked={targetQuestionCount === "comprehensive"}
+              onChange={(event) => setTargetQuestionCount(event.target.checked ? "comprehensive" : "50")}
+            />
+            <span>Comprehensive — cover the important material without a fixed count</span>
+          </label>
         </fieldset>
 
         <SourceFileField
