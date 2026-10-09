@@ -30,6 +30,9 @@ globalThis.window = {
 };
 
 const MODULE_URL = pathToFileURL(new URL("../src/utils/storageUtils.js", import.meta.url).pathname.replace(/^\//, "")).href;
+// The registry reads both stores and decides which copy a reader is shown, so it
+// shares this file's localStorage stub and is reimported per scenario alongside it.
+const REGISTRY_URL = pathToFileURL(new URL("../src/data/reviewerRegistry.js", import.meta.url).pathname.replace(/^\//, "")).href;
 let instance = 0;
 
 // A fresh module per scenario. The account that used the device last is read once
@@ -162,6 +165,134 @@ section("a group peer's reviewer is kept, it is the account's to read");
 
   storage.setAccountDataOwner(PSAJ);
   check("not visible to another account", storage.getCloudReviewerCache(), []);
+}
+
+// The bug these guard: an owner corrects an answer key, the row is rewritten,
+// and every other device kept marking the old key forever. A summary carries no
+// questions, so the cached copy used to be carried over unconditionally and
+// nothing could ever replace it. The row's updated_at is the only signal there is.
+section("a corrected answer key reaches the other devices");
+{
+  const storage = await loadApp();
+  storage.setAccountDataOwner(PSAJ);
+
+  const OLD = "2026-10-01T09:00:00.000Z";
+  const NEW = "2026-10-02T09:00:00.000Z";
+  const keyed = (correctAnswer, updatedAt) => ({
+    reviewerId: "shared-set",
+    title: "Shared set",
+    subject: "Bio",
+    ownerId: FRIEND_OF_ALEX,
+    updatedAt,
+    questions: [{ id: "q1", correctAnswer, answerText: correctAnswer, choices: { A: "a", B: "b", C: "c", D: "d" } }]
+  });
+
+  storage.mergeCloudReviewerCache([keyed("B", OLD)]);
+  check("the fetched copy kept its questions", storage.getCloudReviewerCache()[0].questions[0].correctAnswer, "B");
+
+  // The owner's edit. The list only ever carries this much.
+  storage.mergeCloudReviewerCache([{ reviewerId: "shared-set", title: "Shared set", subject: "Bio", ownerId: FRIEND_OF_ALEX, updatedAt: NEW }]);
+  const afterEdit = storage.getCloudReviewerCache()[0];
+  check("the stale key is gone", afterEdit.questions, undefined);
+  check("the newer version is recorded so the next open refetches", afterEdit.updatedAt, NEW);
+
+  // A list load that says nothing new must not cost the device its offline copy.
+  storage.mergeCloudReviewerCache([{ reviewerId: "shared-set", title: "Shared set", subject: "Bio", ownerId: FRIEND_OF_ALEX, updatedAt: NEW }]);
+  storage.cacheCloudReviewer(keyed("C", NEW));
+  storage.mergeCloudReviewerCache([{ reviewerId: "shared-set", title: "Shared set", subject: "Bio", ownerId: FRIEND_OF_ALEX, updatedAt: NEW }]);
+  check("a refetched copy survives the next list load", storage.getCloudReviewerCache()[0].questions[0].correctAnswer, "C");
+
+  // An owner who edited on this device has already written through, so their own
+  // cache keeps working without a round trip.
+  storage.setAccountDataOwner(FRIEND_OF_ALEX);
+  storage.mergeCloudReviewerCache([{ reviewerId: "own-set", title: "Mine", subject: "Bio", ownerId: FRIEND_OF_ALEX, updatedAt: OLD, questions: [{ id: "q1", correctAnswer: "A", answerText: "A" }] }]);
+  storage.mergeCloudReviewerCache([{ reviewerId: "own-set", title: "Mine", subject: "Bio", ownerId: FRIEND_OF_ALEX, updatedAt: NEW }]);
+  check("this account's own reviewer keeps its questions", storage.getCloudReviewerCache()[0].questions[0].correctAnswer, "A");
+}
+
+section("an offline copy of somebody else's reviewer is dropped when its owner edits");
+{
+  const storage = await loadApp();
+  storage.setAccountDataOwner(PSAJ);
+
+  const OLD = "2026-10-01T09:00:00.000Z";
+  const NEW = "2026-10-02T09:00:00.000Z";
+  const copy = (correctAnswer, updatedAt) => ({
+    reviewerId: "shared-offline",
+    title: "Shared set",
+    subject: "Bio",
+    ownerId: FRIEND_OF_ALEX,
+    updatedAt,
+    questions: [{ id: "q1", correctAnswer, answerText: correctAnswer }]
+  });
+
+  storage.saveLocalReviewer(copy("A", OLD));
+  storage.mergeCloudReviewerCache([{ reviewerId: "shared-offline", title: "Shared set", subject: "Bio", ownerId: FRIEND_OF_ALEX, updatedAt: NEW }]);
+  check("the stale offline copy is gone", storage.getLocalReviewers().some((r) => r.reviewerId === "shared-offline"), false);
+
+  // An unfinished quiz is not wrong, its key is rebuilt on resume, so dropping the
+  // copy must not take the learner's progress with it.
+  storage.saveQuizProgress({ reviewerId: "shared-offline", answers: { q1: "A" } });
+  storage.mergeCloudReviewerCache([{ reviewerId: "shared-offline", title: "Shared set", subject: "Bio", ownerId: FRIEND_OF_ALEX, updatedAt: "2026-10-03T09:00:00.000Z" }]);
+  check("their progress survived", storage.loadQuizProgress("shared-offline").answers, { q1: "A" });
+
+  // This account's own offline reviewer can hold edits not uploaded yet, so it is
+  // never dropped on the strength of a timestamp.
+  storage.saveLocalReviewer({ reviewerId: "psaj-draft", title: "Draft", subject: "Bio", ownerId: PSAJ, updatedAt: OLD, questions: [{ id: "q1", correctAnswer: "A", answerText: "A" }] });
+  storage.mergeCloudReviewerCache([{ reviewerId: "psaj-draft", title: "Draft", subject: "Bio", ownerId: PSAJ, updatedAt: NEW }]);
+  check("this account's own offline reviewer is kept", storage.getLocalReviewers().some((r) => r.reviewerId === "psaj-draft"), true);
+}
+
+// Which of the cloud cache and the offline store a reader is shown. The registry
+// merges the two and this is the rule it merges them by, so it is asserted here
+// rather than left to a code read: picking wrong either way either serves a
+// retired answer key or throws away an edit that has not been uploaded.
+section("a reviewer this account does not own is read from the newer copy");
+{
+  // Both modules un-suffixed here, deliberately. The registry resolves storageUtils
+  // by its own path, so a suffixed storage here would leave the registry reading a
+  // different instance and a different account slot than the one under test.
+  store.clear();
+  const storage = await import(MODULE_URL);
+  const registry = await import(REGISTRY_URL);
+  storage.setAccountDataOwner(PSAJ);
+
+  const OLD = "2026-10-01T09:00:00.000Z";
+  const NEW = "2026-10-02T09:00:00.000Z";
+  const keyed = (correctAnswer) => ([{
+    id: "q1",
+    topic: "T",
+    question: "Q",
+    correctAnswer,
+    // validateReviewer refuses a reviewer whose answerText is not the text of its
+    // own correct choice, so this has to agree or the fixture is invalid.
+    answerText: correctAnswer === "A" ? "alpha" : "beta",
+    explanation: "why",
+    choices: { A: "alpha", B: "beta", C: "gamma", D: "delta" }
+  }]);
+
+  // A summary of the same version says nothing new, so the offline copy stands.
+  storage.saveLocalReviewer({ reviewerId: "tie", title: "T", subject: "S", ownerId: FRIEND_OF_ALEX, updatedAt: OLD, questions: keyed("B"), questionCount: 1 });
+  storage.mergeCloudReviewerCache([{ reviewerId: "tie", title: "T", subject: "S", ownerId: FRIEND_OF_ALEX, updatedAt: OLD }]);
+  check("an unchanged version keeps the offline copy", registry.getReviewerById("tie").questions[0].correctAnswer, "B");
+  check("and it is still one reviewer, not two", registry.getReviewerById("tie").storageStatus, "both");
+
+  // The owner's edit, seen only as a newer summary. Questions must not survive it,
+  // or the reviewer reads as complete and is trusted instead of refetched.
+  storage.saveLocalReviewer({ reviewerId: "stale", title: "T", subject: "S", ownerId: FRIEND_OF_ALEX, updatedAt: OLD, questions: keyed("B"), questionCount: 1 });
+  storage.mergeCloudReviewerCache([{ reviewerId: "stale", title: "T", subject: "S", ownerId: FRIEND_OF_ALEX, updatedAt: NEW }]);
+  check("a newer version wins", Array.isArray(registry.getReviewerById("stale").questions), false);
+  check("so it reads as a summary and gets refetched", registry.isReviewerSummary(registry.getReviewerById("stale")), true);
+  check("and a summary is not reported as a broken reviewer", registry.getReviewerById("stale").validation.isValid, true);
+
+  // This account's own reviewer is the other way round. Its local copy can hold an
+  // edit the row has not seen yet, so a newer cloud stamp must not cost it that.
+  storage.saveLocalReviewer({ reviewerId: "mine", title: "T", subject: "S", ownerId: PSAJ, updatedAt: OLD, questions: keyed("A"), questionCount: 1 });
+  storage.mergeCloudReviewerCache([{ reviewerId: "mine", title: "T", subject: "S", ownerId: PSAJ, updatedAt: NEW }]);
+  const mine = registry.getReviewerById("mine");
+  check("this account's own unsynced edit survives a newer row", mine.questions[0].correctAnswer, "A");
+  check("and it is one reviewer, not two", mine.storageStatus, "both");
+  check("and it still validates", mine.validation.isValid, true);
 }
 
 section("nothing is written before the account is known");

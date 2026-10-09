@@ -24,8 +24,16 @@ export function useReviewer(reviewerId, refreshKey = 0) {
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
 
   const summary = isReviewerSummary(cached) ? cached : null;
-  const summaryOwner = summary?.ownerId;
+  const summaryOwner = summary?.ownerId || cached?.ownerId;
   const userId = user?.id;
+
+  // Someone else's reviewer is never authoritative on this device. Its owner can
+  // correct an answer key from their own account at any time, and nothing about
+  // opening it here is a signal that this copy is current, so it is refetched.
+  // A reviewer's own copy is the other way round: it was just edited here, and
+  // refetching it would race the write that made the edit.
+  const isForeignReviewer = Boolean(cached?.ownerId && cached.ownerId !== userId);
+  const hasUsableCache = Boolean(cached) && !isReviewerSummary(cached);
 
   useEffect(() => {
     // Signed out, so the only thing this device could have is what it already
@@ -40,10 +48,13 @@ export function useReviewer(reviewerId, refreshKey = 0) {
     // to find the row. Without this a reload of /reviewer/:id reported that the
     // reviewer does not exist and never tried again, because the early return
     // below left nothing to retry with.
-    if (cached && !isReviewerSummary(cached)) return undefined;
+    if (hasUsableCache && !isForeignReviewer) return undefined;
 
     let active = true;
-    setIsLoading(true);
+    // Only a spinner when there is nothing to read in the meantime. Reopening a
+    // shared reviewer offline has to keep working off the cached copy, so this
+    // cannot blank the page every time the refetch cannot reach the cloud.
+    setIsLoading(!hasUsableCache);
     setLoadError(null);
 
     getCloudReviewerById(reviewerId, summaryOwner)
@@ -51,6 +62,14 @@ export function useReviewer(reviewerId, refreshKey = 0) {
         if (!active) return;
 
         if (error || !data) {
+          // A cached copy still grades, so a failed refresh of one is not an
+          // error. Reporting it would replace a working offline reviewer with an
+          // empty state over a network that did not answer.
+          if (hasUsableCache) {
+            setIsLoading(false);
+            return;
+          }
+
           setLoadError(error?.message || "This reviewer could not be loaded.");
           setIsLoading(false);
           return;
@@ -65,6 +84,10 @@ export function useReviewer(reviewerId, refreshKey = 0) {
       })
       .catch(() => {
         if (!active) return;
+        if (hasUsableCache) {
+          setIsLoading(false);
+          return;
+        }
         setLoadError("This reviewer could not be loaded.");
         setIsLoading(false);
       });
@@ -72,7 +95,7 @@ export function useReviewer(reviewerId, refreshKey = 0) {
     return () => {
       active = false;
     };
-  }, [reviewerId, summaryOwner, userId, attempt]);
+  }, [reviewerId, summaryOwner, userId, attempt, hasUsableCache, isForeignReviewer]);
 
   // A reviewer id can change between renders when the route changes, so a fetch
   // that finished for a different reviewer is not carried over.
@@ -82,7 +105,7 @@ export function useReviewer(reviewerId, refreshKey = 0) {
   // fetch flag so the very first render of a cold load already reports it: the
   // request has not started at that point, and an unspinnered empty state would
   // flash "does not exist" before it did.
-  const isResolving = isLoading || (!reviewer && !loadError && Boolean(userId) && Boolean(reviewerId));
+  const isResolving = !reviewer && (isLoading || (!loadError && Boolean(userId) && Boolean(reviewerId)));
 
   return {
     reviewer: reviewer || null,

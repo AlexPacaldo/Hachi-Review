@@ -6,10 +6,10 @@ import ProgressBar from "../components/ProgressBar.jsx";
 import QuizQuestion from "../components/QuizQuestion.jsx";
 import QuestionNavigator from "../components/QuestionNavigator.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
-import { getReviewerById } from "../data/reviewerRegistry.js";
+import { useReviewer } from "../hooks/useReviewer.js";
 import { clearQuizProgress, loadQuizProgress, markStudyDay, saveAttempt, saveQuizProgress } from "../utils/storageUtils.js";
 import { cancelProgressSync, pushAttemptToCloud, pushRemovedProgressToCloud, scheduleProgressSync, scheduleStudyDaySync } from "../services/syncEngine.js";
-import { createAttemptFromSession, formatDuration, getQuestionResult, getSessionElapsed, isAnswerCorrect, isTypedQuestion, pauseQuizSession, resumeQuizSession } from "../utils/quizUtils.js";
+import { createAttemptFromSession, formatDuration, getQuestionResult, getSessionElapsed, isAnswerCorrect, isTypedQuestion, pauseQuizSession, refreshSessionAnswerKey, resumeQuizSession } from "../utils/quizUtils.js";
 import { countResolved, createPracticeTracker, getDueRetry, getMostUrgentRetry, markRetryServed, recordPracticeOutcome, shiftPendingEligibility, summarizePractice } from "../utils/practiceRetry.js";
 import { holdBusyWork } from "../utils/busyWork.js";
 import hachiDogHearts from "../assets/hachi-dog-hearts.gif";
@@ -31,7 +31,7 @@ function dedupeQuestionsById(questions) {
 export default function Quiz() {
   const { reviewerId } = useParams();
   const navigate = useNavigate();
-  const reviewer = getReviewerById(reviewerId);
+  const { reviewer, hasQuestions } = useReviewer(reviewerId);
   const [session, setSession] = useState(() => resumeQuizSession(loadQuizProgress(reviewerId)));
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
@@ -69,6 +69,16 @@ export default function Quiz() {
     if (!isQuizRunning) return undefined;
     return holdBusyWork("quiz");
   }, [isQuizRunning]);
+
+  // The session froze the answer key it started with, so an owner who corrects
+  // a question while this quiz is in progress would otherwise leave it marking
+  // the old key. Rebuilt once the reviewer is in hand, which for a shared
+  // reviewer is after the fetch this page made. An unchanged key returns the
+  // same session, so this settles rather than re-rendering.
+  useEffect(() => {
+    if (!session || session.completed || !hasQuestions) return;
+    setSession((current) => refreshSessionAnswerKey(current, reviewer));
+  }, [reviewer, hasQuestions, session?.sessionId, session?.completed]);
 
   useEffect(() => {
     if (!session || mode !== "practice" || session.practice) return;

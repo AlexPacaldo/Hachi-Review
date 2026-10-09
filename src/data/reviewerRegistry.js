@@ -1,4 +1,4 @@
-import { getCloudReviewerCache, getLocalReviewers } from "../utils/storageUtils.js";
+import { getAccountDataOwnerId, getCloudReviewerCache, getLocalReviewers } from "../utils/storageUtils.js";
 
 const REQUIRED_CHOICE_KEYS = ["A", "B", "C", "D"];
 const QUESTION_TYPES = ["multiple_choice", "identification", "true_false", "flashcard"];
@@ -105,6 +105,41 @@ export function getAllReviewers() {
     const existing = mergedReviewers.get(reviewer.reviewerId);
 
     if (existing?.source === "cloud" && reviewer.source === "local") {
+      // Which of the two is current depends on who owns the reviewer. A local
+      // copy of somebody else's row can only be as new as the moment it was
+      // downloaded, and its owner can correct an answer key at any time, so a
+      // strictly newer cloud copy wins here. Preferring the local one regardless
+      // is what kept an offline copy serving as the answer key after that key had
+      // been corrected. This account's own reviewer keeps the local copy winning
+      // on a tie or a missing stamp, because it can hold edits that have not been
+      // uploaded yet, and those must not be lost to a summary that is merely
+      // being re-listed.
+      const cloudIsNewer = existing.updatedAt && reviewer.updatedAt
+        && Date.parse(existing.updatedAt) > Date.parse(reviewer.updatedAt);
+      // Judged against the account the stores are reading, not against whether an
+      // ownerId merely exists. Every saved copy carries one, this account's own
+      // reviewers included, so testing for its presence treated an owner's unsynced
+      // local edit as somebody else's stale cache and threw it away.
+      const accountId = getAccountDataOwnerId();
+      const copyIsForeign = Boolean(reviewer.ownerId) && reviewer.ownerId !== accountId;
+      const staleForeignCopy = cloudIsNewer && copyIsForeign;
+
+      if (staleForeignCopy) {
+        // Taken from the cloud copy alone. Merging the two would put the stale
+        // questions back, since the cloud side is a summary and carries none, and
+        // the reviewer would then read as complete and be trusted instead of
+        // refetched. hasQuestions is what decides that, so it is what has to be
+        // false here.
+        mergedReviewers.set(reviewer.reviewerId, {
+          ...reviewer,
+          ...existing,
+          questions: undefined,
+          storageStatus: "both",
+          validation: validateReviewer(existing)
+        });
+        return;
+      }
+
       mergedReviewers.set(reviewer.reviewerId, {
         ...existing,
         ...reviewer,

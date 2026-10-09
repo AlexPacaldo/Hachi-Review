@@ -792,6 +792,43 @@ export function restoreQuizQuestions(record, reviewer) {
   return { ...rest, questions };
 }
 
+// A session carries its own copy of each question, answer key included, and that
+// copy is what grades it. So an owner who corrects a wrong answer while somebody
+// has the reviewer in progress leaves that session marking a key the owner has
+// already replaced. This re-reads the key off the current reviewer, keeping the
+// session's own choices, order and answers: a question the learner has already
+// answered keeps its answer and is simply re-marked against the corrected key,
+// and a question that no longer exists in the reviewer is left alone rather than
+// dropped out from under an attempt in progress.
+//
+// The same session object comes back when nothing moved, so a caller can hand
+// this straight to setState without looping on a re-render.
+export function refreshSessionAnswerKey(session, reviewer) {
+  if (!session || !Array.isArray(session.questions)) return session;
+  if (!Array.isArray(reviewer?.questions)) return session;
+
+  const byId = new Map(reviewer.questions.map((question) => [question.id, question]));
+  let changed = false;
+
+  const questions = session.questions.map((question) => {
+    const source = byId.get(question?.id);
+    if (!source) return question;
+
+    const answerText = source.answerText || source.choices?.[source.correctAnswer] || question.answerText;
+    if (source.correctAnswer === question.correctAnswer && answerText === question.answerText) {
+      return question;
+    }
+
+    changed = true;
+    // The session's own choices are kept rather than the reviewer's, because they
+    // are the ones the learner was shown and may already have picked from, and
+    // their order is this session's shuffle.
+    return { ...question, correctAnswer: source.correctAnswer, answerText };
+  });
+
+  return changed ? { ...session, questions } : session;
+}
+
 export function getPerformanceMessage(percentage) {
   if (percentage >= 90) return "Excellent! You really know this topic.";
   if (percentage >= 80) return "Great job! You're almost there.";

@@ -44,8 +44,8 @@ import {
   getAttemptHistory,
   getCloudReviewerCache,
   getLocalReviewers,
+  mergeCloudReviewerCache,
   REVIEWER_DATA_CHANGED_EVENT,
-  saveCloudReviewerCache,
   saveLocalReviewer,
   SOCIAL_DATA_CHANGED_EVENT
 } from "../utils/storageUtils.js";
@@ -58,24 +58,6 @@ const ROLE_LABELS = {
 
 function getProfileName(profile) {
   return profile?.display_name || "Hachi user";
-}
-
-// Saving the cloud cache announces a reviewer data change, and this page
-// reloads on that event, so the cache is only written when its contents would
-// actually differ. Without this the page reloads itself forever.
-function cacheFingerprint(reviewers) {
-  return JSON.stringify(
-    (reviewers || []).map((item) => [
-      item.reviewerId,
-      item.updatedAt,
-      item.title,
-      item.subject,
-      item.ownerId,
-      item.visibility,
-      item.sharedGroups,
-      item.sharedWith
-    ])
-  );
 }
 
 export default function GroupDetail() {
@@ -204,25 +186,13 @@ export default function GroupDetail() {
           sharedGroups: row.shared_groups || null
         };
       });
-      const incomingIds = new Set(incoming.map((item) => item.reviewerId));
-      const currentCache = getCloudReviewerCache();
-      const currentById = new Map(currentCache.map((item) => [item.reviewerId, item]));
-
-      // An incoming summary must not drop the questions of a reviewer this
-      // device has already downloaded, so the cached copy is carried over.
-      const nextCache = [
-        ...incoming.map((item) => {
-          const existing = currentById.get(item.reviewerId);
-          return existing && Array.isArray(existing.questions) && !Array.isArray(item.questions)
-            ? { ...existing, ...item, questions: existing.questions }
-            : item;
-        }),
-        ...currentCache.filter((item) => !incomingIds.has(item.reviewerId))
-      ];
-
-      if (cacheFingerprint(nextCache) !== cacheFingerprint(currentCache)) {
-        saveCloudReviewerCache(nextCache);
-      }
+      // The shared merge, rather than a second copy of the carry-over rule here:
+      // this one left a group's reviewers keeping a corrected answer key forever,
+      // because it never compared versions. It also only writes when something
+      // actually changed, which is what stops this page reloading itself, since
+      // writing the cache announces a reviewer data change that this page listens
+      // for.
+      mergeCloudReviewerCache(incoming);
     }
 
     if (reviewersResult.error) {

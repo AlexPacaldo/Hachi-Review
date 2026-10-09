@@ -562,6 +562,113 @@ export function clearCloudReviewerCache() {
   notifyReviewerDataChanged();
 }
 
+// The account whose slot the stores are currently reading and writing. Exported
+// because deciding whether a reviewer belongs to this account is the same question
+// everywhere, and answering it anywhere else means answering it from a stale copy.
+export function getAccountDataOwnerId() {
+  return accountDataOwnerId;
+}
+
+// A reviewer's version is the updated_at of the row behind it. Summaries from the
+// list view and full fetches both carry it, so a copy held on this device can be
+// compared against a summary arriving from the same list to decide whether its
+// questions are still current. Read as a date because a locally built reviewer
+// can hold a number where a row off the cloud holds an ISO string.
+function reviewerVersion(reviewer) {
+  const raw = reviewer?.updatedAt;
+  const parsed = typeof raw === "number" ? raw : Date.parse(raw || "");
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// The list arrives as summaries, with no questions. A summary normally leaves a
+// reviewer this device already fetched alone, so it keeps working offline, but
+// only while that copy is still the current version of the row. Once the row has
+// moved on, the cached questions are dropped and the summary is stored as it
+// arrived: an owner who corrects an answer key rewrites the row, and carrying the
+// old questions forward graded every other reader against a key that had already
+// been replaced. An incoming entry that carries no version cannot outrank
+// anything, so it never costs a device its offline copy.
+export function pickReviewerCacheEntry(existing, entry) {
+  const carriesQuestions = Array.isArray(existing?.questions) && !Array.isArray(entry?.questions);
+  if (!carriesQuestions) return entry;
+  if (reviewerVersion(entry) <= reviewerVersion(existing)) {
+    return { ...existing, ...entry, questions: existing.questions };
+  }
+  // This account's own reviewer is the exception. Its copy is written through on
+  // every edit, so it is already the newest version there is, and a summary
+  // arriving from the list can be a moment behind that write. Dropping its
+  // questions here would blank the owner's own reviewer on the next list load,
+  // for a difference no reader could ever grade against.
+  if (entry.ownerId && accountDataOwnerId && entry.ownerId === accountDataOwnerId) {
+    return { ...existing, ...entry, questions: existing.questions };
+  }
+  return entry;
+}
+
+// Enough of a cached entry to notice that something other than its questions
+// moved. Questions themselves are left out deliberately: this guards against
+// rewriting an unchanged store, and rewriting it announces a reviewer data
+// change that makes the page which wrote it reload and run this again.
+function cacheEntryStamp(reviewer) {
+  return [
+    reviewer?.reviewerId,
+    reviewer?.updatedAt,
+    reviewer?.title,
+    reviewer?.subject,
+    reviewer?.ownerId,
+    reviewer?.visibility,
+    JSON.stringify(reviewer?.sharedWith ?? null),
+    JSON.stringify(reviewer?.sharedGroups ?? null),
+    // -1 rather than 0 for a summary, so dropping a reviewer's questions changes
+    // the stamp and the entry is actually written.
+    Array.isArray(reviewer?.questions) ? reviewer.questions.length : -1
+  ].join("|");
+}
+
+function cacheFingerprint(reviewers) {
+  return (reviewers || []).map(cacheEntryStamp).join("\n");
+}
+
+// An offline copy of somebody else's reviewer is a cache of a row that its owner
+// can change without this device being told, so the same version check applies to
+// it as to the read cache. When the row has moved on, the copy is dropped rather
+// than refreshed: the alternative is showing a reader an answer key the owner has
+// already replaced. It comes back on the next open while online. This account's
+// own reviewers are never dropped, because those can hold edits that have not
+// been uploaded yet.
+function dropStaleForeignLocalCopies(entries) {
+  const local = getLocalReviewers();
+  if (!local.length || !accountDataOwnerId) return 0;
+
+  const latestById = new Map();
+  entries.forEach((entry) => {
+    const id = entry?.reviewerId;
+    // A full entry is this device's own fresh copy of the row, so it is not
+    // evidence that anything else on the device is behind it.
+    if (!id || Array.isArray(entry?.questions)) return;
+    const version = reviewerVersion(entry);
+    if (version > (latestById.get(id) || 0)) latestById.set(id, version);
+  });
+
+  if (!latestById.size) return 0;
+
+  const kept = local.filter((reviewer) => {
+    const latest = latestById.get(reviewer?.reviewerId);
+    if (!latest) return true;
+    if (!reviewer.ownerId || reviewer.ownerId === accountDataOwnerId) return true;
+    return reviewerVersion(reviewer) >= latest;
+  });
+
+  const dropped = local.length - kept.length;
+  if (!dropped) return 0;
+
+  // Written straight to the store rather than through deleteLocalReviewer, which
+  // also clears this reviewer's saved quiz. That quiz is not wrong, its answer
+  // key is simply rebuilt from the current reviewer when it is resumed.
+  writeAccountData(KEYS.localReviewers, kept);
+  return dropped;
+}
+
 // The list arrives as summaries, with no questions. Merging keeps the full
 // reviewer already cached for anything that has been opened, so a summary can
 // never strip questions a reviewer still needs offline. A reviewer owned by a
@@ -571,19 +678,24 @@ export function mergeCloudReviewerCache(entries) {
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return getCloudReviewerCache();
 
-  const byId = new Map(getCloudReviewerCache().map((reviewer) => [reviewer.reviewerId, reviewer]));
+  const current = getCloudReviewerCache();
+  const byId = new Map(current.map((reviewer) => [reviewer.reviewerId, reviewer]));
 
   list.forEach((entry) => {
     const id = entry?.reviewerId;
     if (!id) return;
 
-    const existing = byId.get(id);
-    const keepsQuestions = Array.isArray(existing?.questions) && !Array.isArray(entry.questions);
-
-    byId.set(id, keepsQuestions ? { ...existing, ...entry, questions: existing.questions } : entry);
+    byId.set(id, pickReviewerCacheEntry(byId.get(id), entry));
   });
 
   const next = [...byId.values()];
+  dropStaleForeignLocalCopies(list);
+
+  // Writing unconditionally would announce a reviewer data change on every list
+  // load, and the page that asked for the list reloads on that event and asks
+  // again.
+  if (cacheFingerprint(next) === cacheFingerprint(current)) return next;
+
   writeAccountData(KEYS.cloudReviewerCache, next);
   notifyReviewerDataChanged();
   return next;

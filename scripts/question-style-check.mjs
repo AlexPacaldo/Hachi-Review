@@ -1176,6 +1176,78 @@ section("friends of friends, as a suggestion, stays inside the policy");
   }).size, 2);
 }
 
+// A session carries its own copy of the answer key, and that copy is what grades
+// it. Nothing warns when the two disagree, so an owner who corrects a key while
+// somebody has the reviewer open leaves that session silently marking the old one.
+section("a corrected answer key reaches a quiz already in progress");
+{
+  const { refreshSessionAnswerKey, isAnswerCorrect } = await import(MODULE_URL);
+
+  const stored = (id, correctAnswer) => ({
+    id,
+    topic: "T",
+    question: `Q ${id}`,
+    correctAnswer,
+    answerText: correctAnswer,
+    explanation: "why",
+    choices: { A: "a", B: "b", C: "c", D: "d" }
+  });
+
+  // Only q1's key moved. q2 is deliberately identical in both, so it stands in
+  // for the many questions an edit leaves alone.
+  const reviewer = { questions: [stored("q1", "D"), stored("q2", "C")] };
+  const session = {
+    sessionId: "s1",
+    // The learner already answered q1 correctly under the old key, and is partway
+    // into q2. The choices are this session's own shuffle and must survive.
+    questions: [
+      { ...stored("q1", "B"), choices: [{ value: "C", label: "c" }, { value: "B", label: "b" }, { value: "D", label: "d" }, { value: "A", label: "a" }] },
+      { ...stored("q2", "C"), choices: [{ value: "A", label: "a" }, { value: "C", label: "c" }, { value: "B", label: "b" }, { value: "D", label: "d" }] }
+    ],
+    answers: { q1: "B" },
+    submittedQuestions: { q1: true },
+    completed: false
+  };
+
+  const refreshed = refreshSessionAnswerKey(session, reviewer);
+  check("the corrected key was picked up", refreshed.questions[0].correctAnswer, "D");
+  check("so an answer given under the old key is marked wrong", isAnswerCorrect(refreshed.questions[0], "B"), false);
+  check("and the new one is marked right", isAnswerCorrect(refreshed.questions[0], "D"), true);
+  check("a question the owner did not touch is left alone", refreshed.questions[1].correctAnswer, "C");
+  check("the answers already given are kept", refreshed.answers, { q1: "B" });
+  check("the session's own choice order is kept", refreshed.questions[0].choices.map((c) => c.value), ["C", "B", "D", "A"]);
+  check("practice reveals survive", refreshed.submittedQuestions, { q1: true });
+
+  // The same session object has to come back when nothing moved, or the caller
+  // cannot hand this to setState without re-rendering forever. Re-running it over
+  // its own output is the case that matters: that is what a second render does.
+  check("running it twice settles", refreshSessionAnswerKey(refreshed, reviewer) === refreshed, true);
+  check("and a session matching the reviewer is untouched", refreshSessionAnswerKey(session, { questions: [stored("q1", "B"), stored("q2", "C")] }) === session, true);
+
+  // A summary cannot rebuild anything, so a device that is offline keeps the key
+  // its session already holds rather than losing the questions outright.
+  check("a summary changes nothing", refreshSessionAnswerKey(session, { reviewerId: "x" }) === session, true);
+  check("no session changes nothing", refreshSessionAnswerKey(null, reviewer), null);
+
+  // A regenerated reviewer is a different set of questions under the same id, and
+  // one of them may simply not exist any more. Dropping a question out from under
+  // an attempt in progress loses the learner's place, so it is left as it was.
+  const partial = refreshSessionAnswerKey(session, { questions: [stored("q1", "D")] });
+  check("a question missing from the reviewer is not dropped", partial.questions.length, 2);
+  check("and keeps the key it was given", partial.questions[1].correctAnswer, "C");
+
+  // A typed question is graded against answerText, not a letter, so the text has
+  // to move with the key or correcting the key would change nothing.
+  const typed = {
+    questions: [{ ...session.questions[0], id: "t1", type: "identification", correctAnswer: "TEXT", answerText: "old text" }]
+  };
+  const typedSession = { ...session, questions: [typed.questions[0]] };
+  const typedFixed = refreshSessionAnswerKey(typedSession, {
+    questions: [{ ...typed.questions[0], answerText: "new text" }]
+  });
+  check("a typed question's text follows the key", typedFixed.questions[0].answerText, "new text");
+}
+
 section("the friends-of-friends function cannot be turned into a directory");
 {
   const fs = await import("node:fs");
