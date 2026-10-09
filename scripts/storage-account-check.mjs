@@ -295,6 +295,45 @@ section("a reviewer this account does not own is read from the newer copy");
   check("and it still validates", mine.validation.isValid, true);
 }
 
+// A notification list is read on mount and written back on every change, and on a
+// reload the mount happens before the session has resolved. Reading before the
+// account is known reads the wrong slot, so anything read then must never be
+// written back: doing so silently replaced the real history with the empty value
+// on every reload, and nothing on screen said why.
+section("a notification list survives a reload that starts before the session resolves");
+{
+  store.clear();
+  const storage = await import(`${MODULE_URL}?case=beforeauth`);
+  const UID = "account-reload";
+  // The notifications store's own name, suffixed with the account id. Not
+  // exported from the module, and spelled out here on purpose so a rename there
+  // fails this check instead of quietly testing a key nothing writes.
+  const NOTIFICATIONS_KEY = "hachi_notifications";
+
+  check("the account is not known before the session resolves", storage.isAccountDataOwnerKnown(), false);
+  check("and the owner is not named yet", storage.getAccountDataOwnerId(), null);
+
+  // A previous session left a history behind under the account slot.
+  store.set(`${NOTIFICATIONS_KEY}:${UID}`, JSON.stringify([{ id: "n1", title: "Reviewer updated" }]));
+  check("a list read too early sees nothing", storage.getNotificationHistory(), []);
+
+  // The save that a provider runs on mount. Nothing lands, by name or by value.
+  storage.saveNotificationHistory([]);
+  check("the saved history is untouched", store.get(`${NOTIFICATIONS_KEY}:${UID}`), JSON.stringify([{ id: "n1", title: "Reviewer updated" }]));
+
+  // The session resolves.
+  storage.setAccountDataOwner(UID);
+  check("the account is known once it resolves", storage.isAccountDataOwnerKnown(), true);
+  check("and the real history is now readable", storage.getNotificationHistory().length, 1);
+
+  // A signed-out device is settled, not unresolved: it must still be able to save.
+  const signedOut = await import(`${MODULE_URL}?case=signedout`);
+  signedOut.setAccountDataOwner(null);
+  check("a signed-out device counts as known", signedOut.isAccountDataOwnerKnown(), true);
+  signedOut.saveNotificationHistory([{ id: "n2" }]);
+  check("and can store its own history", signedOut.getNotificationHistory().length, 1);
+}
+
 section("nothing is written before the account is known");
 {
   const storage = await loadApp();

@@ -569,6 +569,14 @@ export function getAccountDataOwnerId() {
   return accountDataOwnerId;
 }
 
+// Whether the account has been resolved yet. Distinct from the owner being null,
+// which is the settled answer for a signed-out device. A store must not be written
+// from a value read before this is true: the read came from the wrong slot, so
+// writing it back destroys whatever the right slot held.
+export function isAccountDataOwnerKnown() {
+  return accountDataOwnerKnown;
+}
+
 // A reviewer's version is the updated_at of the row behind it. Summaries from the
 // list view and full fetches both carry it, so a copy held on this device can be
 // compared against a summary arriving from the same list to decide whether its

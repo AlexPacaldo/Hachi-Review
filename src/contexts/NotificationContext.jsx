@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   ACCOUNT_DATA_CHANGED_EVENT,
   getNotificationHistory,
+  isAccountDataOwnerKnown,
   REVIEWER_DATA_CHANGED_EVENT,
   saveNotificationHistory
 } from "../utils/storageUtils.js";
@@ -38,18 +39,27 @@ function createNotification(notification) {
 
 export function NotificationProvider({ children }) {
   const [notifications, setNotifications] = useState(readNotifications);
+  // False while the session is still resolving. The list above was read from
+  // whichever slot the device slot, so it is not yet this account's history and
+  // must not be written anywhere.
+  const [ownerKnown, setOwnerKnown] = useState(isAccountDataOwnerKnown);
   const [toastIds, setToastIds] = useState([]);
   const actionHandlers = useRef(new Map());
 
   useEffect(() => {
+    if (!ownerKnown) return;
     saveNotificationHistory(notifications.slice(0, MAX_NOTIFICATIONS));
-  }, [notifications]);
+  }, [notifications, ownerKnown]);
 
   // A different account, or a wipe of the device data, both replace the history
   // behind this list. The account event covers the sign-in and sign-out; the
   // reviewer event covers the wipe, which no account change announces.
   useEffect(() => {
     const handleStoreChange = () => {
+      // The account resolving is itself the reason to re-read: on a reload the
+      // list was read before the session was known, so the right slot has not
+      // been looked at yet.
+      setOwnerKnown(isAccountDataOwnerKnown());
       setNotifications((current) => {
         const next = readNotifications();
         return sameNotifications(current, next) ? current : next;
