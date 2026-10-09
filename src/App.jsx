@@ -143,66 +143,67 @@ function AppShell() {
   }, []);
 
   return (
-    <AuthProvider>
-      {/*
-        Inside AuthProvider, not around it. The stores these notifications live in
-        belong to an account, so the list is read on mount and written back on
-        every change, and on a reload the mount happens before the session has
-        resolved. React runs a child's effects before its parent's, so with this
-        provider outside AuthProvider its account-changed listener was registered
-        only after auth had already fired that event: the list stayed on the empty
-        value it read, and then wrote that empty value over the saved history on
-        every reload. Nested in here, the listener is in place first and the list
-        is re-read for the account that turns out to be signed in.
-      */}
-      <NotificationProvider>
-        <ScrollToTop />
-        <SocialNotificationWatcher />
-        {isLanding ? null : <Navbar theme={theme} onToggleTheme={toggleTheme} />}
-        {isLanding ? null : <TopActions />}
-        <NotificationToasts />
-        {updateReady && isBusy ? (
-          <div className="update-banner" role="status">
-            <span className="banner-icon" aria-hidden="true"><RefreshCw size={15} /></span>
-            <span>Hachi updates when this is done.</span>
-            <button className="button subtle" type="button" onClick={() => window.location.reload()}>
-              Reload now
-            </button>
-          </div>
-        ) : null}
-        {isLanding ? null : <AdminUsageBanner />}
-        {isLanding ? null : <div className="top-pill-spacer" aria-hidden="true" />}
-        <main className={isLanding ? "landing-main" : undefined}>
-          <ErrorBoundary key={location.pathname}>
-            <Routes>
-              <Route path="/" element={<Landing theme={theme} onToggleTheme={toggleTheme} />} />
-              <Route path="/home" element={<Home />} />
-              <Route path="/reviewer/:reviewerId" element={<ReviewerSetup />} />
-              <Route path="/quiz/:reviewerId" element={<Quiz />} />
-              <Route path="/results/:reviewerId" element={<Results />} />
-              <Route path="/review/:reviewerId" element={<ReviewAnswers />} />
-              <Route path="/history" element={<History />} />
-              <Route path="/library" element={<Library />} />
-              <Route path="/friends" element={<Friends />} />
-              <Route path="/groups" element={<Groups />} />
-              <Route path="/groups/:groupId" element={<GroupDetail />} />
-              <Route path="/groups/join/:inviteCode" element={<GroupJoin />} />
-              <Route path="/generator" element={<Generator />} />
-              <Route path="/account" element={<Account />} />
-              <Route path="/admin/stats" element={<AdminStats />} />
-              <Route path="/about" element={<About />} />
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/privacy" element={<Privacy />} />
-              <Route path="/terms" element={<Terms />} />
-              <Route path="*" element={<Navigate to="/home" replace />} />
-            </Routes>
-          </ErrorBoundary>
-        </main>
-      </NotificationProvider>
-    </AuthProvider>
+    <>
+      <ScrollToTop />
+      <SocialNotificationWatcher />
+      {isLanding ? null : <Navbar theme={theme} onToggleTheme={toggleTheme} />}
+      {isLanding ? null : <TopActions />}
+      <NotificationToasts />
+      {updateReady && isBusy ? (
+        <div className="update-banner" role="status">
+          <span className="banner-icon" aria-hidden="true"><RefreshCw size={15} /></span>
+          <span>Hachi updates when this is done.</span>
+          <button className="button subtle" type="button" onClick={() => window.location.reload()}>
+            Reload now
+          </button>
+        </div>
+      ) : null}
+      {isLanding ? null : <AdminUsageBanner />}
+      {isLanding ? null : <div className="top-pill-spacer" aria-hidden="true" />}
+      <main className={isLanding ? "landing-main" : undefined}>
+        <ErrorBoundary key={location.pathname}>
+          <Routes>
+            <Route path="/" element={<Landing theme={theme} onToggleTheme={toggleTheme} />} />
+            <Route path="/home" element={<Home />} />
+            <Route path="/reviewer/:reviewerId" element={<ReviewerSetup />} />
+            <Route path="/quiz/:reviewerId" element={<Quiz />} />
+            <Route path="/results/:reviewerId" element={<Results />} />
+            <Route path="/review/:reviewerId" element={<ReviewAnswers />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/library" element={<Library />} />
+            <Route path="/friends" element={<Friends />} />
+            <Route path="/groups" element={<Groups />} />
+            <Route path="/groups/:groupId" element={<GroupDetail />} />
+            <Route path="/groups/join/:inviteCode" element={<GroupJoin />} />
+            <Route path="/generator" element={<Generator />} />
+            <Route path="/account" element={<Account />} />
+            <Route path="/admin/stats" element={<AdminStats />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="*" element={<Navigate to="/home" replace />} />
+          </Routes>
+        </ErrorBoundary>
+      </main>
+    </>
   );
 }
 
+// The order here is load-bearing, and each pair is a real constraint rather than a
+// style choice. AppShell calls useNotifications itself, so it has to be inside
+// NotificationProvider. NotificationProvider has to be inside AuthProvider, because
+// the stores it reads and writes belong to an account and it reads them on mount:
+// React runs a child's effects before its parent's, so with these the wrong way
+// round AuthProvider's effect announces the signed-in account before the listener
+// meant to hear it exists, and the list then saves the empty value it read over
+// the real history on every reload.
 export default function App() {
-  return <AppShell />;
+  return (
+    <AuthProvider>
+      <NotificationProvider>
+        <AppShell />
+      </NotificationProvider>
+    </AuthProvider>
+  );
 }

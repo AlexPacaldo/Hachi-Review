@@ -1385,27 +1385,12 @@ section("a corrected answer key reaches a quiz already in progress");
 // the account-changed event that announces the signed-in account is heard at all.
 // Missed, the list keeps the empty value it read and writes that over the real
 // history on every reload.
-section("the notification list is nested inside the account provider");
+// The storage contract behind the notification list is asserted in
+// storage-account-check.mjs, and scripts/render-check.mjs renders the real app to
+// catch the provider tree being wrong, which is what actually broke it.
+section("the notification list waits for the account before writing anything back");
 {
   const fs = await import("node:fs");
-  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
-
-  const authOpen = app.indexOf("<AuthProvider>");
-  const authClose = app.indexOf("</AuthProvider>");
-  const notificationOpen = app.indexOf("<NotificationProvider>");
-  check("both providers are present", authOpen > -1 && notificationOpen > -1, true);
-  check(
-    "NotificationProvider is inside AuthProvider",
-    authOpen > -1 && notificationOpen > authOpen && notificationOpen < authClose,
-    true
-  );
-
-  // The consumers have to be inside both, so moving it must not strand them.
-  ["SocialNotificationWatcher", "NotificationToasts", "TopActions"].forEach((component) => {
-    const at = app.indexOf(`<${component}`);
-    check(`${component} is inside the notification provider`, at > notificationOpen && at < authClose, true);
-  });
-
   const context = fs.readFileSync(new URL("../src/contexts/NotificationContext.jsx", import.meta.url), "utf8");
   // A store read before the account is known came from the wrong slot, so it must
   // not be written back. Without this the guard is only the provider ordering, and
