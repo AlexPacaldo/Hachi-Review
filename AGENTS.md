@@ -191,6 +191,43 @@ Admin access is `app_metadata.admin = true` on the account. A row in
 `private.admin_emails` is the alternative, but an address is public the moment it is
 written down, so prefer the flag. Do not add an address to a committed SQL file.
 
+## Announcing an edit
+
+There is no notifications table. Every notification the app shows is derived on the
+reader's own device by `SocialNotificationWatcher`, which polls the social state and
+diffs it against a per-account `localStorage` cursor. That is why an edit can be
+announced at all without a write ever reaching the readers, and it is also the
+limitation: a reader who is not signed in, or whose device is closed, is told about
+the edit when they next open the app, not when it happens, and several edits in one
+interval arrive as one notification.
+
+Do not detect an edit with `updated_at`. It moves on a rename, a visibility change
+and a group share as well, so every one of those would announce an edit that never
+happened, and a reader who is told that often stops reading what the app says.
+`questions_updated_at` exists for this and moves only when the questions themselves
+differ. It is set by the `reviewers_stamp_question_edit` trigger rather than by the
+client, so no code path can forget to move it and no code path can forge one, and it
+needs `supabase-migration-2026-10-question-edit-notifications.sql`. Without that
+migration the column is null on every row and `collectReviewerEdits` stays silent,
+which is the intended degraded state: announcing nothing beats announcing every
+reviewer as permanently edited.
+
+The rule lives in `collectReviewerEdits` in `src/services/social.js`, not in the
+watcher, for the same reason `collectSuggestionCandidates` does: it decides whether
+other people get interrupted, so it is asserted in `scripts/question-style-check.mjs`
+rather than left to a code read. Keep the actor name out of it. The message is
+composed on the reader's device from `ownerName`, which comes from a `profiles` row
+their own read policy already permits, and nothing in this path may accept an actor
+id from the editing client — the "added you to a group" policy comment at
+`supabase-schema.sql:472` records what happens when one is trusted.
+
+One consequence worth knowing, because it is invisible until it bites: an upsert
+rewrites the whole `data` blob, so a payload built from a list summary carries no
+questions and takes the stored ones with it. The summaries from
+`reviewer_summaries` have no questions in them by design. Both rename paths now
+build their payload from the row they read instead, and a reviewer that has silently
+lost its questions is a far worse outcome than a noisy notification.
+
 ## Suggesting people
 
 The "People you may know" section on `/friends` is built from exactly three

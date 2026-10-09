@@ -272,6 +272,55 @@ export function toSuggestions(candidates, profiles, limit = SUGGESTION_LIMIT) {
     .slice(0, limit);
 }
 
+// Which reviewers in a poll had their questions edited since this device last
+// looked. Split out of the watcher for the same reason the suggestion rules are:
+// the rule is what decides whether other people get told something, and it is
+// testable here without a browser.
+//
+// The comparison is on questions_updated_at rather than updated_at, because
+// updated_at also moves on a rename, a visibility change and a group share.
+// Keying off it would announce an edit that never happened, and a reader who is
+// told that often stops reading what the app says.
+//
+// Three cases stay quiet, and each for its own reason. A reviewer this account
+// owns is the editor, not the audience. A stamp the device has never recorded is
+// a first sighting, which on a device that has been watching means the reviewer
+// was only just shared and already has its own notification. A row with no stamp
+// at all is a database that has not had the migration run, where every reviewer
+// would otherwise look permanently edited.
+export function collectReviewerEdits(rows, { userId, seen = {}, seeded = true } = {}) {
+  const previous = seen && typeof seen === "object" ? seen : {};
+  const next = {};
+  const edits = [];
+
+  (rows || []).forEach((row) => {
+    const reviewerId = row?.reviewer_id;
+    if (!reviewerId || row.owner_id === userId) return;
+
+    // Copied through so the caller's saved state is never mutated in place. The
+    // watcher holds this map for the length of a poll and then saves it.
+    const known = Object.prototype.hasOwnProperty.call(previous, reviewerId)
+      ? previous[reviewerId]
+      : undefined;
+    const stamp = row.questionsUpdatedAt || null;
+    next[reviewerId] = stamp;
+
+    if (!stamp) return;
+    if (known === undefined) return;
+    if (known === stamp) return;
+    if (!seeded) return;
+
+    edits.push({
+      reviewerId,
+      stamp,
+      title: row.title || row.data?.title || "a reviewer",
+      ownerName: row.ownerName || row.ownerProfile?.display_name || "A friend"
+    });
+  });
+
+  return { edits, next };
+}
+
 export async function listSuggestedPeople(userId, { excludeIds = [], limit = SUGGESTION_LIMIT } = {}) {
   if (!supabase || !userId) return { data: [], error: null };
 

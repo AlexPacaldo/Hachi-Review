@@ -352,7 +352,18 @@ export default function Library() {
           }
         : {};
 
-      const { error } = await upsertCloudReviewer(user.id, { ...renamedReviewer, ...scope });
+      // The rename starts from a list summary, and an upsert rewrites the whole
+      // stored blob, so writing the summary back would replace the reviewer's
+      // questions with nothing. The row just read is the authoritative copy of
+      // them, so the new title and subject are applied to that instead. The
+      // reviewer id is named rather than inherited because the upsert keys on it.
+      const { error } = await upsertCloudReviewer(user.id, {
+        ...(current?.data || renamedReviewer),
+        ...scope,
+        reviewerId: renamedReviewer.reviewerId,
+        title: renamedReviewer.title,
+        subject: renamedReviewer.subject
+      });
 
       if (error) {
         setCloudMessage({ type: "error", message: error.message || "Could not rename cloud reviewer." });

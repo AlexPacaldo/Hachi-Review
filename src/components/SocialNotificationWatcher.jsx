@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useNotifications } from "../contexts/NotificationContext.jsx";
-import { acceptFriendRequest, listFriendships, removeFriendship } from "../services/social.js";
+import { acceptFriendRequest, collectReviewerEdits, listFriendships, removeFriendship } from "../services/social.js";
 import { listVisibleCloudReviewers } from "../services/cloudReviewers.js";
 import { listMyGroupMembers, listMyGroups } from "../services/groups.js";
 import { isFriendVisible, isGroupVisible, normalizeVisibility } from "../services/reviewerVisibility.js";
@@ -14,6 +14,11 @@ import { supabase } from "../lib/supabaseClient.js";
 const STATE_KEY = SOCIAL_NOTIFICATION_STATE_KEY;
 const POLL_INTERVAL_MS = 60_000;
 const MAX_SEEN = 300;
+// Edit stamps are held per reviewer rather than per notification, so this bounds
+// the number of reviewers whose stamp is remembered, not the number of edits.
+// Trimming is by insertion order and is safe because a forgotten stamp only ever
+// makes the next edit of that reviewer read as a first sighting, which is silent.
+const MAX_EDIT_STAMPS = 300;
 
 function getFriendName(profile) {
   return profile?.display_name || "A friend";
@@ -39,6 +44,7 @@ function loadUserState(userId) {
     groupJoinedSeen: Array.isArray(current.groupJoinedSeen) ? current.groupJoinedSeen : [],
     groupMemberSeen: Array.isArray(current.groupMemberSeen) ? current.groupMemberSeen : [],
     groupReviewerSeen: Array.isArray(current.groupReviewerSeen) ? current.groupReviewerSeen : [],
+    questionEdits: current.questionEdits && typeof current.questionEdits === "object" ? current.questionEdits : {},
     groupRoles: current.groupRoles && typeof current.groupRoles === "object" ? current.groupRoles : {},
     groupReviewerMeta:
       current.groupReviewerMeta && typeof current.groupReviewerMeta === "object"
@@ -58,6 +64,7 @@ function saveUserState(userId, state) {
       groupJoinedSeen: state.groupJoinedSeen.slice(0, MAX_SEEN),
       groupMemberSeen: state.groupMemberSeen.slice(0, MAX_SEEN),
       groupReviewerSeen: state.groupReviewerSeen.slice(0, MAX_SEEN),
+      questionEdits: Object.fromEntries(Object.entries(state.questionEdits).slice(0, MAX_EDIT_STAMPS)),
       groupRoles: state.groupRoles,
       groupReviewerMeta: state.groupReviewerMeta
     };
@@ -169,7 +176,29 @@ export default function SocialNotificationWatcher() {
         const groupReviewerMeta = { ...state.groupReviewerMeta };
         const groupRoles = { ...state.groupRoles };
 
+        // Run before the seeded branch so the first poll records a baseline
+        // without announcing anything. Everything historical would otherwise read
+        // as a batch of edits the first time this device ever polled.
+        const { edits, next: questionEdits } = collectReviewerEdits(visibleRows, {
+          userId: user.id,
+          seen: state.questionEdits,
+          seeded: state.seeded
+        });
+
         if (state.seeded) {
+          // The questions behind a reviewer changed. Announced once per poll and
+          // only to somebody who can open it, since the poll only returns rows
+          // this account is allowed to read.
+          edits.forEach((edit) => {
+            notify({
+              type: "info",
+              title: "Reviewer updated",
+              message: `${edit.ownerName} updated the questions in "${edit.title}".`,
+              actionLabel: "Open reviewer",
+              actionHref: `/reviewer/${edit.reviewerId}`
+            });
+          });
+
           incomingPending.forEach((friendship) => {
             if (incomingSeen.has(friendship.id)) return;
             incomingSeen.add(friendship.id);
@@ -382,7 +411,8 @@ export default function SocialNotificationWatcher() {
           groupMemberSeen: [...groupMemberSeen],
           groupReviewerSeen: [...groupReviewerSeen],
           groupRoles,
-          groupReviewerMeta
+          groupReviewerMeta,
+          questionEdits
         });
       } finally {
         inFlight.current = false;

@@ -564,6 +564,17 @@ alter table public.reviewers add column if not exists shared_with jsonb;
 -- so a group share adds to the friend audience instead of replacing it.
 alter table public.reviewers add column if not exists shared_groups jsonb;
 
+-- Moves only when the questions themselves change, unlike updated_at, which also
+-- moves on a rename, a visibility change and a group share. Readers diff this to
+-- decide whether an edit happened, so anything that widens it would announce an
+-- edit that did not occur. Set by the trigger below rather than by the client, so
+-- no code path can forget to move it or set it on unchanged questions.
+alter table public.reviewers add column if not exists questions_updated_at timestamptz;
+
+update public.reviewers
+set questions_updated_at = updated_at
+where questions_updated_at is null;
+
 create index if not exists reviewers_visibility_owner_idx
 on public.reviewers(visibility, owner_id, updated_at desc);
 
@@ -695,6 +706,32 @@ create trigger reviewers_sync_group_shares
   after insert or update on public.reviewers
   for each row
   execute function public.sync_reviewer_group_shares();
+
+-- Moves questions_updated_at when, and only when, the questions differ, so a
+-- reader can tell an edit from a rename or a share. Before, not after, because
+-- the value has to be part of the row being written. It only assigns to NEW,
+-- which needs no privilege the caller lacks, so unlike the trigger above it does
+-- not run as the table owner.
+create or replace function public.stamp_reviewer_question_edit()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  -- jsonb equality is structural, so a row rewritten with its questions
+  -- unchanged, which every rename and every share does, compares equal here.
+  if new.data->'questions' is distinct from old.data->'questions' then
+    new.questions_updated_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists reviewers_stamp_question_edit on public.reviewers;
+create trigger reviewers_stamp_question_edit
+  before update on public.reviewers
+  for each row
+  execute function public.stamp_reviewer_question_edit();
 
 -- Backfills the table for reviewers that were shared into groups before it
 -- existed. Idempotent, so re-running the schema file is safe.
@@ -1350,8 +1387,12 @@ select
     'visibility', r.visibility,
     'sharedWith', r.shared_with,
     'sharedGroups', r.shared_groups,
-    'updatedAt', r.updated_at
-  ) as summary
+    'updatedAt', r.updated_at,
+    'questionsUpdatedAt', r.questions_updated_at
+  ) as summary,
+  -- Last, because create or replace view can only append a column. Placed
+  -- earlier it would rename summary and Postgres would refuse the statement.
+  r.questions_updated_at
 from public.reviewers r;
 
 grant select on public.reviewer_summaries to authenticated;

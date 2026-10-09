@@ -1176,6 +1176,137 @@ section("friends of friends, as a suggestion, stays inside the policy");
   }).size, 2);
 }
 
+// Telling other users that a reviewer was edited. The rule decides whether
+// somebody is interrupted about their own reading, so both directions matter:
+// missing a real edit leaves them studying against a key that moved, and firing on
+// something that was not an edit teaches them to ignore the app.
+section("an edited reviewer is announced once, and only for a real edit");
+{
+  const { collectReviewerEdits } = await import(
+    pathToFileURL(new URL("../src/services/social.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  const ME = "me";
+  const PEER = "peer";
+  const V1 = "2026-10-01T09:00:00.000Z";
+  const V2 = "2026-10-02T09:00:00.000Z";
+
+  const row = (over = {}) => ({
+    reviewer_id: "r1",
+    owner_id: PEER,
+    title: "Anatomy",
+    ownerName: "Sam",
+    questionsUpdatedAt: V1,
+    ...over
+  });
+
+  // First poll. The device has no baseline, so a reviewer it has never recorded
+  // cannot be one it watched change, and announcing it would greet every reader
+  // with a backlog of edits from before they ever opened the app.
+  const first = collectReviewerEdits([row()], { userId: ME, seen: {}, seeded: true });
+  check("a first sighting is silent", first.edits.length, 0);
+  check("but the baseline is recorded", first.next.r1, V1);
+
+  // Same stamp again: nothing happened.
+  const unchanged = collectReviewerEdits([row()], { userId: ME, seen: first.next, seeded: true });
+  check("an unchanged reviewer is silent", unchanged.edits.length, 0);
+
+  // The stamp moved. This is the edit.
+  const edited = collectReviewerEdits([row({ questionsUpdatedAt: V2 })], { userId: ME, seen: first.next, seeded: true });
+  check("a moved stamp is announced", edited.edits.length, 1);
+  check("naming the reviewer", edited.edits[0].reviewerId, "r1");
+  check("naming the title", edited.edits[0].title, "Anatomy");
+  check("naming who edited it", edited.edits[0].ownerName, "Sam");
+  check("and recording the new stamp", edited.next.r1, V2);
+
+  // Announced once. A poll every minute must not re-announce the same edit.
+  const again = collectReviewerEdits([row({ questionsUpdatedAt: V2 })], { userId: ME, seen: edited.next, seeded: true });
+  check("it is not announced twice", again.edits.length, 0);
+
+  // The editor is not the audience. The owner is told by the save they just made.
+  const ownEdit = collectReviewerEdits(
+    [row({ owner_id: ME, questionsUpdatedAt: V2 })],
+    { userId: ME, seen: { r1: V1 }, seeded: true }
+  );
+  check("your own reviewer is not announced to you", ownEdit.edits.length, 0);
+
+  // A device that has never polled records a baseline and announces nothing, so
+  // the first poll after signing in is not a wall of historical edits.
+  const unseeded = collectReviewerEdits([row({ questionsUpdatedAt: V2 })], { userId: ME, seen: { r1: V1 }, seeded: false });
+  check("an unseeded device announces nothing", unseeded.edits.length, 0);
+  check("but still advances the baseline", unseeded.next.r1, V2);
+
+  // A database without the migration has no stamp on any row. Without this every
+  // reviewer would look permanently edited and notify on every poll forever.
+  const noMigration = collectReviewerEdits(
+    [row({ questionsUpdatedAt: null }), row({ reviewer_id: "r2", questionsUpdatedAt: undefined })],
+    { userId: ME, seen: { r1: V1, r2: V1 }, seeded: true }
+  );
+  check("a database without the column announces nothing", noMigration.edits.length, 0);
+  check("and records the absence rather than dropping the entry", noMigration.next.r1, null);
+
+  // The caller's saved state must survive, since the watcher keeps it for the
+  // length of a poll and writes it back afterwards.
+  const seen = { r1: V1 };
+  const mutated = collectReviewerEdits([row({ questionsUpdatedAt: V2 })], { userId: ME, seen, seeded: true });
+  check("the saved state is not mutated in place", seen.r1, V1);
+  check("a new object comes back instead", mutated.next !== seen, true);
+
+  // A row the account cannot read never reaches the poll at all, so there is
+  // nothing to guard here beyond the owner check above.
+  check("a row with no id is skipped", collectReviewerEdits(
+    [{ owner_id: PEER, questionsUpdatedAt: V2 }],
+    { userId: ME, seen: {}, seeded: true }
+  ).edits.length, 0);
+
+  // Several reviewers edited at once are each announced, not merged.
+  const many = collectReviewerEdits(
+    [row({ reviewer_id: "r1", questionsUpdatedAt: V2 }), row({ reviewer_id: "r2", questionsUpdatedAt: V2 })],
+    { userId: ME, seen: { r1: V1, r2: V1 }, seeded: true }
+  );
+  check("each edited reviewer is announced", many.edits.map((edit) => edit.reviewerId).sort(), ["r1", "r2"]);
+}
+
+section("a database without the question-edit column still announces nothing");
+{
+  const fs = await import("node:fs");
+  const files = [
+    "../supabase-schema.sql",
+    "../supabase-migration-2026-10-question-edit-notifications.sql"
+  ];
+
+  for (const file of files) {
+    const sql = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    const name = file.split("/").pop();
+
+    check(`${name}: the column exists`, /questions_updated_at timestamptz/.test(sql), true);
+    check(`${name}: existing rows are backfilled`, /set questions_updated_at = updated_at/.test(sql), true);
+
+    // The signal has to be narrower than updated_at, or a rename or a share
+    // reads as an edit and the notification becomes noise.
+    const fn = sql.slice(sql.indexOf("function public.stamp_reviewer_question_edit"));
+    check(`${name}: the trigger fires on update`, /before update on public\.reviewers/.test(sql), true);
+    check(`${name}: only a change to the questions moves the stamp`, /new\.data->'questions' is distinct from old\.data->'questions'/.test(fn), true);
+    check(`${name}: it is not written unconditionally`, /if new\.data->'questions' is distinct[\s\S]*?then[\s\S]*?end if/.test(fn), true);
+    // A before trigger, so the value is part of the row that gets written.
+    check(`${name}: it runs before the write`, /before update/.test(sql), true);
+    // The view is recreated rather than altered, and it has to keep the original's
+    // security posture: a view runs with its owner's rights by default, which
+    // would bypass the reviewer read policies and hand over every reviewer.
+    check(`${name}: the summary view carries the stamp`, /'questionsUpdatedAt', r\.questions_updated_at/.test(sql), true);
+    check(`${name}: the view stays security_invoker`, /create or replace view public\.reviewer_summaries with \(security_invoker = true\)/.test(sql), true);
+
+    // create or replace view can only append a column. One placed before summary
+    // renames it and Postgres refuses the statement, which would leave the column
+    // and the trigger in place and the view without the stamp, so an edit would
+    // never be seen at all. Nothing in the client would say why.
+    const view = sql.slice(sql.indexOf("create or replace view public.reviewer_summaries"));
+    const summaryAt = view.indexOf(") as summary");
+    const stampAt = view.lastIndexOf("r.questions_updated_at");
+    check(`${name}: the stamp is appended after summary`, summaryAt > -1 && stampAt > summaryAt, true);
+  }
+}
+
 // A session carries its own copy of the answer key, and that copy is what grades
 // it. Nothing warns when the two disagree, so an owner who corrects a key while
 // somebody has the reviewer open leaves that session silently marking the old one.

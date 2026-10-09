@@ -276,9 +276,15 @@ export default function ReviewerMenu({ reviewer, user, configured, onMessage, on
           }
         : {};
 
+      // An upsert rewrites the whole stored blob, so a payload built from
+      // anything but the row itself can take the questions with it. The reviewer
+      // reaching this menu carries them today, but the row is already read for
+      // the scope above, so the rename is applied to the authoritative copy
+      // rather than to whatever happened to be passed in.
       const { error } = await upsertCloudReviewer(user.id, {
-        ...reviewer,
+        ...(current?.data || reviewer),
         ...scope,
+        reviewerId: reviewer.reviewerId,
         title,
         subject
       });
