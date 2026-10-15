@@ -1501,6 +1501,101 @@ section("the group invite functions cannot be turned into a directory");
   check("the members insert policy still requires an owner or admin", /is_group_owner_or_admin/.test(insertPolicy), true);
 }
 
+// What a page view records. The route is the only thing that could carry an
+// identifier out of a URL, so every parameterised route is checked by feeding it a
+// real-looking value and asserting that none of it survives. This is the same
+// argument as the invite code policy check above: the rule is one careless change
+// away from not being a rule, and nothing about it fails loudly.
+section("a page view records a page name and nothing from the address");
+{
+  const { analyticsPath, routeName, ANALYTICS_PATHS } = await import(
+    pathToFileURL(new URL("../src/utils/analyticsRoutes.js", import.meta.url).pathname.replace(/^\//, "")).href
+  );
+
+  // Every route App.jsx declares that is not a static page. Each of these takes an
+  // identifier, and an invite code is a capability rather than an address, which is
+  // the one that would matter most if it were stored.
+  const IDENTIFIERS = [
+    ["/reviewer/9c2b1f0e-5a4d-4b7c-9f10-2d3e4f5a6b7c", "/reviewer"],
+    ["/quiz/9c2b1f0e-5a4d-4b7c-9f10-2d3e4f5a6b7c", "/quiz"],
+    ["/results/9c2b1f0e-5a4d-4b7c-9f10-2d3e4f5a6b7c", "/results"],
+    ["/review/9c2b1f0e-5a4d-4b7c-9f10-2d3e4f5a6b7c", "/review"],
+    ["/groups/2a6f1c8e-77b5-4d19-b0a3-9e1f2c3d4e5f", "/group"],
+    ["/groups/join/K3XQ7M", "/groups/join"],
+    ["/guides/spaced-revision", "/guide"]
+  ];
+
+  for (const [url, expected] of IDENTIFIERS) {
+    const recorded = analyticsPath(url);
+    check(`${url} is recorded as ${expected}`, recorded, expected);
+
+    // The assertion that matters, and the one a title-only test would miss: the
+    // recorded value is not merely different from the URL, it contains none of it.
+    const tail = url.split("/").filter(Boolean).pop();
+    check(`${url} keeps nothing of "${tail}"`, String(recorded).includes(tail), false);
+  }
+
+  check("an invite code is not in the recorded path", String(analyticsPath("/groups/join/K3XQ7M")).includes("K3XQ7M"), false);
+  check("a value with a query string is not a pathname and is dropped", analyticsPath("/library?ref=twitter"), null);
+  check("a trailing slash is the same page", analyticsPath("/library/"), "/library");
+  check("the root survives its own trailing slash", analyticsPath("/"), "/");
+  check("the groups index is not the group page", analyticsPath("/groups"), "/groups");
+
+  // The failure direction. A route that has not been thought about records nothing
+  // rather than recording itself, because the alternative is a table the owner can
+  // read filled with whatever was in an address bar.
+  check("an unknown route records nothing", analyticsPath("/something-new"), null);
+  check("a path with an id at the end is not a route", analyticsPath("/library/9c2b1f0e"), null);
+  check("an absolute url is not a route", analyticsPath("https://elsewhere.example/x"), null);
+  check("nothing at all is not a route", analyticsPath(undefined), null);
+  check("the signup page is not recorded yet", analyticsPath("/signup"), null);
+
+  // Every recorded value reads back as something a person can be shown, which is
+  // what stops a route name being shown raw on the statistics page.
+  const unnamed = ANALYTICS_PATHS.filter((path) => routeName(path) === path);
+  check("every recorded route has a readable name", unnamed, []);
+  check("the list has no duplicates", ANALYTICS_PATHS.length, [...new Set(ANALYTICS_PATHS)].length);
+
+  // The database enforces the same list, and it is the one that matters: the browser
+  // is not a boundary. A path the function does not recognise is dropped before
+  // anything is written.
+  const fs = await import("node:fs");
+  const sql = fs.readFileSync(new URL("../supabase-migration-2026-10-page-views.sql", import.meta.url), "utf8");
+
+  const allowlist = sql.match(/p_path = any \(array\[([\s\S]*?)\]\)/);
+  check("record_page_view has a path allowlist", Boolean(allowlist), true);
+
+  const allowed = allowlist
+    ? allowlist[1].split(",").map((part) => part.trim().replace(/^'|'$/g, "")).filter(Boolean).sort()
+    : [];
+
+  check("the two allowlists are identical", allowed, [...ANALYTICS_PATHS].sort());
+
+  check("no column of a page view is an account or an address",
+    /session_key text not null,\s*path text not null,\s*viewed_at timestamptz not null default now\(\)/.test(sql), true);
+  check("no page view column is an email", /\bemail\b/.test(sql.match(/create table if not exists public\.page_views[\s\S]*?;\n/)[0]), false);
+  check("no page view column is a user id", /\buser_id\b|\bowner_id\b|auth\.uid\(\)/.test(sql.match(/create table if not exists public\.page_views[\s\S]*?;\n/)[0]), false);
+  check("the table is unreadable by clients", /revoke all on table public\.page_views from anon, authenticated;/.test(sql), true);
+  check("a reload is not a second view", /viewed_at > now\(\) - interval '30 minutes'/.test(sql), true);
+  check("nothing but a route name comes back to the caller", /create or replace function public\.record_page_view\(p_key text, p_path text\)\s*\nreturns void/.test(sql), true);
+
+  // The statistics page reads the rows, so it is the one function that has to be
+  // gated, and its gate is the same one the account totals use.
+  const trafficStart = sql.indexOf("create or replace function public.admin_traffic_stats");
+  const trafficBody = sql.slice(trafficStart, sql.indexOf("$$;", trafficStart));
+  // Comments are stripped first, because this file argues its own reasoning in
+  // them and the reasoning is allowed to say what the function must never do.
+  const trafficCode = trafficBody.replace(/--[^\n]*/g, "");
+  check("traffic stats run as the owner", /security definer/.test(trafficCode), true);
+  check("traffic stats pin search_path", /set search_path = public/.test(trafficCode), true);
+  check("traffic stats refuse a non-admin", trafficCode.includes("if not private.is_admin() then"), true);
+  check("traffic stats are capped at 90 days", /least\(greatest\(coalesce\(p_days/.test(trafficCode), true);
+  check("traffic stats read no account", /\buser_id\b|\bowner_id\b|auth\.uid\(\)|auth\.users/.test(trafficCode), false);
+  check("traffic stats are granted only to a signed-in account",
+    /revoke execute on function public\.admin_traffic_stats\(integer\) from public, anon;/.test(sql)
+      && /grant execute on function public\.admin_traffic_stats\(integer\) to authenticated;/.test(sql), true);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 
 if (failures) process.exitCode = 1;

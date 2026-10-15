@@ -9558,9 +9558,8 @@ strong {
   margin-top: 34px;
 }
 
-/* Where the traffic numbers actually are. A pointer rather than a set of tiles,
-   because there is nothing in this database to put in them, and a row of zeros would
-   be worse than an honest signpost. */
+/* Stands in for the Visits section when page views are not being recorded, so the
+   absence of numbers is stated rather than left as a row of zeros. */
 .admin-visits {
   display: flex;
   flex-wrap: wrap;
@@ -9613,6 +9612,74 @@ strong {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+}
+
+/* The line above a tile grid and under a route list. Sits inside the section
+   rather than inside the grid so the gap belongs to the prose. */
+.admin-section-note {
+  max-width: 72ch;
+  margin: 0 0 14px;
+  line-height: 1.6;
+}
+
+.admin-route-note {
+  max-width: 72ch;
+  margin: 12px 0 0;
+  line-height: 1.6;
+}
+
+.admin-route-empty {
+  margin: 0;
+}
+
+/* Routes people open. A row rather than another grid of tiles: the names vary in
+   length, the numbers are small, and a bar between them makes the ranking legible
+   without reading every figure. */
+.admin-route-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 20px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.admin-route-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.admin-route-name {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.admin-route-bar {
+  display: block;
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.admin-route-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+
+.admin-route-count {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-tile {
@@ -9676,7 +9743,7 @@ strong {
   border-radius: 6px 6px 3px 3px;
 }
 
-.admin-chart-bar.has-signups {
+.admin-chart-bar.has-value {
   background: var(--accent);
 }
 

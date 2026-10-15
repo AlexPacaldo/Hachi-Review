@@ -22,14 +22,14 @@ authorizes a paid call is not.
 
 ## Scripts load and the CSP
 
-`index.html` loads exactly two third-party or same-origin script/security items today:
-the Google AdSense external script, and Vercel Web Analytics served from this
-deployment's own origin (`/_vercel/insights/script.js`). Do not reintroduce an inline
-script block: the CSP pins no hash and allows no `'unsafe-inline'` for scripts, so one
-would fail silently in the browser while still working locally. If a same-origin
-asset is added, it is already allowed by `script-src 'self'`. A third-party host is
-not; it must be added to the relevant directives in `vercel.json` and that change only
-takes effect in production.
+`index.html` loads exactly one third-party script today: the Google AdSense
+external script. Traffic used to be measured with Vercel Web Analytics, which was
+a second same-origin tag; it is gone. Do not reintroduce an inline script block: the
+CSP pins no hash and allows no `'unsafe-inline'` for scripts, so one would fail
+silently in the browser while still working locally. If a same-origin asset is added,
+it is already allowed by `script-src 'self'`. A third-party host is not; it must be
+added to the relevant directives in `vercel.json` and that change only takes effect in
+production.
 
 The AdSense script only runs because `script-src` lists
 `https://pagead2.googlesyndication.com` and its siblings. AdSense also injects a
@@ -63,18 +63,40 @@ ready the moment approval lands. Do not assume the presence of these hosts means
 AdSense is earning: the account has to be approved and Auto ads enabled, and
 `ads.txt` only authorises Google.
 
-## Vercel Web Analytics
+## Site analytics
 
-`index.html` loads `/_vercel/insights/script.js` with `defer`. It answers the only
-traffic question the database physically cannot: how many people visit. The app
-cannot show those numbers itself — `public.presence_pings` is a live count of landing
-page tabs with a ten minute self-destructing lifetime and no history, and nothing
-else records a page view — so `src/pages/AdminStats.jsx` points at the Vercel
-dashboard instead of pretending otherwise. When editing traffic or privacy copy,
-remember that the numbers live in Vercel, not in Supabase, and are never mixed into
-this database. The script and its beacons are same-origin, so no `vercel.json` change
-is (or may ever be) needed for it; a `script-src` host that is not `'self'` must be
-added deliberately.
+There is no analytics script. `src/App.jsx` counts page views itself, through
+`record_page_view` in `supabase-migration-2026-10-page-views.sql`, and
+`src/pages/AdminStats.jsx` reads them back with `admin_traffic_stats`. That replaced
+Vercel Web Analytics, which kept the only answer to "how many people visited" on a
+dashboard outside this project. The costs are now: one short request per route
+change, and the rows.
+
+`public.page_views` holds three columns and a surrogate key: a random per-tab
+`session_key`, one `path`, and `viewed_at`. There is no ip address, no user agent, no
+referrer, no user id, and no query string. Read `auth.uid()` here and the traffic
+numbers become a second account list, so a signed-in visitor is counted by their tab
+key like anybody else. `src/pages/Privacy.jsx` says all of this, and it has to stay
+true: change what is stored and the privacy copy is wrong before anyone notices.
+
+The path is a route name off a fixed list, never the URL, and that is enforced twice.
+`src/utils/analyticsRoutes.js` matches a pathname against an allowlist and returns
+nothing for a route it does not recognise, and `record_page_view` drops anything not
+on the same list. Every parameterised route here takes an identifier — a reviewer id,
+a group id, a guide slug, an invite code — and an invite code is a capability, not an
+address. The failure direction is the point: a route added to `App.jsx` and not to
+the list records nothing. Both lists must stay identical to each other and to
+`ANALYTICS_PATHS`, which `scripts/question-style-check.mjs` asserts.
+
+A view is one tab on one route, counted once every thirty minutes, so a reload is not
+a visit. `getPresenceKey` is reused on purpose: two identifiers for the same tab would
+be two identifiers to store, and nothing distinguishes them. `presence_pings` is a
+different thing and is not folded in — a live count of landing page tabs with a ten
+minute self-destructing lifetime and no history — so it stays on the page as "On the
+landing page now" and never becomes a trend. Neither may read `updated_at` or reach
+for a per-account join. The migration is safe to deploy before it has run: the ping
+errors are swallowed and `getAdminTrafficStats` failing leaves the account totals
+alone.
 
 ## What a crawler can see
 

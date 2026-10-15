@@ -57,6 +57,55 @@ export async function getAdminUserStats() {
   };
 }
 
+// Traffic is treated differently from the totals above, and the difference is the
+// whole point of calling it separately. Page views need a migration of their own,
+// and the statistics page has to keep working on a database that has not had it
+// applied: a missing function is reported on the Visits section and the account
+// numbers still render. Folding this into getAdminUserStats would turn "traffic
+// is not set up yet" into "the page is broken".
+export async function getAdminTrafficStats(pDays = 30) {
+  if (!supabase) {
+    return { status: "error", traffic: null, error: "Cloud is not configured." };
+  }
+
+  const { data, error } = await supabase.rpc("admin_traffic_stats", { p_days: pDays });
+
+  if (error) {
+    return { status: "error", traffic: null, error: error.message };
+  }
+
+  // The same null-means-refused rule as above.
+  if (!data) {
+    return { status: "forbidden", traffic: null, error: null };
+  }
+
+  return {
+    status: "ready",
+    traffic: {
+      days: Number(data.days) || pDays,
+      viewsToday: Number(data.viewsToday) || 0,
+      visitorsToday: Number(data.visitorsToday) || 0,
+      viewsYesterday: Number(data.viewsYesterday) || 0,
+      visitorsYesterday: Number(data.visitorsYesterday) || 0,
+      viewsPeriod: Number(data.viewsPeriod) || 0,
+      visitorsPeriod: Number(data.visitorsPeriod) || 0,
+      viewsPrevious: Number(data.viewsPrevious) || 0,
+      visitorsPrevious: Number(data.visitorsPrevious) || 0,
+      series: (Array.isArray(data.series) ? data.series : [])
+        .map((row) => ({
+          day: row.day,
+          views: Number(row.views) || 0,
+          visitors: Number(row.visitors) || 0
+        }))
+        .filter((row) => row.day),
+      topRoutes: (Array.isArray(data.topRoutes) ? data.topRoutes : [])
+        .map((row) => ({ path: row.path, views: Number(row.views) || 0 }))
+        .filter((row) => row.path)
+    },
+    error: null
+  };
+}
+
 // Shown next to each figure. A percentage needs a denominator, and a denominator
 // of zero has no meaningful percentage, so it is reported as a dash instead of
 // an infinity or a NaN.

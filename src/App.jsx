@@ -35,6 +35,7 @@ import { NotificationProvider, useNotifications } from "./contexts/NotificationC
 import { getThemePreference, saveThemePreference } from "./utils/storageUtils.js";
 import { subscribeBusyWork } from "./utils/busyWork.js";
 import { applyDocumentMeta, resolveDocumentMeta } from "./utils/documentMeta.js";
+import { recordPageView } from "./services/pageViews.js";
 import { logClientError } from "./utils/errorLogger.js";
 
 // Long enough for a burst of update events to settle into one reload, short
@@ -51,6 +52,22 @@ function ScrollToTop() {
   // pathname, so in-page anchors are left alone.
   useEffect(() => {
     window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
+
+// One page view per route change, for the owner's statistics page.
+//
+// It sits here rather than in a page component because a page view recorded by
+// the page itself is a page view a route forgot to record. The pathname is
+// reduced to a route name before it leaves the browser, so nothing that ends up
+// in a URL can reach the database through this.
+function RouteViewTracker() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    recordPageView(pathname);
   }, [pathname]);
 
   return null;
@@ -149,6 +166,7 @@ function AppShell() {
   return (
     <>
       <ScrollToTop />
+      <RouteViewTracker />
       <SocialNotificationWatcher />
       {isLanding ? null : <Navbar theme={theme} onToggleTheme={toggleTheme} />}
       {isLanding ? null : <TopActions />}

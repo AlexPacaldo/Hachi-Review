@@ -33,12 +33,14 @@ export default function Privacy() {
         <p>You can opt-out of targeted advertising by visiting <a href="https://optout.aboutads.info/" target="_blank" rel="noreferrer">About Ads Opt-out</a> or <a href="https://www.youronlinechoices.com/" target="_blank" rel="noreferrer">Your Online Choices</a>.</p>
 
         <h3>Site analytics</h3>
-        <p>To know how many people visit and which pages they use, this site is measured with Vercel Web Analytics. It counts page views and reports them as aggregate numbers for the site as a whole.</p>
+        <p>To know how many people visit and which pages they use, this site counts page views itself. Each view is recorded in this site's own database as one page name and one random value generated for that browser tab.</p>
         <ul>
-          <li>It is cookie-free and does not set an identifier in your browser or on your device.</li>
-          <li>It does not collect personal data, and it never sees your reviewers, answers, history, streak, display name, or email address.</li>
-          <li>Those figures are held on Vercel's dashboard. They are not stored in this site's own database, so no visit is tied to your account.</li>
+          <li>It is cookie-free. Nothing is set in your browser that survives the tab, and the random value is generated fresh and discarded when the tab closes.</li>
+          <li>It does not record your IP address, your browser, where you came from, your account, or anything in a page address. A reviewer, a group and a guide are each counted only as their own page.</li>
+          <li>It never sees your reviewers, answers, history, streak, display name, or email address, and a page view cannot be traced back to your account because no account is attached to it.</li>
+          <li>The figures are shown to the person who runs this site as counts only, such as views today and which pages are opened most. They are not shared with anyone.</li>
         </ul>
+        <p>Nothing is sent to an outside analytics company. These counts stay in this site's database, and pages older than six months are deleted automatically.</p>
 
         <h3>Cookies</h3>
         <p>Our website uses cookies to enhance user experience. These cookies may be essential for the site to function, or may be used for analytics and advertising purposes. You can control cookie preferences through your browser settings.</p>
@@ -46,7 +48,7 @@ export default function Privacy() {
         <h2>Changes to This Privacy Policy</h2>
         <p>We may update our Privacy Policy from time to time. We will post any changes on this page. You are advised to review this Privacy Policy periodically.</p>
         
-        <p>Last updated: 6 October 2026</p>
+        <p>Last updated: 15 October 2026</p>
         
         <h2>Contact</h2>
         <p>For privacy or account questions, use the contact address published on the Contact Us page. It reaches the app owner directly.</p>

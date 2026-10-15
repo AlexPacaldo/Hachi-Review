@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { BarChart3, Activity, ExternalLink, RefreshCw, Users } from "lucide-react";
+import { BarChart3, RefreshCw, Users } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { formatPercent, getAdminUserStats } from "../services/adminStats.js";
+import { formatDelta, formatPercent, getAdminTrafficStats, getAdminUserStats } from "../services/adminStats.js";
+import { routeName } from "../utils/analyticsRoutes.js";
 import { logClientError } from "../utils/errorLogger.js";
 
 // The statistics themselves are gated in the database, not here: both functions
@@ -23,67 +24,79 @@ function MetricCard({ label, value, hint }) {
   );
 }
 
-// Visits and speed are not counted here, and this card says so plainly rather than
-// letting their absence read as zero traffic.
+// Traffic is counted by the app itself, into this same database, one route name
+// and one random per-tab key per view. Nothing identifies the person behind a
+// number here: there is no account on a page view, so nothing on this section can
+// be joined back to anybody even by the owner.
 //
-// Nothing in the app records a page view, so there is nothing for these numbers to be
-// computed from. The one traffic-shaped thing the database holds is presence_pings,
-// which is a live count of landing page tabs inside a 150 second window whose rows
-// delete themselves after ten minutes. It cannot be trended, and it overcounts anyone
-// with two tabs open, so it is on the Accounts card as "On the landing page now" and
-// deliberately not presented as visits.
+// The route is stored as a name rather than as the URL, so these figures can say
+// which pages people use without the table ever holding a reviewer id, a group
+// id or an invite code. That is the reason there is no "top reviewers" list
+// anywhere, and the reason there never should be one.
 //
-// Vercel Web Analytics does the counting, from the script in index.html, and keeps the
-// result on the Vercel dashboard rather than in this database. That is a deliberate
-// trade: the data stays out of the project's database entirely, which is why nothing
-// here about it is per-account or per-device.
-function VisitsCard() {
+// presence_pings is a different thing and is not folded in: it is how many
+// landing page tabs are open right now, it cannot be trended because its rows
+// delete themselves after ten minutes, and it counts tabs rather than people. It
+// stays on the Audience section under its own name.
+function TrafficNotice({ status, error }) {
+  // A refusal and a missing function need different sentences. "Run the
+  // migration" sent to an account whose flag is missing is the wrong
+  // instruction, and this page is the one place that can tell them apart.
+  if (status === "forbidden") {
+    return (
+      <div className="admin-visits">
+        <div className="admin-visits-icon" aria-hidden="true">
+          <BarChart3 size={20} />
+        </div>
+        <div className="admin-visits-copy">
+          <strong>The database would not hand over the traffic counts</strong>
+          <p className="muted">
+            The function exists and refused the read, so supabase-migration-2026-10-page-views.sql is in place and
+            this account is missing <code>app_metadata.admin = true</code>. Every other section on this page comes
+            from a different function, which is why they are still readable.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="admin-visits">
       <div className="admin-visits-icon" aria-hidden="true">
-        <Activity size={20} />
+        <BarChart3 size={20} />
       </div>
       <div className="admin-visits-copy">
-        <strong>Visits and speed live in the Vercel dashboard</strong>
+        <strong>Page views are not being recorded yet</strong>
         <p className="muted">
-          Page views, unique visitors, the routes people actually use, and Core Web Vitals such as load time and
-          layout shift are collected by Vercel Analytics and shown on the Vercel project dashboard. They are not
-          stored in this app&rsquo;s database, so there is nothing per-account or per-device to read here, and this
-          page deliberately does not estimate them.
+          {error ? `${error}. ` : null}
+          Run supabase-migration-2026-10-page-views.sql in the Supabase SQL editor to switch this on. Until it has
+          run, the app sends the count and the database throws it away, so this page has nothing to show. Views start
+          from zero on the day it is applied; there is no backfill.
         </p>
-        <p className="muted">
-          In the Vercel dashboard, open this project and choose the <strong>Analytics</strong> tab for traffic, or
-          <strong> Speed Insights</strong> for performance.
-        </p>
-        <div className="button-row">
-          <a className="button" href="https://vercel.com/dashboard" target="_blank" rel="noreferrer noopener">
-            <ExternalLink size={15} aria-hidden="true" />
-            Open Vercel dashboard
-          </a>
-        </div>
       </div>
     </div>
   );
 }
 
-function SignupChart({ series }) {
+// One bar per day, scaled to the tallest. A quiet week still reads as a shape
+// rather than as a flat line along the bottom.
+function BarSeries({ series, valueKey, label }) {
   if (!series.length) return null;
 
-  // The tallest bar sets the scale, so a quiet week still reads as a shape
-  // rather than a flat line along the bottom.
-  const peak = Math.max(...series.map((point) => point.signups), 1);
+  const peak = Math.max(...series.map((point) => point[valueKey]), 1);
 
   return (
     <div className="admin-chart">
-      <div className="admin-chart-bars" role="img" aria-label={`Signups per day over the last ${series.length} days`}>
+      <div className="admin-chart-bars" role="img" aria-label={label}>
         {series.map((point) => {
-          const height = Math.max(Math.round((point.signups / peak) * 100), point.signups > 0 ? 8 : 2);
+          const value = Number(point[valueKey]) || 0;
+          const height = Math.max(Math.round((value / peak) * 100), value > 0 ? 8 : 2);
           return (
             <div className="admin-chart-col" key={point.day}>
               <div
-                className={`admin-chart-bar ${point.signups > 0 ? "has-signups" : ""}`}
+                className={`admin-chart-bar ${value > 0 ? "has-value" : ""}`}
                 style={{ height: `${height}%` }}
-                title={`${point.day}: ${point.signups}`}
+                title={`${point.day}: ${value}`}
               />
             </div>
           );
@@ -98,9 +111,51 @@ function SignupChart({ series }) {
   );
 }
 
+// The routes people actually use. Ordered by views rather than alphabetical,
+// because the question being asked is which parts of the app get opened.
+function RouteList({ routes }) {
+  if (!routes.length) {
+    return <p className="muted admin-route-empty">No page views recorded in this period yet.</p>;
+  }
+
+  const peak = Math.max(...routes.map((route) => route.views), 1);
+
+  return (
+    <ul className="admin-route-list">
+      {routes.map((route) => (
+        <li className="admin-route-row" key={route.path}>
+          <span className="admin-route-name">{routeName(route.path)}</span>
+          <span className="admin-route-bar" aria-hidden="true">
+            <span className="admin-route-fill" style={{ width: `${Math.round((route.views / peak) * 100)}%` }} />
+          </span>
+          <span className="admin-route-count">{route.views}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Compared with a window of the same length. A rise from nothing is not a
+// percentage, because the denominator is zero, so it is said in words rather than
+// rendered as an infinity.
+function trendHint(current, previous, comparison) {
+  const on = comparison ? ` on ${comparison}` : "";
+
+  if (!previous) return current > 0 ? `Up from nothing${on}` : null;
+
+  const delta = formatDelta(current, previous);
+  if (delta === null) return null;
+  if (delta === 0) return `Level with ${comparison || "the previous period"}`;
+  if (delta > 0) return `Up ${delta}%${on}`;
+  return `Down ${Math.abs(delta)}%${on}`;
+}
+
 export default function AdminStats() {
   const { user, loading: authLoading } = useAuth();
   const [state, setState] = useState({ status: "loading", stats: null, series: [], error: null });
+  // Traffic is loaded and stored apart from the account totals, because it is
+  // allowed to fail on its own without taking the rest of the page with it.
+  const [traffic, setTraffic] = useState({ status: "loading", data: null, error: null });
 
   const load = useCallback(async () => {
     setState((current) => ({ ...current, status: "loading", error: null }));
@@ -125,6 +180,31 @@ export default function AdminStats() {
     }
   }, []);
 
+  // Deliberately not awaited into load(). A database without the page view
+  // migration, a signed-in account without the admin flag and a slow network are
+  // three different problems, and only the first two belong to this page.
+  const loadTraffic = useCallback(async () => {
+    setTraffic({ status: "loading", data: null, error: null });
+
+    try {
+      const result = await getAdminTrafficStats(30);
+
+      if (result.status === "ready") {
+        setTraffic({ status: "ready", data: result.traffic, error: null });
+        return;
+      }
+
+      setTraffic({
+        status: result.status,
+        data: null,
+        error: result.status === "error" ? result.error : null
+      });
+    } catch (error) {
+      logClientError("admin-traffic", error);
+      setTraffic({ status: "error", data: null, error: error?.message || "Could not read traffic." });
+    }
+  }, []);
+
   useEffect(() => {
     if (authLoading) return undefined;
     if (!user) {
@@ -132,8 +212,9 @@ export default function AdminStats() {
       return undefined;
     }
     load();
+    loadTraffic();
     return undefined;
-  }, [authLoading, user, load]);
+  }, [authLoading, user, load, loadTraffic]);
 
   if (authLoading || state.status === "loading") {
     return (
@@ -197,6 +278,9 @@ export default function AdminStats() {
             this account is missing <code>app_metadata.admin = true</code>. A function that is missing is reported as
             &ldquo;could not find the function&rdquo;; a function that exists but refuses the read is reported as
             &ldquo;permission denied&rdquo;, which means the migration is in place and the account needs the flag.
+            Traffic has its own migration,
+            supabase-migration-2026-10-page-views.sql, and is never the cause of this page failing: it fails on its
+            own and leaves the Visits section explaining itself.
           </p>
           <div className="button-row">
             <button className="button" type="button" onClick={load}>
@@ -221,12 +305,12 @@ export default function AdminStats() {
           <p className="eyebrow">Statistics</p>
           <h1>How the site is doing</h1>
           <p className="muted">
-            Who is here and whether they are still arriving. Counts only: no email address, display name, or
-            per-account record is ever sent to this page. Visits and speed are measured by Vercel Analytics and live
-            in the Vercel dashboard, not here.
+            Who is here, what they open, and whether they are still arriving. Counts only: no email address, display
+            name, IP address, or per-account record is ever sent to this page. Visits are counted by the app itself
+            and read from the same database as everything else on it.
           </p>
         </div>
-        <button className="button subtle" type="button" onClick={load}>
+        <button className="button subtle" type="button" onClick={() => { load(); loadTraffic(); }}>
           <RefreshCw size={15} />
           Refresh
         </button>
@@ -234,8 +318,65 @@ export default function AdminStats() {
 
       <section className="admin-section">
         <h2 className="section-heading">Visits</h2>
-        <VisitsCard />
+        {traffic.status === "loading" ? (
+          <p className="muted admin-section-note">Loading traffic...</p>
+        ) : traffic.status !== "ready" || !traffic.data ? (
+          <TrafficNotice status={traffic.status} error={traffic.error} />
+        ) : (
+          <>
+            <p className="muted admin-section-note">
+              Counted by this app. One page view is one tab looking at one page, counted once every thirty minutes, so
+              a reload is not a visit. A visitor is a random per-tab value held for that tab only: there is no account,
+              no IP address and no device on a page view, which is why these are counts and nothing that could be
+              traced to a person.
+            </p>
+            <div className="admin-tile-grid">
+              <MetricCard
+                label="Views today"
+                value={traffic.data.viewsToday}
+                hint={trendHint(traffic.data.viewsToday, traffic.data.viewsYesterday, "yesterday")}
+              />
+              <MetricCard
+                label="Visitors today"
+                value={traffic.data.visitorsToday}
+                hint={trendHint(traffic.data.visitorsToday, traffic.data.visitorsYesterday, "yesterday")}
+              />
+              <MetricCard
+                label={`Views in the last ${traffic.data.days} days`}
+                value={traffic.data.viewsPeriod}
+                hint={trendHint(traffic.data.viewsPeriod, traffic.data.viewsPrevious, `the previous ${traffic.data.days} days`)}
+              />
+              <MetricCard
+                label={`Visitors in the last ${traffic.data.days} days`}
+                value={traffic.data.visitorsPeriod}
+                hint={trendHint(traffic.data.visitorsPeriod, traffic.data.visitorsPrevious, `the previous ${traffic.data.days} days`)}
+              />
+            </div>
+          </>
+        )}
       </section>
+
+      {traffic.status === "ready" && traffic.data ? (
+        <>
+          <section className="admin-section">
+            <h2 className="section-heading">Views over the last {traffic.data.days} days</h2>
+            <BarSeries
+              series={traffic.data.series}
+              valueKey="views"
+              label={`Page views per day over the last ${traffic.data.days} days`}
+            />
+          </section>
+
+          <section className="admin-section">
+            <h2 className="section-heading">What people open</h2>
+            <RouteList routes={traffic.data.topRoutes} />
+            <p className="muted admin-route-note">
+              Page names rather than addresses. A reviewer, a group or a guide is counted as its own page, so the
+              figure says which parts of Hachi get used and never records whose.
+            </p>
+          </section>
+        </>
+      ) : null}
 
       <section className="admin-section">
         <h2 className="section-heading">Audience</h2>
@@ -273,7 +414,11 @@ export default function AdminStats() {
 
       <section className="admin-section">
         <h2 className="section-heading">Signups over the last 30 days</h2>
-        <SignupChart series={state.series} />
+        <BarSeries
+          series={state.series}
+          valueKey="signups"
+          label={`Signups per day over the last ${state.series.length} days`}
+        />
       </section>
 
       <footer className="admin-foot">
