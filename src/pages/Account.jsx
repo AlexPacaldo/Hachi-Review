@@ -291,6 +291,12 @@ export default function Account() {
         ) : null}
         <Link to="/about">About</Link>
         <span aria-hidden="true">/</span>
+        <Link to="/features">Features</Link>
+        <span aria-hidden="true">/</span>
+        <Link to="/faq">FAQ</Link>
+        <span aria-hidden="true">/</span>
+        <Link to="/guides">Study Guides</Link>
+        <span aria-hidden="true">/</span>
         <Link to="/contact">Contact</Link>
         <span aria-hidden="true">/</span>
         <Link to="/privacy">Privacy Policy</Link>

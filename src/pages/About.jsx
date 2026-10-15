@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import PublicFooter from "../components/PublicFooter.jsx";
 
 export default function About() {
   return (
@@ -79,12 +79,7 @@ export default function About() {
         </p>
         <p>Last updated: 3 October 2026</p>
 
-        <footer className="legal-footer">
-          <Link className="back-link" to="/">Back to Hachi</Link>
-          <Link to="/contact">Contact Us</Link>
-          <Link to="/privacy">Privacy Policy</Link>
-          <Link to="/terms">Terms of Service</Link>
-        </footer>
+        <PublicFooter />
       </section>
     </div>
   );

@@ -2451,6 +2451,59 @@ legend {
   color: var(--accent);
 }
 
+/* The written guides and the feature/FAQ pages reuse the legal page shell, so
+   these are the only rules they need. Everything here is expressed in the
+   shared variables so the dark theme needs no second pass. */
+.article-meta {
+  font-size: 0.9rem;
+}
+
+.article-standfirst {
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.guide-index {
+  display: grid;
+  gap: 14px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.guide-index-entry {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.guide-index-entry p {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.guide-index-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.landing-faq-more {
+  color: var(--muted);
+  font-weight: 700;
+  text-align: center;
+}
+
+.landing-faq-more a {
+  color: var(--accent);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .button-row,
 .button-grid,
 .quiz-actions,

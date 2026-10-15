@@ -76,6 +76,41 @@ this database. The script and its beacons are same-origin, so no `vercel.json` c
 is (or may ever be) needed for it; a `script-src` host that is not `'self'` must be
 added deliberately.
 
+## What a crawler can see
+
+Everything in Hachi except the marketing pages is behind a sign-in, so the site's
+readable surface is small and it is the whole of the site's value as far as Google is
+concerned. AdSense rejected it under **Low value content** for exactly that reason:
+the root was served as the built shell, a 3.6 KB document whose entire body was
+`<div id="root"></div>` and a `<noscript>` paragraph, and the other four pages were
+legal boilerplate.
+
+Four things hold that surface up, and all four have to stay in step:
+
+- `src/utils/documentMeta.js` is the single list of public routes and their titles and
+  descriptions. `scripts/prerender.mjs` writes one real `index.html` per entry, and the
+  root is in that list: it is now rendered through the actual `App` inside a
+  `MemoryRouter`, so the served homepage carries the landing copy rather than a shell.
+  A public route that is in the router but not in `ROUTE_META` is a page that only
+  exists after the app boots.
+- Guide prose lives in `src/data/guides.js` as data rather than as components,
+  precisely so the prerenderer can render it. A guide written as a `.jsx` page would
+  render fine and still be an empty file to anything that does not run JavaScript.
+- `public/sitemap.xml` is written by hand from the same list. Keep it in step; a route
+  in the sitemap but nowhere else is findable but unlinked, and a route nowhere but
+  the sitemap is neither.
+- Every public page ends in `PublicFooter`, which is how the pages are found from each
+  other. Internal linking is a real signal, not decoration.
+
+`scripts/render-check.mjs` asserts the list and `render-check` routes agree, that no
+public route renders a shell under 1500 characters, and that every guide's own title
+appears on its rendered page. A guide that renders nothing does not throw, so the
+length assertion is the only thing that sees it.
+
+Do not add an inline `application/ld+json` block for structured data. It would be
+blocked by the CSP for the same reason an inline script would be, and nothing here
+needs one.
+
 ## AI generation
 
 The provider keys are on free tiers with no billing attached, so the harm from

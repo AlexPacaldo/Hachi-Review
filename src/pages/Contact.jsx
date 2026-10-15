@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import PublicFooter from "../components/PublicFooter.jsx";
 import { Mail, Flag, ShieldCheck, Megaphone } from "lucide-react";
 
 const CONTACT_EMAIL = "alexpacaldo1105@gmail.com";
@@ -90,12 +90,7 @@ export default function Contact() {
 
         <p>Last updated: 3 October 2026</p>
 
-        <footer className="legal-footer">
-          <Link className="back-link" to="/">Back to Hachi</Link>
-          <Link to="/about">About Us</Link>
-          <Link to="/privacy">Privacy Policy</Link>
-          <Link to="/terms">Terms of Service</Link>
-        </footer>
+        <PublicFooter />
       </section>
     </div>
   );

@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import PublicFooter from "../components/PublicFooter.jsx";
 
 export default function Terms() {
   return (
@@ -19,11 +19,7 @@ export default function Terms() {
         <p>You can remove device data and app cloud data from Account Settings. Shared reviewers or backups you gave to other people may remain with them.</p>
         <p>Last updated: 1 October 2026</p>
 
-        <footer className="legal-footer">
-          <Link className="back-link" to="/">Back to Hachi</Link>
-          <Link to="/contact">Contact Us</Link>
-          <Link to="/privacy">Privacy Policy</Link>
-        </footer>
+        <PublicFooter />
       </section>
     </div>
   );

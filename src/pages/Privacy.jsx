@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import PublicFooter from "../components/PublicFooter.jsx";
 
 export default function Privacy() {
   return (
@@ -51,11 +51,7 @@ export default function Privacy() {
         <h2>Contact</h2>
         <p>For privacy or account questions, use the contact address published on the Contact Us page. It reaches the app owner directly.</p>
 
-        <footer className="legal-footer">
-          <Link className="back-link" to="/">Back to Hachi</Link>
-          <Link to="/contact">Contact Us</Link>
-          <Link to="/terms">Terms of Service</Link>
-        </footer>
+        <PublicFooter />
       </section>
     </div>
   );

@@ -66,8 +66,32 @@ globalThis.matchMedia = globalThis.window.matchMedia;
 
 // Every route is rendered, because a provider only has to be wrong on one page to
 // be a white screen, and the landing page and the app pages take different paths
-// through the shell.
-const ROUTES = ["/", "/home", "/library", "/friends", "/groups", "/account", "/history", "/about"];
+// through the shell. The public content routes are here for the same reason: they
+// are also the routes scripts/prerender.mjs writes to disk, so a page that renders
+// nothing reaches a crawler as a page with nothing on it.
+const ROUTES = [
+  "/",
+  "/home",
+  "/library",
+  "/friends",
+  "/groups",
+  "/account",
+  "/history",
+  "/about",
+  "/contact",
+  "/privacy",
+  "/terms",
+  "/features",
+  "/faq",
+  "/guides",
+  "/guides/active-recall",
+  "/guides/spaced-revision",
+  "/guides/past-papers",
+  "/guides/weak-topics",
+  "/guides/study-groups",
+  "/guides/offline-revision",
+  "/guides/not-a-guide"
+];
 
 const vite = await createServer({
   server: { middlewareMode: true },
@@ -90,17 +114,41 @@ function check(label, ok, detail = "") {
 
 try {
   const { default: App } = await vite.ssrLoadModule("/src/App.jsx");
+  const { PUBLIC_ROUTES } = await vite.ssrLoadModule("/src/utils/documentMeta.js");
+
+  const rendered = new Map();
 
   ROUTES.forEach((route) => {
     try {
       const html = renderToString(
         createElement(MemoryRouter, { initialEntries: [route] }, createElement(App))
       );
+      rendered.set(route, html);
       check(`/${route.replace("/", "") || ""} renders`, html.length > 0, `produced ${html.length} characters`);
     } catch (error) {
       check(`/${route.replace("/", "") || ""} renders`, false, error.message);
     }
   });
+
+  // The prerenderer writes one HTML file per PUBLIC_ROUTES entry and nothing else,
+  // so a route added there but missed by this list would be shipped without ever
+  // being rendered by a check. Both directions are asserted: a route checked here
+  // but not prerendered is a page that only exists once the app boots.
+  const missing = PUBLIC_ROUTES.filter((route) => !ROUTES.includes(route));
+  check("every prerendered route is covered by this check", missing.length === 0, `not checked: ${missing.join(", ")}`);
+
+  // A public route that renders a shell and no words is the failure the whole
+  // prerender step exists to prevent, and it renders without throwing, so the
+  // length assertion above cannot see it.
+  const thin = PUBLIC_ROUTES.filter((route) => (rendered.get(route) || "").length < 1500);
+  check("no public route renders an empty shell", thin.length === 0,
+    `under 1500 characters: ${thin.map((route) => `${route} (${(rendered.get(route) || "").length})`).join(", ")}`);
+
+  // Every guide in the content module has to have a route that finds it, or the
+  // article is in the bundle and in the sitemap and nowhere else.
+  const { GUIDES } = await vite.ssrLoadModule("/src/data/guides.js");
+  const unresolved = GUIDES.filter((guide) => !(rendered.get(`/guides/${guide.slug}`) || "").includes(guide.title));
+  check("every guide renders its own title", unresolved.length === 0, `unresolved: ${unresolved.map((g) => g.slug).join(", ")}`);
 
   // The provider tree, asserted on the source because a render cannot tell you
   // which constraint it just satisfied. AppShell calls the hook itself, so it has

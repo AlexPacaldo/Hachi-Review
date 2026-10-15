@@ -1,9 +1,15 @@
+import { GUIDES } from "../data/guides.js";
+
 /**
  * One definition of what each public route claims to be about, shared by the
  * build-time prerenderer and the running app. scripts/prerender.mjs writes these
  * values into dist/<route>/index.html, and App applies the same values when the
  * router navigates. Keeping both on this module is what stops a hard load and a
  * click from disagreeing about the title.
+ *
+ * Everything in here is a route whose HTML is written to disk at build time. A
+ * public route that is missing from this map is served as an empty root div and
+ * is, to anything that does not run the app, a page with no content on it.
  */
 
 export const SITE_ORIGIN = "https://hachi-review.site";
@@ -35,8 +41,39 @@ export const ROUTE_META = {
     title: "Terms of Service - Hachi",
     description:
       "The terms covering your use of Hachi, including your content, AI-generated questions, and app availability."
-  }
+  },
+  "/features": {
+    title: "Features - Hachi Study Companion",
+    description:
+      "Everything Hachi does, in detail: generating reviewers from notes, a PDF or a photo, five ways to practise one, progress and mistake history, offline use, and sharing with friends and groups."
+  },
+  "/faq": {
+    title: "Frequently Asked Questions - Hachi",
+    description:
+      "Answers about Hachi: whether an account is needed, what can be turned into a reviewer, how AI generation works, how offline use and sync behave, and how shared reviewers work."
+  },
+  "/guides": {
+    title: "Study Guides - Hachi",
+    description:
+      "Practical guides on studying with Hachi: active recall, spaced revision, importing past papers, finding weak topics, running a study group, and revising offline."
+  },
+  ...Object.fromEntries(
+    GUIDES.map((guide) => [
+      `/guides/${guide.slug}`,
+      {
+        title: `${guide.title} - Hachi`,
+        description: guide.metaDescription
+      }
+    ])
+  )
 };
+
+/**
+ * Every route the build writes its own HTML for, in the order they are written.
+ * The root is included: it is the one page that has to carry the site's content
+ * in its served HTML, because it is the page a crawler lands on first.
+ */
+export const PUBLIC_ROUTES = Object.keys(ROUTE_META);
 
 function normalise(pathname) {
   if (!pathname) return "/";

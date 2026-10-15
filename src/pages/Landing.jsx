@@ -515,6 +515,11 @@ export default function Landing({ theme, onToggleTheme }) {
               </details>
             ))}
           </div>
+
+          <p className="landing-faq-more">
+            More answers on the <Link to="/faq">full FAQ page</Link>, and the method behind the app in the{" "}
+            <Link to="/guides">study guides</Link>.
+          </p>
         </section>
 
         <section className="landing-cta" data-reveal>
@@ -548,6 +553,9 @@ export default function Landing({ theme, onToggleTheme }) {
           </div>
 
           <nav className="landing-footer-links" aria-label="Site information">
+            <Link to="/features">Features</Link>
+            <Link to="/faq">FAQ</Link>
+            <Link to="/guides">Study Guides</Link>
             <Link to="/about">About Us</Link>
             <Link to="/contact">Contact Us</Link>
             <Link to="/privacy">Privacy Policy</Link>

@@ -26,6 +26,10 @@ import About from "./pages/About.jsx";
 import Contact from "./pages/Contact.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
+import Features from "./pages/Features.jsx";
+import Faq from "./pages/Faq.jsx";
+import Guides from "./pages/Guides.jsx";
+import Guide from "./pages/Guide.jsx";
 import { AuthProvider } from "./contexts/AuthContext.jsx";
 import { NotificationProvider, useNotifications } from "./contexts/NotificationContext.jsx";
 import { getThemePreference, saveThemePreference } from "./utils/storageUtils.js";
@@ -182,6 +186,13 @@ function AppShell() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
+            {/* Prerendered so the guides are readable as pages rather than only
+                as something that appears once the app has booted. A guide missing
+                here would 404 in the build even though its HTML exists on disk. */}
+            <Route path="/features" element={<Features />} />
+            <Route path="/faq" element={<Faq />} />
+            <Route path="/guides" element={<Guides />} />
+            <Route path="/guides/:slug" element={<Guide />} />
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
         </ErrorBoundary>
