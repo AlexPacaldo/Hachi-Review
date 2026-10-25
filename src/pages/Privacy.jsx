@@ -18,10 +18,10 @@ export default function Privacy() {
 
         <h2>Advertising & Tracking</h2>
         <p>This site carries advertising, and this is how it is kept separate from your study data.</p>
-        <p>We use Google AdSense. Its script has to run on this page to load an ad. We limit that as far as we can, but not completely:</p>
+        <p>We use Monetag to serve ads. Its script has to run on this page to load an ad. We limit that as far as we can, but not completely:</p>
         <ul>
           <li>A Content Security Policy lists every script host we permit. Anything not on that list is refused by your browser before it runs, so an advert cannot quietly load additional code of its own.</li>
-          <li>Your reviewers, answers, history, and streak are held in your browser and behind your account. None of them can be read through the ad networks.</li>
+          <li>Hachi does not intentionally send your reviewers, answers, history, or streak to ad networks. Ad scripts run in the page, however, and can access browser data available to page scripts.</li>
           <li>Signing in keeps a session token in your browser's storage, which any script on the page is able to read. That is how the app stays signed in without asking you every visit. If you are on a shared or untrusted computer, sign out when you are finished.</li>
         </ul>
         <p>These networks may still:</p>
@@ -48,7 +48,7 @@ export default function Privacy() {
         <h2>Changes to This Privacy Policy</h2>
         <p>We may update our Privacy Policy from time to time. We will post any changes on this page. You are advised to review this Privacy Policy periodically.</p>
         
-        <p>Last updated: 15 October 2026</p>
+        <p>Last updated: 25 October 2026</p>
         
         <h2>Contact</h2>
         <p>For privacy or account questions, use the contact address published on the Contact Us page. It reaches the app owner directly.</p>

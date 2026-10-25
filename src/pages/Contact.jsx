@@ -83,12 +83,12 @@ export default function Contact() {
 
         <h2>Advertising On This Site</h2>
         <p>
-          Ads on Hachi come from Google AdSense and a small number of other ad networks. Hachi does not control
-          which ads are shown or the content of the pages they link to. If you have a query about a specific advert,
-          use the advertising choice icon beside it, which takes you to Google's own controls.
+          Ads on Hachi are currently served through Monetag. Hachi does not control which ads are shown or the
+          content of the pages they link to. For questions about a specific advert, please contact us using the
+          address above.
         </p>
 
-        <p>Last updated: 3 October 2026</p>
+        <p>Last updated: 25 October 2026</p>
 
         <PublicFooter />
       </section>

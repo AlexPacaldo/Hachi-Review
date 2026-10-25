@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <title>Hachi - Your Study Companion</title>
-    <script>(function(s){s.dataset.zone='11915305',s.src='https://nap5k.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
+    <script async data-zone="11915305" src="https://nap5k.com/tag.min.js"></script>
     <!--
       No analytics script, deliberately. Traffic used to be counted by Vercel Web
       Analytics from this tag, which meant the only answer to "how many people
@@ -25,9 +25,9 @@
       The app counts its own page views instead, through record_page_view in
       supabase-migration-2026-10-page-views.sql, and src/pages/AdminStats.jsx
       reads them back from the same database as everything else on it. That costs
-      one short request per route change and nothing else: no vendor script, no
-      beacon, no third-party origin to grant in vercel.json, and nothing sent off
-      this deployment. See AGENTS.md.
+      one short request per route change and nothing else for analytics: no
+      analytics vendor script or beacon, and no page-view analytics sent to
+      Vercel. Advertising scripts are separate. See AGENTS.md.
     -->
   </head>
   <body>

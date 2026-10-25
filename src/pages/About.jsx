@@ -44,14 +44,14 @@ export default function About() {
 
         <h2>How Hachi Is Funded</h2>
         <p>
-          Hachi is supported by advertising, served through Google AdSense and a small number of other ad networks.
-          Advertising is what pays for the hosting and the running costs of the site.
+          Hachi is supported by advertising, currently served through Monetag. Advertising is what pays for the
+          hosting and the running costs of the site.
         </p>
         <p>
-          Advertising is kept separate from your study data. Your reviewers, answers, attempt history, and study
-          streak are held in your browser and behind your own account, and none of it can be read through the ad
-          networks. Hachi does not sell personal data, does not broker contact lists, and does not accept payment
-          in exchange for placing ads. The full detail is in the Privacy Policy.
+          Hachi does not intentionally send your reviewers, answers, attempt history, or study streak to ad
+          networks. Advertising scripts run in the page and can access browser data available to page scripts.
+          Hachi does not sell personal data, does not broker contact lists, and does not accept payment in
+          exchange for placing ads. The full detail is in the Privacy Policy.
         </p>
 
         <h2>How Reviews And Content Are Checked</h2>
@@ -77,7 +77,7 @@ export default function About() {
           Questions about Hachi, a bug report, a takedown request, or an advertising enquiry can all go to the
           contact address on the Contact Us page, which reaches the person who runs the site directly.
         </p>
-        <p>Last updated: 3 October 2026</p>
+        <p>Last updated: 25 October 2026</p>
 
         <PublicFooter />
       </section>

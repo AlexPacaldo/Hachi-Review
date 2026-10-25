@@ -22,30 +22,25 @@ authorizes a paid call is not.
 
 ## Scripts load and the CSP
 
-`index.html` loads exactly one third-party script today: the Google AdSense
-external script. Traffic used to be measured with Vercel Web Analytics, which was
-a second same-origin tag; it is gone. Do not reintroduce an inline script block: the
-CSP pins no hash and allows no `'unsafe-inline'` for scripts, so one would fail
-silently in the browser while still working locally. If a same-origin asset is added,
-it is already allowed by `script-src 'self'`. A third-party host is not; it must be
-added to the relevant directives in `vercel.json` and that change only takes effect in
-production.
-
-The AdSense script only runs because `script-src` lists
-`https://pagead2.googlesyndication.com` and its siblings. AdSense also injects a
-runtime inline script that cannot be pinned by hash, because its contents are
-generated per page load, so it stays blocked. That is expected and is not worth
-adding `'unsafe-inline'` for.
+`index.html` loads the Monetag zone `11915305` from
+`https://nap5k.com/tag.min.js`. Traffic used to be measured with Vercel Web
+Analytics, which was a second same-origin tag; it is gone. Do not add inline
+scripts: the CSP pins no hash and allows no `'unsafe-inline'` for scripts. A
+same-origin script is allowed by `script-src 'self'`; third-party script hosts
+must be added to the relevant directives in `vercel.json`, which only takes
+effect in production.
 
 ## Ad networks and the CSP
 
-Only Google AdSense is loaded today. The two popunder networks that used to be in
-`index.html` were removed, and their hosts went with them: `my.rtmark.net`, `jhnwr.com`,
-`nap5k.com`, and `5gvci.com` no longer appear in `vercel.json`, so any attempt to
-fetch them is refused. Do not re-add the tags without the matching vercel.json hosts,
-and do not treat a loaded-but-blocked tag as working: the popunder tags once loaded
-fine while every beacon they send was refused by `connect-src`, so a real browser
-showing its beacons returning 200 is the only definition of working.
+The Monetag tag needs `https://nap5k.com` in `script-src`. Its known supporting
+script origins are `https://rtmark.net`, `https://my.rtmark.net`,
+`https://*.rtmark.net`, and `https://jhnwr.com`; the known image and beacon
+origins also include `https://5gvci.com`. These are granted only in the
+directives that need them. Do not treat a loaded-but-blocked tag as working:
+the tag once loaded while its beacons were refused by `connect-src`, so verify
+in a production browser that its required requests succeed. The tag runs in the
+page context and can access browser data available to page scripts; CSP does not
+sandbox it, so privacy copy must not claim otherwise.
 
 What each directive actually permits, because it decides how wide a grant has to be:
 
@@ -56,12 +51,10 @@ What each directive actually permits, because it decides how wide a grant has to
 - `img-src` only allows image loads. Useful for tracking pixels, harmless otherwise.
 - `frame-src` only allows framing, and the framed document stays on its own origin.
 
-Ad creatives are served as images from `*.googlesyndication.com` and
-`*.doubleclick.net`, so an `img-src` without them renders a filled ad as an empty
-box. The AdSense grants are kept even while the account is unapproved, so the site is
-ready the moment approval lands. Do not assume the presence of these hosts means
-AdSense is earning: the account has to be approved and Auto ads enabled, and
-`ads.txt` only authorises Google.
+The Google AdSense origins remain allowed in the CSP, but no AdSense script is
+currently loaded. The presence of those grants does not mean AdSense is serving
+ads; the account must be approved and Auto ads enabled, and `ads.txt` only
+authorises Google.
 
 ## Site analytics
 
