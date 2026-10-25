@@ -35,8 +35,9 @@ effect in production.
 The Monetag tag needs `https://nap5k.com` in `script-src`. Its known supporting
 script origins are `https://rtmark.net`, `https://my.rtmark.net`,
 `https://*.rtmark.net`, and `https://jhnwr.com`; the known image and beacon
-origins also include `https://5gvci.com`. These are granted only in the
-directives that need them. Do not treat a loaded-but-blocked tag as working:
+origins also include `https://5gvci.com` and `https://aichouphaun.com` (and
+its subdomains). These are granted only in the directives that need them. Do
+not treat a loaded-but-blocked tag as working:
 the tag once loaded while its beacons were refused by `connect-src`, so verify
 in a production browser that its required requests succeed. The tag runs in the
 page context and can access browser data available to page scripts; CSP does not
